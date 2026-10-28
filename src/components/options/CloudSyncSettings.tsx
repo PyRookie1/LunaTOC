@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { CLOUD_CONFIG_KEY, CLOUD_MESSAGE_TYPE, type CloudResult } from '@/features/cloud/cloudController';
 
-async function command(data: Record<string, unknown>): Promise<CloudResult> {
+async function command(data: Record<string, unknown>): Promise<Extract<CloudResult, { ok: true }>> {
   const response = await chrome.runtime.sendMessage({ type: CLOUD_MESSAGE_TYPE, ...data }) as CloudResult | undefined;
   if (!response) throw new Error('Firebase 后台服务未响应');
   if (!response.ok) throw new Error(response.error);
@@ -43,7 +43,7 @@ export function CloudSyncSettings({ accountId }: { accountId: string }): React.J
     return () => { alive = false; };
   }, []);
 
-  async function run(task: () => Promise<CloudResult>): Promise<void> {
+  async function run(task: () => Promise<Extract<CloudResult, { ok: true }>>): Promise<void> {
     if (busy) return;
     setBusy(true);
     setError('');

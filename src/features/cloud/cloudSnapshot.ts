@@ -23,11 +23,12 @@ export function validateCloudSnapshot(value: unknown, ownerId: string): CloudSna
     throw new Error('云端账号或快照格式无效');
   }
   const raw = value as Record<string, unknown>;
+  const deletedRoutes = raw.deletedRoutes;
   if (raw.version !== 1 ||
       Object.keys(raw).some((key) => !['version', 'prompts', 'aliases', 'settings', 'deletedRoutes'].includes(key)) ||
-      !Array.isArray(raw.deletedRoutes) || raw.deletedRoutes.length > 20_000 ||
-      raw.deletedRoutes.some((route: unknown) => !isPermanentConversationId(route)) ||
-      new Set(raw.deletedRoutes).size !== raw.deletedRoutes.length) {
+      !Array.isArray(deletedRoutes) || deletedRoutes.length > 20_000 ||
+      deletedRoutes.some((route: unknown) => !isPermanentConversationId(route)) ||
+      new Set(deletedRoutes).size !== deletedRoutes.length) {
     throw new Error('云端快照版本、字段或删除标记无效');
   }
   const parsed = parseLocalBackup(JSON.stringify({
@@ -40,7 +41,7 @@ export function validateCloudSnapshot(value: unknown, ownerId: string): CloudSna
   }));
   if (parsed.data.prompts.some((item) => item.ownerId !== ownerId) ||
       Object.values(parsed.data.aliases).some((item) => item.ownerId !== ownerId) ||
-      Object.keys(parsed.data.aliases).some((route) => raw.deletedRoutes.includes(route))) {
+      Object.keys(parsed.data.aliases).some((route) => deletedRoutes.includes(route))) {
     throw new Error('云端数据包含其他 ChatGPT 账号或冲突的删除标记');
   }
   const snapshot: CloudSnapshot = {
@@ -48,7 +49,7 @@ export function validateCloudSnapshot(value: unknown, ownerId: string): CloudSna
     prompts: parsed.data.prompts,
     aliases: parsed.data.aliases,
     settings: raw.settings === null ? null : parsed.data.settings[ownerId],
-    deletedRoutes: [...raw.deletedRoutes].sort(),
+    deletedRoutes: [...deletedRoutes].sort(),
   };
   if (new TextEncoder().encode(JSON.stringify(snapshot)).length > CLOUD_MAX_BYTES) {
     throw new Error('云端数据超过 240 KB 安全上限；请先精简提示词或目录别名');
