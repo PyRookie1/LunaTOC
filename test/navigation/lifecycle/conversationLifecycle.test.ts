@@ -31,6 +31,29 @@ describe('conversation ownership and trusted deletion handling', () => {
     });
   });
 
+  it('revalidates a cached account against the current authenticated session', async () => {
+    const { revalidateConversationOwnerForExtension } = await import('@/navigation/lifecycle/conversationLifecycle');
+    setActiveConversationOwner('account-1');
+    const verifiedFetch = vi.fn(async () => ({
+      ok: true, json: async () => ({ user: { id: 'account-1' } }),
+    })) as unknown as typeof fetch;
+    await expect(revalidateConversationOwnerForExtension(verifiedFetch)).resolves.toBe('account-1');
+    expect(getActiveConversationOwner()).toBe('account-1');
+    const switchedFetch = vi.fn(async () => ({
+      ok: true, json: async () => ({ user: { id: 'account-2' } }),
+    })) as unknown as typeof fetch;
+    await expect(revalidateConversationOwnerForExtension(switchedFetch)).resolves.toBeNull();
+    expect(getActiveConversationOwner()).toBeNull();
+  });
+
+  it('drops stale account access on session expiry or network failure', async () => {
+    const { revalidateConversationOwnerForExtension } = await import('@/navigation/lifecycle/conversationLifecycle');
+    setActiveConversationOwner('account-1');
+    const unavailable = vi.fn(async () => { throw new Error('network offline'); }) as unknown as typeof fetch;
+    await expect(revalidateConversationOwnerForExtension(unavailable)).resolves.toBeNull();
+    expect(getActiveConversationOwner()).toBeNull();
+  });
+
   it('ignores page-posted deletion events even when they reuse the extension message type', async () => {
     const { initializeConversationLifecycle } = await import('@/navigation/lifecycle/conversationLifecycle');
     const { tocAliasStore } = await import('@/features/conversationPrompts/tocAliasStore');

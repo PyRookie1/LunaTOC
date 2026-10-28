@@ -112,6 +112,40 @@ describe('Firebase REST account sync', () => {
     expect(result.ok).toBe(false);
     expect(remoteCalls(cloud)).toBe(0);
   });
+  it('rejects Firestore permissions errors without modifying local data', async () => {
+    const local = storage(initialLocal()), remote = firebaseHarness();
+    const { service } = await ready(local, remote);
+    const original = structuredClone(local.state);
+    const previous = remote.fetcher.getMockImplementation()!;
+    remote.fetcher.mockImplementation(async (url, options) => {
+      if (String(url).includes('firestore.googleapis.com')) {
+        return Response.json({ error: { message: 'PERMISSION_DENIED' } }, { status: 403 });
+      }
+      return previous(url, options);
+    });
+    const response = await service.execute(request('sync', { ownerId: owner }));
+    expect(response).toMatchObject({ ok: false, error: expect.stringContaining('PERMISSION_DENIED') });
+    expect(local.state).toEqual(original);
+    expect(remote.writes()).toBe(0);
+  });
+
+  it('does not apply a cloud merge if an optimistic PATCH precondition fails', async () => {
+    const local = storage(initialLocal()), remote = firebaseHarness();
+    const { service } = await ready(local, remote);
+    const before = structuredClone(local.state);
+    const previous = remote.fetcher.getMockImplementation()!;
+    remote.fetcher.mockImplementation(async (url, options) => {
+      if (String(url).includes('firestore.googleapis.com') && options?.method === 'PATCH') {
+        return Response.json({ error: { message: 'FAILED_PRECONDITION' } }, { status: 412 });
+      }
+      return previous(url, options);
+    });
+    const response = await service.execute(request('sync', { ownerId: owner }));
+    expect(response).toMatchObject({ ok: false, error: expect.stringContaining('FAILED_PRECONDITION') });
+    expect(local.state).toEqual(before);
+    expect(remote.writes()).toBe(0);
+  });
+
   it('reports network failure without deleting local data or claiming success', async () => {
     const local = storage(initialLocal()), cloud = firebaseHarness();
     const { service } = await ready(local, cloud);
