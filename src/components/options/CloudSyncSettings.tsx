@@ -107,6 +107,9 @@ export function CloudSyncSettings({ accountId }: { accountId: string }): React.J
             官方云同步尚未完成配置。当前所有功能仍保存在本地，不会上传数据。
           </p>
         )}
+        {configured && (
+          <p className="settings-backup-status" role="status">官方云同步配置已就绪。</p>
+        )}
         {!accountId && (
           <p className="settings-backup-description" role="status">
             请先打开已登录的 ChatGPT 页面，等待 LunaTOC 识别账号后再开启云同步。
