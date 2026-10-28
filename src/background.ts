@@ -21,6 +21,8 @@ import {
 } from '@/features/contractAlert/toolbarWarning';
 import { createToolbarWarningController } from '@/features/contractAlert/toolbarBackground';
 import { installRemoteDeletionObserver } from '@/background/remoteDeletionObserver';
+import { createCloudController, CLOUD_MESSAGE_TYPE } from '@/features/cloud/cloudController';
+import { GET_ACTIVE_ACCOUNT_OWNER_MESSAGE } from '@/features/storage/accountSettings';
 
 // Observe only actual successful ChatGPT delete/visibility-removal mutations in the browser network layer.
 // The observer never stores request bodies and only sends a route ID to the originating tab.
@@ -155,5 +157,46 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
   }).then(sendResponse, (error: unknown) => sendResponse({
     ok: false, error: error instanceof Error ? error.message : 'Local backup operation failed',
   }));
+  return true;
+});
+
+
+/** Only an extension options document may submit Firebase credentials or sync commands. */
+async function hasVerifiedChatGptOwner(ownerId: string): Promise<boolean> {
+  if (!ownerId) return false;
+  let tabs: chrome.tabs.Tab[];
+  try {
+    tabs = await chrome.tabs.query({
+      url: ['https://chatgpt.com/*', 'https://chat.openai.com/*'],
+    });
+  } catch { return false; }
+  for (const tab of tabs) {
+    if (tab.id === undefined) continue;
+    try {
+      const response = await chrome.tabs.sendMessage(tab.id, {
+        type: GET_ACTIVE_ACCOUNT_OWNER_MESSAGE,
+      }) as { ownerId?: unknown } | undefined;
+      if (response?.ownerId === ownerId) return true;
+    } catch { /* A ChatGPT tab can be loading or lack the content script. */ }
+  }
+  return false;
+}
+
+const cloudController = createCloudController(
+  chrome.storage.local, chrome.storage.session, storageWriteQueue, hasVerifiedChatGptOwner
+);
+chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
+  if (!message || typeof message !== 'object' ||
+      (message as { type?: unknown }).type !== CLOUD_MESSAGE_TYPE) return;
+  // A content script is an extension sender too: only the actual options page
+  // is authorized to pass credentials or trigger cross-device transfers.
+  const optionsUrl = chrome.runtime.getURL('src/options/options.html');
+  if (sender.id !== chrome.runtime.id || sender.url !== optionsUrl) {
+    sendResponse({ ok: false, error: 'Firebase 操作只允许从扩展设置页执行' });
+    return false;
+  }
+  void cloudController.execute(message).then(sendResponse, () =>
+    sendResponse({ ok: false, error: 'Firebase 服务暂不可用' })
+  );
   return true;
 });

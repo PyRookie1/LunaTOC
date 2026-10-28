@@ -60,5 +60,10 @@
             "run_at": "document_start",
             "world": "ISOLATED"
         }
+    ],
+    "optional_host_permissions": [
+        "https://identitytoolkit.googleapis.com/*",
+        "https://securetoken.googleapis.com/*",
+        "https://firestore.googleapis.com/*"
     ]
 }

@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { LocalBackupSettings } from './LocalBackupSettings';
 import { LocalAliasCleanupSettings } from './LocalAliasCleanupSettings';
+import { CloudSyncSettings } from './CloudSyncSettings';
 import {
   loadPlatformRuntimeConfig,
   savePlatformRuntimeConfig,
@@ -149,7 +150,7 @@ export function OptionsApp(): React.JSX.Element {
           <label className="settings-choice settings-no-border">
             <span className="settings-choice-info">
               <strong>设置所属账号</strong>
-              <small>账号标识仅用于区分本地设置，不会上传。</small>
+              <small>账号标识用于区分设置；只有主动启用 Firebase 同步时才上传其派生的云端分组。</small>
             </span>
             <select className="settings-account-select" aria-label="设置所属账号"
               value={selectedAccountId}
@@ -247,11 +248,12 @@ export function OptionsApp(): React.JSX.Element {
           </label>
         </div>
       </section>
+      <CloudSyncSettings accountId={selectedAccountId} />
       <LocalBackupSettings />
       <LocalAliasCleanupSettings />
       {savingSettings && <p className="settings-backup-status" role="status">正在保存侧边栏设置…</p>}
       {saveError && <p className="settings-error" role="alert">{saveError}</p>}
-      <p className="settings-footnote">设置保存在浏览器本地，不会上传到维护者服务器。</p>
+      <p className="settings-footnote">默认保存在浏览器本地；仅在主动同步时将所选账号的数据发送到自行配置的 Firebase 项目。不会上传到 LunaTOC 维护者服务器。</p>
     </main>
   );
 }
