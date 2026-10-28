@@ -2,7 +2,7 @@
  * Service-worker bridge for per-tab compatibility warnings in Chrome's toolbar.
  */
 import {
-  PROMPT_COMMIT_TYPE, createPromptWriteCoordinator,
+  PROMPT_COMMIT_TYPE, PROMPT_STORAGE_KEY, createPromptWriteCoordinator,
 } from '@/features/myPrompts/promptWriteCoordinator';
 import { PROMPT_USAGE_COMMIT_TYPE, createPromptUsageWriteCoordinator } from '@/features/myPrompts/promptUsageWriteCoordinator';
 import { SETTINGS_COMMIT_TYPE, createSettingsWriteCoordinator } from '@/features/storage/settingsWriteCoordinator';
@@ -12,7 +12,7 @@ import {
   type BackupStorageMessage, type BackupStorageResponse, type LocalBackup,
 } from '@/features/backup/localBackup';
 import {
-  TOC_ALIAS_COMMIT_TYPE,
+  TOC_ALIAS_COMMIT_TYPE, TOC_ALIAS_PREFIX, TOC_ALIAS_DELETED_PREFIX,
   createTocAliasWriteCoordinator,
 } from '@/features/conversationPrompts/tocAliasWriteCoordinator';
 import {
@@ -21,8 +21,8 @@ import {
 } from '@/features/contractAlert/toolbarWarning';
 import { createToolbarWarningController } from '@/features/contractAlert/toolbarBackground';
 import { installRemoteDeletionObserver } from '@/background/remoteDeletionObserver';
-import { createCloudController, CLOUD_MESSAGE_TYPE } from '@/features/cloud/cloudController';
-import { GET_ACTIVE_ACCOUNT_OWNER_MESSAGE } from '@/features/storage/accountSettings';
+import { createCloudController, CLOUD_MESSAGE_TYPE, CLOUD_AUTO_SYNC_KEY } from '@/features/cloud/cloudController';
+import { ACCOUNT_SETTINGS_KEY, GET_ACTIVE_ACCOUNT_OWNER_MESSAGE } from '@/features/storage/accountSettings';
 
 // Observe only actual successful ChatGPT delete/visibility-removal mutations in the browser network layer.
 // The observer never stores request bodies and only sends a route ID to the originating tab.
@@ -185,6 +185,77 @@ async function hasVerifiedChatGptOwner(ownerId: string): Promise<boolean> {
 const cloudController = createCloudController(
   chrome.storage.local, chrome.storage.session, storageWriteQueue, hasVerifiedChatGptOwner
 );
+
+// Automatic sync is opt-in. Local changes are uploaded only after a Google
+// identity has authenticated with the maintainer's Firebase project.
+async function findVerifiedChatGptOwners(): Promise<string[]> {
+  let tabs: chrome.tabs.Tab[];
+  try {
+    tabs = await chrome.tabs.query({ url: ['https://chatgpt.com/*', 'https://chat.openai.com/*'] });
+  } catch { return []; }
+  const owners = new Set<string>();
+  for (const tab of tabs) {
+    if (tab.id === undefined) continue;
+    try {
+      const response = await chrome.tabs.sendMessage(tab.id, {
+        type: GET_ACTIVE_ACCOUNT_OWNER_MESSAGE,
+      }) as { ownerId?: unknown } | undefined;
+      if (typeof response?.ownerId === 'string' && response.ownerId) owners.add(response.ownerId);
+    } catch { /* A tab may be loading or not yet have a content script. */ }
+  }
+  return [...owners];
+}
+
+let autoSyncRunning = false;
+let autoSyncPending = false;
+async function runAutomaticSync(): Promise<void> {
+  if (autoSyncRunning) {
+    autoSyncPending = true;
+    return;
+  }
+  autoSyncRunning = true;
+  try {
+    do {
+      autoSyncPending = false;
+      const enabled = await chrome.storage.local.get(CLOUD_AUTO_SYNC_KEY);
+      if (enabled[CLOUD_AUTO_SYNC_KEY] !== true) break;
+      const owners = await findVerifiedChatGptOwners();
+      for (const ownerId of owners) {
+        const result = await cloudController.execute({
+          type: CLOUD_MESSAGE_TYPE, action: 'sync', ownerId,
+        });
+        if (!result.ok) {
+          // Keep local work intact. The settings page remains the place to
+          // inspect a manual retry; automatic failures never erase local data.
+          console.warn('LunaTOC automatic cloud sync skipped:', result.error);
+        }
+      }
+    } while (autoSyncPending);
+  } finally {
+    autoSyncRunning = false;
+    if (autoSyncPending) void runAutomaticSync();
+  }
+}
+
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName !== 'local') return;
+  const relevant = Object.keys(changes).some((key) =>
+    key === PROMPT_STORAGE_KEY || key === ACCOUNT_SETTINGS_KEY ||
+    key.startsWith(TOC_ALIAS_PREFIX) || key.startsWith(TOC_ALIAS_DELETED_PREFIX)
+  );
+  if (relevant) void runAutomaticSync();
+});
+
+// Opening or switching to ChatGPT makes that account eligible for sync once
+// the content script can verify its identity.
+chrome.tabs.onActivated.addListener(() => { void runAutomaticSync(); });
+chrome.tabs.onUpdated.addListener((_tabId, changeInfo, tab) => {
+  if (changeInfo.status === 'complete' &&
+      /^https:\/\/(?:chatgpt\.com|chat\.openai\.com)(?:\/|$)/.test(tab.url ?? '')) {
+    void runAutomaticSync();
+  }
+});
+
 chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
   if (!message || typeof message !== 'object' ||
       (message as { type?: unknown }).type !== CLOUD_MESSAGE_TYPE) return;
