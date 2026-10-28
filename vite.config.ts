@@ -10,6 +10,16 @@ const manifest = JSON.parse(
   fs.readFileSync(new URL('./manifest.json', import.meta.url), 'utf8')
 );
 
+// Google OAuth client IDs are public extension configuration. Inject the
+// maintainer-owned Chrome Extension OAuth client at build time; never ship a
+// guessed client ID or enable cloud sync when it is missing.
+const googleOAuthClientId = process.env.VITE_LUNATOC_GOOGLE_OAUTH_CLIENT_ID?.trim() ?? '';
+if (/^[0-9]+-[a-z0-9-]+\\.apps\\.googleusercontent\\.com$/.test(googleOAuthClientId)) {
+  manifest.oauth2 = { client_id: googleOAuthClientId, scopes: ['openid', 'email', 'profile'] };
+} else {
+  delete manifest.oauth2;
+}
+
 // NOTE: When new platforms are added, sync `manifest.json`
 // `content_scripts[].matches` arrays by hand for now. Future work: import
 // `PLATFORMS` from `@/platforms` and merge `platform.matches` into both
