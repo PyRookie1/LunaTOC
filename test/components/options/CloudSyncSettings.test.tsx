@@ -30,6 +30,7 @@ beforeEach(() => {
     runtime: { sendMessage: mocks.sendMessage },
     permissions: { request: mocks.requestPermissions },
     identity: { getAuthToken: mocks.getAuthToken },
+    storage: { onChanged: { addListener: vi.fn(), removeListener: vi.fn() } },
   });
   host = document.createElement('div');
   document.body.appendChild(host);
