@@ -14,7 +14,7 @@ const manifest = JSON.parse(
 // maintainer-owned Chrome Extension OAuth client at build time; never ship a
 // guessed client ID or enable cloud sync when it is missing.
 const googleOAuthClientId = process.env.VITE_LUNATOC_GOOGLE_OAUTH_CLIENT_ID?.trim() ?? '';
-if (/^[0-9]+-[a-z0-9-]+\\.apps\\.googleusercontent\\.com$/.test(googleOAuthClientId)) {
+if (/^[0-9]+-[a-z0-9-]+\.apps\.googleusercontent\.com$/.test(googleOAuthClientId)) {
   manifest.oauth2 = { client_id: googleOAuthClientId, scopes: ['openid', 'email', 'profile'] };
 } else {
   delete manifest.oauth2;
