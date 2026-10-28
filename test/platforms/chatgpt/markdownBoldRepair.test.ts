@@ -56,6 +56,25 @@ describe('parseUnrenderedBoldMarkdown', () => {
     expect(parseUnrenderedBoldMarkdown('**x = \\(a+b\\)**')).toBeNull();
   });
 
+  it('keeps inline and display math literal while repairing neighboring prose', () => {
+    expect(parseUnrenderedBoldMarkdown('$**formula**$ and **prose**')).toEqual([
+      { text: '$**formula**$ and ', bold: false },
+      { text: 'prose', bold: true },
+    ]);
+    expect(parseUnrenderedBoldMarkdown('$$**display**$$ **safe**')).toEqual([
+      { text: '$$**display**$$ ', bold: false },
+      { text: 'safe', bold: true },
+    ]);
+    expect(parseUnrenderedBoldMarkdown('\\(**inline**\\) **visible**')).toEqual([
+      { text: '\\(**inline**\\) ', bold: false },
+      { text: 'visible', bold: true },
+    ]);
+    expect(parseUnrenderedBoldMarkdown('\\[**display**\\] **visible**')).toEqual([
+      { text: '\\[**display**\\] ', bold: false },
+      { text: 'visible', bold: true },
+    ]);
+  });
+
   it('does not interpret malformed nested double-star markers as bold', () => {
     expect(parseUnrenderedBoldMarkdown('**outer ** inner**')).toBeNull();
   });
@@ -108,6 +127,15 @@ describe('startMarkdownBoldRepair', () => {
     expect(assistant.querySelector('pre')?.textContent).toBe('**code block**');
     expect(assistant.querySelector('.katex')?.textContent).toBe('**math content**');
     expect(assistant.querySelectorAll('p')[1]?.textContent).toBe('**x = $a$**');
+  });
+
+  it('preserves math text and changes only adjacent complete bold pairs in the DOM', () => {
+    const assistant = mountAssistant('<p>$**math**$ then **readable** and $$**equation**$$</p>');
+    stopRepair = startMarkdownBoldRepair();
+    expect(assistant.querySelector('p')?.textContent)
+      .toBe('$**math**$ then readable and $$**equation**$$');
+    expect(Array.from(assistant.querySelectorAll('strong')).map((node) => node.textContent))
+      .toEqual(['readable']);
   });
 
   it('does not modify user text or ordinary page text outside assistant Markdown', () => {

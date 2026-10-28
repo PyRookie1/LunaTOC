@@ -121,6 +121,12 @@ export function parseUnrenderedBoldMarkdown(
   let foundBold = false;
 
   while (index < text.length) {
+    const mathEnd = findMathSpanEnd(text, index);
+    if (mathEnd !== -1) {
+      index = mathEnd;
+      continue;
+    }
+
     if (text[index] === '\\') {
       index += Math.min(2, text.length - index);
       continue;
@@ -306,10 +312,44 @@ function isWithinOwnedMarkdown(node: Node, owner: HTMLElement): boolean {
   return false;
 }
 
+/**
+ * Keep paired inline or display math delimiters opaque to bold repair.
+ * Prose bold markers in the same text node can still be repaired.
+ */
+function findMathSpanEnd(text: string, start: number): number {
+  if (text.startsWith('\\(', start) || text.startsWith('\\[', start)) {
+    if (isEscapedAt(text, start)) return -1;
+    const close = text[start + 1] === '(' ? '\\)' : '\\]';
+    const end = text.indexOf(close, start + 2);
+    return end > start + 2 ? end + 2 : -1;
+  }
+
+  if (text[start] !== '$' || isEscapedAt(text, start)) return -1;
+  if (text.startsWith('$$', start)) {
+    const end = text.indexOf('$$', start + 2);
+    return end > start + 2 ? end + 2 : -1;
+  }
+
+  if (text[start + 1] === '$' || isWhitespace(text[start + 1])) return -1;
+  for (let end = start + 1; end < text.length && text[end] !== '\n'; end += 1) {
+    if (text[end] === '$' && !isEscapedAt(text, end) &&
+      !isWhitespace(text[end - 1]) && end > start + 1) {
+      return end + 1;
+    }
+  }
+  return -1;
+}
+
 function findClosingBold(text: string, start: number): number {
   let index = start;
 
   while (index < text.length) {
+    const mathEnd = findMathSpanEnd(text, index);
+    if (mathEnd !== -1) {
+      index = mathEnd;
+      continue;
+    }
+
     if (text[index] === '\\') {
       index += Math.min(2, text.length - index);
       continue;
