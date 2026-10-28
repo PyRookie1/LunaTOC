@@ -215,15 +215,30 @@ test('Chromium MV3: TOC, search, layout, SPA and failure paths',{timeout:150000}
       }finally{await settings.close();}
     });
 
-    await t.test('managed cloud UI stays local-only without maintainer project and rejects legacy backend settings',async()=>{
+    await t.test('managed cloud UI follows bundled config and ignores legacy backend settings',async()=>{
       const settings=await context.newPage();
       try{
         const optionsPage=await worker.evaluate(()=>chrome.runtime.getManifest().options_ui.page);
         await settings.goto('chrome-extension://'+extensionId+'/'+optionsPage);
         const cloud=settings.locator('section[aria-labelledby="cloud-sync-heading"]');
-        await cloud.getByText('LunaTOC 云服务尚未上线', {exact:false}).waitFor();
+        const waitForManagedConfigState=async()=>{
+          // The CI build may intentionally include the maintainer-owned Firebase
+          // config. Wait until the status response has settled in either mode.
+          await settings.waitForFunction(()=>{
+            const section=document.querySelector('section[aria-labelledby="cloud-sync-heading"]');
+            const email=section?.querySelector('input[type="email"]');
+            const unavailable=section?.textContent?.includes('LunaTOC 云服务尚未上线')??false;
+            return Boolean(email&&(!email.disabled||unavailable));
+          },null,{timeout:10000});
+          const configured=await cloud.locator('input[type="email"]').isEnabled();
+          const unavailable=await cloud.getByText('LunaTOC 云服务尚未上线',{exact:false}).count()>0;
+          assert.equal(unavailable,!configured,'UI must reflect the bundled maintainer Firebase config');
+          return configured;
+        };
+        const configuredBeforeLegacySetting=await waitForManagedConfigState();
         assert.equal(await cloud.getByText('Firebase 项目 ID').count(),0);
         assert.equal(await cloud.getByText('Firebase Web API Key').count(),0);
+        // No credentials or cloud session exist in this disposable profile.
         assert.equal(await cloud.getByRole('button',{name:'登录',exact:true}).isDisabled(),true);
         assert.equal(await cloud.getByRole('button',{name:'立即同步',exact:true}).isDisabled(),true);
         await worker.evaluate(async()=>chrome.storage.local.set({
@@ -232,7 +247,11 @@ test('Chromium MV3: TOC, search, layout, SPA and failure paths',{timeout:150000}
           }
         }));
         await settings.reload();
-        await cloud.getByText('LunaTOC 云服务尚未上线',{exact:false}).waitFor();
+        const configuredAfterLegacySetting=await waitForManagedConfigState();
+        assert.equal(configuredAfterLegacySetting,configuredBeforeLegacySetting,
+          'legacy storage must not override the maintainer-bundled Firebase config');
+        assert.equal(await cloud.getByText('Firebase 项目 ID').count(),0);
+        assert.equal(await cloud.getByText('Firebase Web API Key').count(),0);
         assert.equal(await cloud.getByRole('button',{name:'登录',exact:true}).isDisabled(),true);
         assert.equal(await cloud.getByRole('button',{name:'立即同步',exact:true}).isDisabled(),true);
       }finally{await settings.close();}
