@@ -1,0 +1,19 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{uid}/accounts/{accountHash} {
+      allow get: if request.auth != null && request.auth.uid == uid;
+      allow create, update: if request.auth != null
+        && request.auth.uid == uid
+        && accountHash.matches('acct_[a-f0-9]{64}')
+        && request.resource.data.keys().hasOnly(['json'])
+        && request.resource.data.keys().hasAll(['json'])
+        && request.resource.data.json is string
+        && request.resource.data.json.size() <= 240000;
+      allow list, delete: if false;
+    }
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

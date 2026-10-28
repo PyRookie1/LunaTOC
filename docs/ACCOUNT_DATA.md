@@ -18,8 +18,10 @@ LunaTOC 将 ChatGPT 账号 ID 作为本地数据的归属标识。账号 ID 必�
 
 同一个浏览器可以使用多个 ChatGPT 账号。一个账号在不同设备上的数据归属标识保持相同，但**本阶段不自动跨设备传输数据**。
 
-下一阶段接入 Firebase 时，还需独立的 Firebase 登录身份（UID）控制云端资源访问：ChatGPT 账号 ID 用于用户自己的数据分组，不能单独作为 Firebase 身份凭证。云端路径应同时限定 Firebase UID 和 ChatGPT 账号 ID，并以服务器端安全规则隔离不同 Firebase 用户。
+Firebase 云同步使用独立的 Firebase 登录身份（UID）控制云端资源访问：ChatGPT 账号 ID 用于用户自己的数据分组，不能单独作为 Firebase 身份凭证。云端路径应同时限定 Firebase UID 和 ChatGPT 账号 ID，并以服务器端安全规则隔离不同 Firebase 用户。
 
 ## 验收边界
 
 本阶段使用账号模拟测试、存储单元测试和 Chromium 模拟页面测试。上述测试确认扩展的身份检查、写入条件和可见数据范围；**不表示已经验证真实 ChatGPT 网站上所有账号切换场景，也不表示跨设备同步已经实现**。
+
+云同步只在用户主动配置及操作时执行；设置和账号标识的实际传输范围参见 [Firebase 云同步说明](FIREBASE_SYNC.md)。
