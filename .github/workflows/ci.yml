@@ -71,6 +71,7 @@ jobs:
         env:
           VITE_LUNATOC_FIREBASE_PROJECT_ID: ${{ vars.LUNATOC_FIREBASE_PROJECT_ID }}
           VITE_LUNATOC_FIREBASE_WEB_API_KEY: ${{ vars.LUNATOC_FIREBASE_WEB_API_KEY }}
+          VITE_LUNATOC_GOOGLE_OAUTH_CLIENT_ID: ${{ vars.LUNATOC_GOOGLE_OAUTH_CLIENT_ID }}
         run: npm run build
 
       - name: Verify built extension files
@@ -188,4 +189,5 @@ jobs:
         env:
           VITE_LUNATOC_FIREBASE_PROJECT_ID: ${{ vars.LUNATOC_FIREBASE_PROJECT_ID }}
           VITE_LUNATOC_FIREBASE_WEB_API_KEY: ${{ vars.LUNATOC_FIREBASE_WEB_API_KEY }}
+          VITE_LUNATOC_GOOGLE_OAUTH_CLIENT_ID: ${{ vars.LUNATOC_GOOGLE_OAUTH_CLIENT_ID }}
         run: node scripts/check-managed-firebase-release.mjs
