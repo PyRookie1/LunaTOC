@@ -216,6 +216,12 @@ export function createCloudController(
       const response = await fetcher(url, { headers: { Authorization: 'Bearer ' + user.idToken } });
       let remote = emptyCloudSnapshot();
       let updateTime: string | null = null;
+      // An authenticated 404 after an acknowledged sync is NOT a deletion
+      // instruction. The document may have been removed by an administrator or
+      // become unavailable after a project/security-rule change. Fail closed.
+      if (response.status === 404 && hasBaseline) {
+        throw new Error('已同步的 Firebase 文档意外缺失；已停止同步并保留本地数据。请检查项目和 Firestore 安全规则');
+      }
       if (response.status !== 404) {
         const document = await jsonResponse(response) as unknown as FirestoreDocument;
         if (typeof document.fields?.json?.stringValue !== 'string' || !document.updateTime) {
