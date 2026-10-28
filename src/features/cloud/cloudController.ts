@@ -10,6 +10,7 @@ import { bundledFirebaseConfig } from './managedFirebaseConfig';
 
 export const CLOUD_MESSAGE_TYPE = 'LUNATOC_CLOUD_V1';
 const SESSION_KEY = 'lunatoc:cloud:auth:session:v1';
+export const CLOUD_AUTO_SYNC_KEY = 'lunatoc:cloud:auto-sync:v1';
 const BASE_PREFIX = 'lunatoc:cloud:baseline:v1:';
 const PROJECT_PATTERN = /^[a-z][a-z0-9-]{4,62}$/;
 const AUTH_KEY_PATTERN = /^[A-Za-z0-9_-]{16,200}$/;
@@ -19,10 +20,11 @@ interface FirestoreDocument { fields?: { json?: { stringValue?: string } }; upda
 type LocalStorage = Pick<chrome.storage.StorageArea, 'get' | 'set' | 'remove'>;
 type Fetcher = typeof fetch;
 export type CloudAction =
-  | { type: typeof CLOUD_MESSAGE_TYPE; action: 'sign-in' | 'sign-up'; email: string; password: string }
+  | { type: typeof CLOUD_MESSAGE_TYPE; action: 'google-sign-in'; accessToken: string }
+  | { type: typeof CLOUD_MESSAGE_TYPE; action: 'set-auto-sync'; enabled: boolean }
   | { type: typeof CLOUD_MESSAGE_TYPE; action: 'sign-out' | 'status' }
   | { type: typeof CLOUD_MESSAGE_TYPE; action: 'sync'; ownerId: string };
-export type CloudResult = { ok: true; message: string; uid?: string; configured?: boolean }
+export type CloudResult = { ok: true; message: string; uid?: string; configured?: boolean; autoSyncEnabled?: boolean }
   | { ok: false; error: string };
 
 function validConfig(value: unknown): value is Config {
@@ -97,22 +99,21 @@ export function createCloudController(
     await sessionStorage.set({ [SESSION_KEY]: renewed });
     return renewed;
   }
-  async function login(email: string, password: string, signup: boolean): Promise<CloudResult> {
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254 ||
-        typeof password !== 'string' || password.length < 6 || password.length > 256) {
-      throw new Error('邮箱或密码格式不符合 Firebase Email/Password 要求');
+  async function loginWithGoogle(accessToken: string): Promise<CloudResult> {
+    if (typeof accessToken !== 'string' || accessToken.length < 20 || accessToken.length > 10_000) {
+      throw new Error('Google 授权凭据无效；请重新开启云同步');
     }
     const cfg = await config();
-    const method = signup ? 'signUp' : 'signInWithPassword';
+    const postBody = new URLSearchParams({ access_token: accessToken, providerId: 'google.com' }).toString();
     const response = await fetcher(
-      'https://identitytoolkit.googleapis.com/v1/accounts:' + method + '?key=' + encodeURIComponent(cfg.apiKey),
+      'https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=' + encodeURIComponent(cfg.apiKey),
       { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, returnSecureToken: true }) }
+        body: JSON.stringify({ postBody, requestUri: 'http://localhost', returnSecureToken: true, returnIdpCredential: true }) }
     );
     const result = await jsonResponse(response);
     if (typeof result.idToken !== 'string' || typeof result.refreshToken !== 'string' ||
         typeof result.localId !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(result.localId)) {
-      throw new Error('Firebase 未返回有效的用户登录信息');
+      throw new Error('Firebase 未返回有效的 Google 登录信息');
     }
     const expiry = Number(result.expiresIn);
     if (!Number.isFinite(expiry) || expiry <= 0) throw new Error('Firebase 登录有效期无效');
@@ -121,7 +122,7 @@ export function createCloudController(
       uid: result.localId, expiresAt: Date.now() + expiry * 1000,
     };
     await sessionStorage.set({ [SESSION_KEY]: active });
-    return { ok: true, message: 'Firebase 登录成功；数据尚未上传，请选择已验证的 ChatGPT 账号并点击“立即同步”', uid: active.uid };
+    return { ok: true, message: 'Google 账号授权成功；正在验证当前 ChatGPT 账号并同步', uid: active.uid };
   }
   async function currentLocal(ownerId: string, base: CloudSnapshot): Promise<CloudSnapshot> {
     const backup = await createLocalBackup(local as Parameters<typeof createLocalBackup>[0]);
@@ -276,17 +277,30 @@ export function createCloudController(
       switch (command.action) {
         case 'configure':
           throw new Error('Firebase 项目由 LunaTOC 维护者统一管理，禁止从扩展页面更改');
-        case 'sign-in':
-        case 'sign-up':
-          return await login(command.email as string, command.password as string, command.action === 'sign-up');
-        case 'sign-out':
+        case 'google-sign-in':
+          return await loginWithGoogle(command.accessToken as string);
+        case 'set-auto-sync': {
+          if (typeof command.enabled !== 'boolean') throw new Error('云同步开关状态无效');
+          if (command.enabled) {
+            const active = await session();
+            await local.set({ [CLOUD_AUTO_SYNC_KEY]: true });
+            return { ok: true, message: '云同步已开启；后续本地更改会自动同步', uid: active.uid, autoSyncEnabled: true };
+          }
+          await local.set({ [CLOUD_AUTO_SYNC_KEY]: false });
           await sessionStorage.remove(SESSION_KEY);
-          return { ok: true, message: 'Firebase 已退出；本地和云端数据均未删除' };
+          return { ok: true, message: '云同步已关闭；本地数据保留，云端数据不会自动删除', autoSyncEnabled: false };
+        }
+        case 'sign-out':
+          await local.set({ [CLOUD_AUTO_SYNC_KEY]: false });
+          await sessionStorage.remove(SESSION_KEY);
+          return { ok: true, message: '云同步已关闭；本地和云端数据均未删除', autoSyncEnabled: false };
         case 'status': {
-          const auth = await sessionStorage.get(SESSION_KEY);
+          const [auth, settings] = await Promise.all([
+            sessionStorage.get(SESSION_KEY), local.get(CLOUD_AUTO_SYNC_KEY),
+          ]);
           const user = auth[SESSION_KEY];
-          return { ok: true, message: validSession(user) ? 'Firebase 已登录' : 'Firebase 未登录',
-            configured: validConfig(managedConfig),
+          return { ok: true, message: validSession(user) ? 'Google 账号已授权' : '云同步未授权',
+            configured: validConfig(managedConfig), autoSyncEnabled: settings[CLOUD_AUTO_SYNC_KEY] === true,
             ...(validSession(user) ? { uid: user.uid } : {}) };
         }
         case 'sync':
