@@ -37,6 +37,6 @@ LunaTOC 是面向 ChatGPT 长对话的 Chrome 扩展，用于整理提问目录�
 
 扩展会读取生成目录所需的 ChatGPT 页面内容，并通过 ChatGPT 自身的同源登录接口识别账号。扩展数据保存在本地浏览器，不会上传到 LunaTOC 维护者服务器；项目不包含遥测或广告追踪。详见 [隐私说明](PRIVACY.md)。
 
-## 许可
+## 许可与第三方来源
 
-LunaTOC 以独立扩展名称和发布流程维护。项目采用 MIT License；第三方代码及依赖的许可信息按适用条款保留，相关说明见 [第三方许可](docs/VENDOR_LICENSE_SHADCN.md)。
+LunaTOC 作为独立扩展名称和发布流程维护。仓库中的部分实现来源于 [Leo7805/luna-toc](https://github.com/Leo7805/luna-toc)；依照 MIT 许可保留原有版权与许可通知。LunaTOC 独立维护，不代表上游项目的官方发布渠道。第三方组件的许可说明见 [第三方许可](docs/VENDOR_LICENSE_SHADCN.md)。
