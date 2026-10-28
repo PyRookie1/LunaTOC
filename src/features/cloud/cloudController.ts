@@ -11,6 +11,8 @@ import { bundledFirebaseConfig } from './managedFirebaseConfig';
 export const CLOUD_MESSAGE_TYPE = 'LUNATOC_CLOUD_V1';
 const SESSION_KEY = 'lunatoc:cloud:auth:session:v1';
 export const CLOUD_AUTO_SYNC_KEY = 'lunatoc:cloud:auto-sync:v1';
+export const CLOUD_AUTO_SYNC_STATUS_KEY = 'lunatoc:cloud:auto-sync-status:v1';
+export interface CloudAutoSyncStatus { state: 'success' | 'error'; message: string; updatedAt: number }
 const BASE_PREFIX = 'lunatoc:cloud:baseline:v1:';
 const PROJECT_PATTERN = /^[a-z][a-z0-9-]{4,62}$/;
 const AUTH_KEY_PATTERN = /^[A-Za-z0-9_-]{16,200}$/;
@@ -24,7 +26,7 @@ export type CloudAction =
   | { type: typeof CLOUD_MESSAGE_TYPE; action: 'set-auto-sync'; enabled: boolean }
   | { type: typeof CLOUD_MESSAGE_TYPE; action: 'sign-out' | 'status' }
   | { type: typeof CLOUD_MESSAGE_TYPE; action: 'sync'; ownerId: string };
-export type CloudResult = { ok: true; message: string; uid?: string; configured?: boolean; autoSyncEnabled?: boolean }
+export type CloudResult = { ok: true; message: string; uid?: string; configured?: boolean; autoSyncEnabled?: boolean; autoSyncStatus?: CloudAutoSyncStatus }
   | { ok: false; error: string };
 
 function validConfig(value: unknown): value is Config {
@@ -296,11 +298,13 @@ export function createCloudController(
           return { ok: true, message: '云同步已关闭；本地和云端数据均未删除', autoSyncEnabled: false };
         case 'status': {
           const [auth, settings] = await Promise.all([
-            sessionStorage.get(SESSION_KEY), local.get(CLOUD_AUTO_SYNC_KEY),
+            sessionStorage.get(SESSION_KEY), local.get([CLOUD_AUTO_SYNC_KEY, CLOUD_AUTO_SYNC_STATUS_KEY]),
           ]);
           const user = auth[SESSION_KEY];
           return { ok: true, message: validSession(user) ? 'Google 账号已授权' : '云同步未授权',
             configured: validConfig(managedConfig), autoSyncEnabled: settings[CLOUD_AUTO_SYNC_KEY] === true,
+            ...(settings[CLOUD_AUTO_SYNC_STATUS_KEY] && typeof settings[CLOUD_AUTO_SYNC_STATUS_KEY] === 'object'
+              ? { autoSyncStatus: settings[CLOUD_AUTO_SYNC_STATUS_KEY] as CloudAutoSyncStatus } : {}),
             ...(validSession(user) ? { uid: user.uid } : {}) };
         }
         case 'sync':
