@@ -66,6 +66,12 @@ export function CloudSyncSettings({ accountId }: { accountId: string }): React.J
     try {
       if (!nextEnabled) {
         const result = await command({ action: 'set-auto-sync', enabled: false });
+        try {
+          const auth = await chrome.identity.getAuthToken({ interactive: false });
+          const accessToken = typeof auth === 'string' ? auth : auth?.token;
+          if (accessToken) await chrome.identity.removeCachedAuthToken({ token: accessToken });
+        } catch { /* Disabling sync must succeed even if Google auth is unavailable. */ }
+        try { await chrome.permissions.remove({ origins: firebaseOrigins }); } catch { /* Already absent. */ }
         setEnabled(false);
         setUid('');
         setMessage(result.message);
