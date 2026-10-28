@@ -253,8 +253,8 @@ describe('LunaTOC local backup', () => {
     expect(box.state[ALIAS]).toEqual({
       ownerId: 'account-1', aliases: { 'message-1': '自定义目录', 'message-2': 'keep' },
     });
-    expect(box.state[EXTRA_ALIAS]).toBeUndefined();
-    expect(box.remove).toHaveBeenCalledWith([EXTRA_ALIAS]);
+    expect(box.state[EXTRA_ALIAS]).toEqual({ ownerId: 'account-1', aliases: { 'message-3': 'outdated alias' } });
+    expect(box.remove).not.toHaveBeenCalled();
     expect(box.state[SETTINGS]).toEqual(imported.data.settings);
     expect(box.state['other-key']).toBe('untouched');
   });
