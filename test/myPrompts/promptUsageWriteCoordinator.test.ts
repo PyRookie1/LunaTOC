@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createPromptUsageWriteCoordinator, PROMPT_USAGE_COMMIT_TYPE } from '@/features/myPrompts/promptUsageWriteCoordinator';
 import { createSerialWriteQueue } from '@/features/storage/serialWriteQueue';
-const request = (action: string, extra: Record<string, unknown> = {}) => ({ type: PROMPT_USAGE_COMMIT_TYPE, action, ...extra });
+const request = (action: string, extra: Record<string, unknown> = {}) => ({ type: PROMPT_USAGE_COMMIT_TYPE, action, ownerId: 'account-1', ...extra });
 function backing(initial: Record<string, unknown> = {}) {
  const state: Record<string, unknown>={ 'lumaToc:myPromptsV1': [{ id: 'p', ownerId: 'account-1', title: 'p', content: 'p', createdAt: 1, updatedAt: 1 }], ...initial };let failNext=false;
  const get=vi.fn(async()=>({'lunaToc:promptUsageV1':state['lunaToc:promptUsageV1'],'lumaToc:myPromptsV1':state['lumaToc:myPromptsV1']}));
@@ -27,6 +27,24 @@ describe('background prompt usage coordinator',()=>{
   expect(await writer.commit(request('record-use',{promptId:'p'}))).toEqual({ok:false,error:'Prompt usage storage contains invalid data; refusing to overwrite it'});
   expect(await writer.commit(request('record-use',{promptId:''}))).toEqual({ok:false,error:'Invalid prompt usage request'});expect(box.set).not.toHaveBeenCalled();
  });
+
+ it('rejects writes without a verified account and cannot touch another account statistics',async()=>{
+  const prompt=(id:string,ownerId:string)=>({id,ownerId,title:id,content:id,createdAt:1,updatedAt:1});
+  const box=backing({
+   'lumaToc:myPromptsV1':[prompt('p','account-1'),prompt('other','account-2')],
+   'lunaToc:promptUsageV1':{p:{usageCount:1,lastUsedAt:1},other:{usageCount:5,lastUsedAt:2}}
+  });
+  const writer=createPromptUsageWriteCoordinator(box.storage);
+  expect(await writer.commit(request('record-use',{promptId:'other'}))).toMatchObject({ok:false});
+  expect(await writer.commit(request('remove',{promptId:'other'}))).toMatchObject({ok:true});
+  expect(await writer.commit(request('clear'))).toMatchObject({ok:true,usage:{other:{usageCount:5,lastUsedAt:2}}});
+  expect(await writer.commit(request('record-use',{promptId:'p',ownerId:'__proto__'})))
+   .toEqual({ok:false,error:'Invalid prompt usage request'});
+  expect(await writer.commit({type:PROMPT_USAGE_COMMIT_TYPE,action:'clear'}))
+   .toEqual({ok:false,error:'Invalid prompt usage request'});
+  expect(box.state['lunaToc:promptUsageV1']).toEqual({other:{usageCount:5,lastUsedAt:2}});
+ });
+
  it('keeps the shared queue usable after a storage rejection',async()=>{
   const box=backing({'lunaToc:promptUsageV1':{}}),writer=createPromptUsageWriteCoordinator(box.storage);box.failOnce();
   expect(await writer.commit(request('record-use',{promptId:'p'}))).toEqual({ok:false,error:'quota exceeded'});expect((await writer.commit(request('record-use',{promptId:'p'})).then(r=>r.ok))).toBe(true);

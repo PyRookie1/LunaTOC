@@ -105,7 +105,6 @@ export function createPromptStore(): PromptStore {
   let cache: SavedPrompt[] = [];
   let hydrated = false;
   let writeQueue: Promise<void> = Promise.resolve();
-  let cleanupPromise: Promise<void> | null = null;
   const listeners = new Set<PromptsChangedListener>();
 
   const snapshot = (): SavedPrompt[] => {
@@ -123,18 +122,6 @@ export function createPromptStore(): PromptStore {
     hydrated = true;
     notify();
   };
-  const ensureUnownedCleaned = (): Promise<void> => {
-    if (!cleanupPromise) {
-      cleanupPromise = backgroundCommit({
-        type: PROMPT_COMMIT_TYPE, action: 'cleanup-unowned',
-      }).catch((error) => {
-        cleanupPromise = null;
-        throw error;
-      });
-    }
-    return cleanupPromise;
-  };
-
   if (isContextValid()) {
     try {
       chrome.storage.onChanged.addListener((changes, areaName) => {
@@ -143,8 +130,10 @@ export function createPromptStore(): PromptStore {
         if (next === undefined) publish([]);
         else if (isPromptList(next)) publish(next);
         else {
-          cleanupPromise = null;
-          void ensureUnownedCleaned().catch(() => undefined);
+          // Invalid storage must not be shown or silently rewritten.
+          cache = [];
+          hydrated = false;
+          notify();
         }
       });
     } catch { /* Context might already have been invalidated. */ }
@@ -158,12 +147,10 @@ export function createPromptStore(): PromptStore {
   async function getAll(): Promise<SavedPrompt[]> {
     const ownerId = getActiveConversationOwner();
     if (!ownerId) {
-      try { await ensureUnownedCleaned(); } catch { /* Never expose unbound data. */ }
       return [];
     }
     await writeQueue;
     try {
-      await ensureUnownedCleaned();
       const latest = await readFresh();
       if (!hydrated || !equalPromptLists(cache, latest)) publish(latest);
       return snapshot();
@@ -189,8 +176,7 @@ export function createPromptStore(): PromptStore {
         if (ownerId !== getActiveConversationOwner()) {
           throw new Error('ChatGPT account changed; prompts were not cleared');
         }
-        await ensureUnownedCleaned();
-        const latest = await readFresh();
+          const latest = await readFresh();
         if (ownerId !== getActiveConversationOwner()) {
           throw new Error('ChatGPT account changed; prompts were not cleared');
         }
@@ -207,8 +193,7 @@ export function createPromptStore(): PromptStore {
         if (ownerId !== getActiveConversationOwner()) {
           throw new Error('ChatGPT account changed; prompts were not saved');
         }
-        await ensureUnownedCleaned();
-        const latest = await readFresh();
+          const latest = await readFresh();
         const current = latest.filter((prompt) => prompt.ownerId === ownerId);
         const nextOwned = transform(clone(current));
         if (!isPromptList(nextOwned) || nextOwned.some((prompt) => prompt.ownerId !== ownerId)) {

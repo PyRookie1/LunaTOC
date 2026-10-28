@@ -154,16 +154,27 @@ describe('single-tab My Prompts storage', () => {
 
   it('isolates prompt lists by verified account and preserves other accounts on edits', async () => {
     const otherAccount = { ...make('private-other'), ownerId: 'account-2' };
-    const unowned = { id: 'legacy', title: 'Legacy', content: 'Delete me', createdAt: 1, updatedAt: 1 };
-    const invalidOwner = { ...make('bad-owner'), ownerId: 123 };
-    data[PROMPT_STORAGE_KEY] = [original, otherAccount, unowned, invalidOwner];
+    data[PROMPT_STORAGE_KEY] = [original, otherAccount];
     const store = createPromptStore();
     expect((await store.getAll()).map((prompt) => prompt.id)).toEqual(['saved']);
-    expect(data[PROMPT_STORAGE_KEY]).toEqual([original, otherAccount]);
     await store.update((prompts) => [...prompts, make('added')]);
     expect(data[PROMPT_STORAGE_KEY]).toEqual([otherAccount, original, make('added')]);
     setActiveConversationOwner('account-2');
     expect((await store.getAll()).map((prompt) => prompt.id)).toEqual(['private-other']);
+    setActiveConversationOwner(null);
+    expect(await store.getAll()).toEqual([]);
+    expect(data[PROMPT_STORAGE_KEY]).toEqual([otherAccount, original, make('added')]);
+  });
+
+  it('rejects unowned prompt records without deleting or adopting them', async () => {
+    const unowned = { id: 'unknown', title: 'Unowned', content: 'Private', createdAt: 1, updatedAt: 1 };
+    data[PROMPT_STORAGE_KEY] = [original, unowned];
+    const store = createPromptStore();
+    await expect(store.getAll()).rejects.toThrow('invalid data');
+    await expect(store.update((prompts) => [...prompts, make('new')]))
+      .rejects.toThrow('invalid data');
+    expect(data[PROMPT_STORAGE_KEY]).toEqual([original, unowned]);
+    expect(writeSpy).not.toHaveBeenCalled();
   });
 
   it('reports a background interruption without pretending to save', async () => {
