@@ -10,12 +10,12 @@ import { ACCOUNT_SETTINGS_KEY, isValidAccountOwnerId, type AccountSettingsMap } 
 import { isPermanentConversationId } from '@/navigation/lifecycle/protocol';
 import { isValidTocMessageId } from '@/features/conversationPrompts/tocAliasWriteCoordinator';
 
-const PROMPTS_KEY = 'lumaToc:myPromptsV1'; // Legacy spelling is intentional.
+const PROMPTS_KEY = 'lumaToc:myPromptsV1';
 const USAGE_KEY = 'lunaToc:promptUsageV1';
 const ALIAS_PREFIX = 'chatToc:aliases:v1:';
 const ALIAS_DELETED_PREFIX = 'chatToc:aliases:deleted:v1:';
-export const BACKUP_FORMAT = 'luna-toc-local-backup';
-export const BACKUP_VERSION = 3;
+export const BACKUP_FORMAT = 'lunatoc-local-backup';
+export const BACKUP_VERSION = 1;
 export const MAX_BACKUP_BYTES = 12 * 1024 * 1024;
 const MAX_ENTRIES = 20_000;
 
@@ -70,18 +70,6 @@ function integer(value: unknown, label: string): number {
   return value;
 }
 
-function isUnownedPromptRecord(value: unknown): boolean {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-  const item = value as Record<string, unknown>;
-  return typeof item.ownerId !== 'string' || !item.ownerId.trim() || item.ownerId.length > 256;
-}
-
-function isUnownedAliasRecord(value: unknown): boolean {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-  const item = value as Record<string, unknown>;
-  return !isValidAccountOwnerId(item.ownerId);
-}
-
 function validatePrompts(value: unknown): SavedPrompt[] {
   if (!Array.isArray(value) || value.length > MAX_ENTRIES) throw new Error('提示词列表无效或过大。');
   const ids = new Set<string>();
@@ -90,6 +78,7 @@ function validatePrompts(value: unknown): SavedPrompt[] {
     keysOnly(raw, ['id', 'ownerId', 'title', 'content', 'createdAt', 'updatedAt'], '提示词');
     const id = text(raw.id, '提示词 ID', 256);
     const ownerId = text(raw.ownerId, '账号标识', 256);
+    if (!isValidAccountOwnerId(ownerId)) throw new Error('账号标识无效。');
     if (ids.has(id)) throw new Error('备份包含重复的提示词 ID。');
     ids.add(id);
     return {
@@ -126,6 +115,7 @@ function validateAliases(value: unknown): Record<string, BackupAliasRecord> {
     const item = record(entry, '会话别名');
     keysOnly(item, ['ownerId', 'aliases'], '会话别名');
     const ownerId = text(item.ownerId, '账号标识', 256);
+    if (!isValidAccountOwnerId(ownerId)) throw new Error('账号标识无效。');
     const aliases = record(item.aliases, '别名映射');
     total += Object.keys(aliases).length;
     if (total > MAX_ENTRIES) throw new Error('目录消息别名过多。');
@@ -198,31 +188,6 @@ function validateData(value: unknown): LocalBackupData {
   };
 }
 
-function validateLegacyDataV2(value: unknown): {
-  prompts: SavedPrompt[];
-  promptUsage: PromptUsageMap;
-  aliases: Record<string, BackupAliasRecord>;
-  theme: ThemeSettings;
-  sidebar: SidebarPreferences;
-} {
-  const raw = record(value, '旧版备份数据');
-  keysOnly(raw, ['prompts', 'promptUsage', 'aliases', 'theme', 'sidebar'], '旧版备份数据');
-  for (const required of ['prompts', 'promptUsage', 'aliases', 'theme', 'sidebar']) {
-    if (!Object.hasOwn(raw, required)) throw new Error('旧版备份缺少必需的数据类别。');
-  }
-  const prompts = validatePrompts(raw.prompts);
-  const aliases = validateAliases(raw.aliases);
-  const usage = validateUsage(raw.promptUsage);
-  const validIds = new Set(prompts.map((prompt) => prompt.id));
-  if (Object.keys(usage).some((id) => !validIds.has(id))) {
-    throw new Error('备份的使用统计引用了不存在的提示词。');
-  }
-  return {
-    prompts, promptUsage: usage, aliases,
-    theme: validateTheme(raw.theme), sidebar: validateSidebar(raw.sidebar),
-  };
-}
-
 /** Reject unknown versions, unexpected fields, malformed records and oversized files. */
 export function parseLocalBackup(source: string): LocalBackup {
   if (new Blob([source]).size > MAX_BACKUP_BYTES) throw new Error('备份文件超过 12 MiB 限制。');
@@ -230,28 +195,11 @@ export function parseLocalBackup(source: string): LocalBackup {
   try { input = JSON.parse(source); } catch { throw new Error('文件不是有效的 JSON。'); }
   const raw = record(input, '备份文件');
   keysOnly(raw, ['format', 'version', 'exportedAt', 'data'], '备份文件');
-  if (raw.format !== BACKUP_FORMAT || (raw.version !== 2 && raw.version !== BACKUP_VERSION)) {
+  if (raw.format !== BACKUP_FORMAT || raw.version !== BACKUP_VERSION) {
     throw new Error('不支持的备份文件格式或版本。');
   }
   const exportedAt = text(raw.exportedAt, '导出时间', 64);
   if (!Number.isFinite(Date.parse(exportedAt))) throw new Error('导出时间无效。');
-  if (raw.version === 2) {
-    const legacy = validateLegacyDataV2(raw.data);
-    const owners = new Set<string>(legacy.prompts.map((prompt) => prompt.ownerId));
-    Object.values(legacy.aliases).forEach((alias) => owners.add(alias.ownerId));
-    if (owners.size === 0) {
-      throw new Error('旧版备份的全局设置没有账号归属，无法安全导入；请先打开目标 ChatGPT 账号并重新导出新版备份。');
-    }
-    const settings: AccountSettingsMap = Object.create(null) as AccountSettingsMap;
-    owners.forEach((ownerId) => { settings[ownerId] = { theme: legacy.theme, sidebar: legacy.sidebar }; });
-    return {
-      format: BACKUP_FORMAT, version: BACKUP_VERSION, exportedAt,
-      data: validateData({
-        prompts: legacy.prompts, promptUsage: legacy.promptUsage,
-        aliases: legacy.aliases, settings,
-      }),
-    };
-  }
   return { format: BACKUP_FORMAT, version: BACKUP_VERSION, exportedAt, data: validateData(raw.data) };
 }
 
@@ -261,7 +209,7 @@ export async function createLocalBackup(
 ): Promise<LocalBackup> {
   const all = await storage.get(null) as Record<string, unknown>;
   const aliases: Record<string, unknown> = Object.fromEntries(Object.entries(all)
-    .filter(([key, value]) => key.startsWith(ALIAS_PREFIX) && !isUnownedAliasRecord(value))
+    .filter(([key]) => key.startsWith(ALIAS_PREFIX))
     .map(([key, value]) => [key.slice(ALIAS_PREFIX.length), value]));
 
   // A deleted prompt can leave usage metadata behind if its asynchronous cleanup
@@ -269,7 +217,7 @@ export async function createLocalBackup(
   // validation of imported files or mutate the user's storage while exporting.
   const rawPrompts = all[PROMPTS_KEY] ?? [];
   if (!Array.isArray(rawPrompts)) throw new Error('提示词列表无效或过大。');
-  const prompts = validatePrompts(rawPrompts.filter((item) => !isUnownedPromptRecord(item)));
+  const prompts = validatePrompts(rawPrompts);
   const existingUsage = validateUsage(all[USAGE_KEY] ?? {});
   const validPromptIds = new Set(prompts.map((prompt) => prompt.id));
   const promptUsage = Object.fromEntries(Object.entries(existingUsage)
@@ -377,10 +325,9 @@ export async function restoreLocalBackup(
   for (const [route, entry] of Object.entries(nextData.aliases)) {
     values[ALIAS_PREFIX + route] = entry;
   }
-  const obsolete = Object.keys(original).filter((key) => key.startsWith(ALIAS_PREFIX) &&
-    (mode === 'replace'
-      ? !Object.hasOwn(values, key)
-      : isUnownedAliasRecord(original[key])));
+  const obsolete = mode === 'replace'
+    ? Object.keys(original).filter((key) => key.startsWith(ALIAS_PREFIX) && !Object.hasOwn(values, key))
+    : [];
   // Explicit restore may revive a deleted conversation. Clear its durable fence
   // only as part of the user-confirmed restore, with rollback on failure.
   const revived = Object.keys(nextData.aliases)

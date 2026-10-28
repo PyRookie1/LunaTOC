@@ -1,5 +1,5 @@
 /**
- * Starts LunaTOC's legacy DOM application and isolated React UI environment
+ * Starts LunaTOC's DOM application and isolated React UI environment
  * from the Chrome Content Script entry.
  */
 import { initializeApplication } from '@/app/applicationShell';

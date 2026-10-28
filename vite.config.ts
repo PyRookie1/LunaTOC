@@ -34,7 +34,7 @@ export default defineConfig({
  */
 function cleanEntryFileNames(): Plugin {
   return {
-    name: 'luna-toc:clean-entry-file-names',
+    name: 'lunatoc:clean-entry-file-names',
     enforce: 'post',
     closeBundle() {
       const assetsDirectory = new URL('./dist/assets/', import.meta.url);
