@@ -17,6 +17,7 @@ const firebaseOrigins = [
 
 export function CloudSyncSettings({ accountId }: { accountId: string }): React.JSX.Element {
   const [configured, setConfigured] = useState(false);
+  const [statusLoaded, setStatusLoaded] = useState(false);
   const [uid, setUid] = useState('');
   const [enabled, setEnabled] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -32,8 +33,12 @@ export function CloudSyncSettings({ accountId }: { accountId: string }): React.J
       setUid(status.uid ?? '');
       setEnabled(status.autoSyncEnabled === true);
       setLastSyncStatus(status.autoSyncStatus ?? null);
+      setStatusLoaded(true);
     }).catch((cause: unknown) => {
-      if (live) setError(cause instanceof Error ? cause.message : '无法读取云同步状态');
+      if (live) {
+        setStatusLoaded(true);
+        setError(cause instanceof Error ? cause.message : '无法读取云同步状态');
+      }
     });
     const onStorageChange = (
       changes: Record<string, chrome.storage.StorageChange>,
@@ -102,12 +107,15 @@ export function CloudSyncSettings({ accountId }: { accountId: string }): React.J
         <p>默认关闭。开启后，LunaTOC 使用你的 Google 账号进行跨设备身份识别，并自动同步已验证 ChatGPT 账号的提示词、目录别名和偏好。不需要创建 LunaTOC 同步账号。</p>
       </div>
       <div className="settings-card">
-        {!configured && (
+        {!statusLoaded && (
+          <p className="settings-backup-description" role="status">正在检查官方云同步配置…</p>
+        )}
+        {statusLoaded && !configured && (
           <p className="settings-backup-description" role="status">
             官方云同步尚未完成配置。当前所有功能仍保存在本地，不会上传数据。
           </p>
         )}
-        {configured && (
+        {statusLoaded && configured && (
           <p className="settings-backup-status" role="status">官方云同步配置已就绪。</p>
         )}
         {!accountId && (
@@ -129,7 +137,7 @@ export function CloudSyncSettings({ accountId }: { accountId: string }): React.J
             className="settings-switch-input"
             type="checkbox"
             checked={enabled}
-            disabled={busy || !configured || !accountId}
+            disabled={busy || !statusLoaded || !configured || !accountId}
             onChange={(event) => void changeEnabled(event.currentTarget.checked)}
           />
           <span className="settings-switch-track" aria-hidden="true" />
