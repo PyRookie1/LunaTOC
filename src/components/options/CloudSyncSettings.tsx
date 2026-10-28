@@ -1,6 +1,6 @@
 /** Optional cloud sync: Google identity is authorized once; sync then runs automatically. */
 import { useEffect, useState } from 'react';
-import { CLOUD_MESSAGE_TYPE, type CloudResult } from '@/features/cloud/cloudController';
+import { CLOUD_AUTO_SYNC_STATUS_KEY, CLOUD_MESSAGE_TYPE, type CloudAutoSyncStatus, type CloudResult } from '@/features/cloud/cloudController';
 
 type Success = Extract<CloudResult, { ok: true }>;
 async function command(data: Record<string, unknown>): Promise<Success> {
@@ -22,6 +22,7 @@ export function CloudSyncSettings({ accountId }: { accountId: string }): React.J
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [lastSyncStatus, setLastSyncStatus] = useState<CloudAutoSyncStatus | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -30,10 +31,26 @@ export function CloudSyncSettings({ accountId }: { accountId: string }): React.J
       setConfigured(status.configured === true);
       setUid(status.uid ?? '');
       setEnabled(status.autoSyncEnabled === true);
+      setLastSyncStatus(status.autoSyncStatus ?? null);
     }).catch((cause: unknown) => {
       if (live) setError(cause instanceof Error ? cause.message : '无法读取云同步状态');
     });
-    return () => { live = false; };
+    const onStorageChange = (
+      changes: Record<string, chrome.storage.StorageChange>,
+      areaName: chrome.storage.AreaName
+    ): void => {
+      if (areaName !== 'local' || !changes[CLOUD_AUTO_SYNC_STATUS_KEY]) return;
+      const value = changes[CLOUD_AUTO_SYNC_STATUS_KEY].newValue as CloudAutoSyncStatus | undefined;
+      if (value && (value.state === 'success' || value.state === 'error') &&
+          typeof value.message === 'string' && typeof value.updatedAt === 'number') {
+        setLastSyncStatus(value);
+      }
+    };
+    chrome.storage.onChanged.addListener(onStorageChange);
+    return () => {
+      live = false;
+      chrome.storage.onChanged.removeListener(onStorageChange);
+    };
   }, []);
 
   async function changeEnabled(nextEnabled: boolean): Promise<void> {
@@ -119,7 +136,12 @@ export function CloudSyncSettings({ accountId }: { accountId: string }): React.J
           {uid ? '（Google 身份已关联）' : ''}
         </p>
         {message && <p className="settings-backup-status" role="status">{message}</p>}
-        {error && <p className="settings-error" role="alert">{error}</p>}
+        {lastSyncStatus && enabled && (
+          lastSyncStatus.state === 'error'
+            ? <p className="settings-error" role="alert">最近一次自动同步失败：{lastSyncStatus.message}</p>
+            : <p className="settings-backup-status" role="status">最近一次自动同步成功：{lastSyncStatus.message}</p>
+        )}
+        {error && <p className="settings-error" role="alert">{error}</p>
         <p className="settings-footnote">
           仅同步当前已验证 ChatGPT 账号的 Tips、目录别名、主题与侧边栏偏好；不上传完整对话正文或使用统计。云端数据由 LunaTOC 维护者管理，可能以明文形式读取。关闭同步不会删除本地数据或自动删除云端副本。
         </p>
