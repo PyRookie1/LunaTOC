@@ -141,7 +141,7 @@ export function CloudSyncSettings({ accountId }: { accountId: string }): React.J
             ? <p className="settings-error" role="alert">最近一次自动同步失败：{lastSyncStatus.message}</p>
             : <p className="settings-backup-status" role="status">最近一次自动同步成功：{lastSyncStatus.message}</p>
         )}
-        {error && <p className="settings-error" role="alert">{error}</p>
+        {error && <p className="settings-error" role="alert">{error}</p>}
         <p className="settings-footnote">
           仅同步当前已验证 ChatGPT 账号的 Tips、目录别名、主题与侧边栏偏好；不上传完整对话正文或使用统计。云端数据由 LunaTOC 维护者管理，可能以明文形式读取。关闭同步不会删除本地数据或自动删除云端副本。
         </p>
