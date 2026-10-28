@@ -36,7 +36,7 @@ export function CloudSyncSettings({ accountId }: { accountId: string }): React.J
       if (typeof cfg?.apiKey === 'string') setApiKey(cfg.apiKey);
       setConfigured(status.configured === true);
       setUid(status.uid ?? '');
-      setMessage(status.message);
+      // Initial auth state is shown inline; reserve role=status for completed actions.
     }).catch((cause: unknown) => {
       if (alive) setError(cause instanceof Error ? cause.message : '无法读取 Firebase 配置');
     });
