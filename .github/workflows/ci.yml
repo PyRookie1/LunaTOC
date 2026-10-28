@@ -52,7 +52,7 @@ jobs:
           if (manifest.name !== 'LunaTOC' || manifest.short_name !== 'LunaTOC') {
             throw new Error('Extension name must be LunaTOC');
           }
-          if (!/^\\d+\\.\\d+\\.\\d+$/.test(pkg.version) ||
+          if (!/^\d+\.\d+\.\d+$/.test(pkg.version) ||
               lock.version !== pkg.version ||
               lock.packages?.['']?.version !== pkg.version ||
               manifest.version !== pkg.version) {
