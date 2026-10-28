@@ -103,7 +103,7 @@ describe('coordinated account prompt clearing', () => {
     const usage = createPromptUsageWriteCoordinator(box.storage, queue);
     const [cleared, recorded] = await Promise.all([
       writer.commit(clear()),
-      usage.commit({ type: PROMPT_USAGE_COMMIT_TYPE, action: 'record-use', promptId: 'saved' }),
+      usage.commit({ type: PROMPT_USAGE_COMMIT_TYPE, action: 'record-use', promptId: 'saved', ownerId: 'account-1' }),
     ]);
     expect(cleared).toEqual({ ok: true });
     // The usage operation is serialized; it cannot restore the deleted prompt.
