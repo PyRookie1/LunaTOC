@@ -253,7 +253,7 @@ export function OptionsApp(): React.JSX.Element {
       <LocalAliasCleanupSettings />
       {savingSettings && <p className="settings-backup-status" role="status">正在保存侧边栏设置…</p>}
       {saveError && <p className="settings-error" role="alert">{saveError}</p>}
-      <p className="settings-footnote">默认保存在浏览器本地；仅在主动同步时将所选账号的数据发送到自行配置的 Firebase 项目。不会上传到 LunaTOC 维护者服务器。</p>
+      <p className="settings-footnote">默认保存在浏览器本地；仅当主动登录并执行同步时才将所选账号的提示词、别名与偏好发送到 LunaTOC 维护的 Firebase 项目；服务维护者可能访问云端明文数据。</p>
     </main>
   );
 }

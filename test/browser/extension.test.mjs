@@ -215,6 +215,29 @@ test('Chromium MV3: TOC, search, layout, SPA and failure paths',{timeout:150000}
       }finally{await settings.close();}
     });
 
+    await t.test('managed cloud UI stays local-only without maintainer project and rejects legacy backend settings',async()=>{
+      const settings=await context.newPage();
+      try{
+        const optionsPage=await worker.evaluate(()=>chrome.runtime.getManifest().options_ui.page);
+        await settings.goto('chrome-extension://'+extensionId+'/'+optionsPage);
+        const cloud=settings.locator('section[aria-labelledby="cloud-sync-heading"]');
+        await cloud.getByText('LunaTOC 云服务尚未上线', {exact:false}).waitFor();
+        assert.equal(await cloud.getByText('Firebase 项目 ID').count(),0);
+        assert.equal(await cloud.getByText('Firebase Web API Key').count(),0);
+        assert.equal(await cloud.getByRole('button',{name:'登录',exact:true}).isDisabled(),true);
+        assert.equal(await cloud.getByRole('button',{name:'立即同步',exact:true}).isDisabled(),true);
+        await worker.evaluate(async()=>chrome.storage.local.set({
+          'lunatoc:cloud:config:v1':{
+            projectId:'attacker-backend',apiKey:'AIzaSy-Public-attacker-key'
+          }
+        }));
+        await settings.reload();
+        await cloud.getByText('LunaTOC 云服务尚未上线',{exact:false}).waitFor();
+        assert.equal(await cloud.getByRole('button',{name:'登录',exact:true}).isDisabled(),true);
+        assert.equal(await cloud.getByRole('button',{name:'立即同步',exact:true}).isDisabled(),true);
+      }finally{await settings.close();}
+    });
+
     await t.test('SPA route, API failure and reload preserve host controls',async()=>{
       await page.evaluate(()=>history.pushState({},'','/c/other-conversation'));
       await page.evaluate(()=>fetch('/backend-api/unsupported').catch(()=>{}));

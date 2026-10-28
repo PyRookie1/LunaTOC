@@ -6,9 +6,9 @@ import { TOC_ALIAS_PREFIX, TOC_ALIAS_DELETED_PREFIX, parseTocAliasRecord } from 
 import { CLOUD_MAX_BYTES, emptyCloudSnapshot, mergeAccountSnapshots, validateCloudSnapshot,
   type CloudSnapshot } from './cloudSnapshot';
 import type { SerialWriteQueue } from '@/features/storage/serialWriteQueue';
+import { bundledFirebaseConfig } from './managedFirebaseConfig';
 
 export const CLOUD_MESSAGE_TYPE = 'LUNATOC_CLOUD_V1';
-export const CLOUD_CONFIG_KEY = 'lunatoc:cloud:config:v1';
 const SESSION_KEY = 'lunatoc:cloud:auth:session:v1';
 const BASE_PREFIX = 'lunatoc:cloud:baseline:v1:';
 const PROJECT_PATTERN = /^[a-z][a-z0-9-]{4,62}$/;
@@ -19,7 +19,6 @@ interface FirestoreDocument { fields?: { json?: { stringValue?: string } }; upda
 type LocalStorage = Pick<chrome.storage.StorageArea, 'get' | 'set' | 'remove'>;
 type Fetcher = typeof fetch;
 export type CloudAction =
-  | { type: typeof CLOUD_MESSAGE_TYPE; action: 'configure'; config: Config }
   | { type: typeof CLOUD_MESSAGE_TYPE; action: 'sign-in' | 'sign-up'; email: string; password: string }
   | { type: typeof CLOUD_MESSAGE_TYPE; action: 'sign-out' | 'status' }
   | { type: typeof CLOUD_MESSAGE_TYPE; action: 'sync'; ownerId: string };
@@ -62,12 +61,16 @@ export function createCloudController(
   sessionStorage: LocalStorage,
   queue: SerialWriteQueue,
   verifyOwner: (ownerId: string) => Promise<boolean>,
-  fetcher: Fetcher = fetch
+  fetcher: Fetcher = fetch,
+  managedConfig: Config | null = bundledFirebaseConfig()
 ) {
   async function config(): Promise<Config> {
-    const values = await local.get(CLOUD_CONFIG_KEY);
-    if (!validConfig(values[CLOUD_CONFIG_KEY])) throw new Error('请先配置有效的 Firebase 项目 ID 和 Web API Key');
-    return values[CLOUD_CONFIG_KEY];
+    // Never accept user-provided project identifiers from local storage or
+    // messages. This prevents silently syncing to an attacker-owned backend.
+    if (!validConfig(managedConfig)) {
+      throw new Error('LunaTOC 官方 Firebase 服务尚未配置；本地功能可继续使用');
+    }
+    return managedConfig;
   }
   async function session(): Promise<Session> {
     const values = await sessionStorage.get(SESSION_KEY);
@@ -271,12 +274,8 @@ export function createCloudController(
       }
       const command = request as Record<string, unknown>;
       switch (command.action) {
-        case 'configure': {
-          if (!validConfig(command.config)) throw new Error('Firebase 项目配置无效');
-          await sessionStorage.remove(SESSION_KEY);
-          await local.set({ [CLOUD_CONFIG_KEY]: command.config });
-          return { ok: true, message: 'Firebase 项目已保存；请登录后明确选择是否同步' };
-        }
+        case 'configure':
+          throw new Error('Firebase 项目由 LunaTOC 维护者统一管理，禁止从扩展页面更改');
         case 'sign-in':
         case 'sign-up':
           return await login(command.email as string, command.password as string, command.action === 'sign-up');
@@ -284,11 +283,10 @@ export function createCloudController(
           await sessionStorage.remove(SESSION_KEY);
           return { ok: true, message: 'Firebase 已退出；本地和云端数据均未删除' };
         case 'status': {
-          const cfg = await local.get(CLOUD_CONFIG_KEY);
           const auth = await sessionStorage.get(SESSION_KEY);
           const user = auth[SESSION_KEY];
           return { ok: true, message: validSession(user) ? 'Firebase 已登录' : 'Firebase 未登录',
-            configured: validConfig(cfg[CLOUD_CONFIG_KEY]),
+            configured: validConfig(managedConfig),
             ...(validSession(user) ? { uid: user.uid } : {}) };
         }
         case 'sync':

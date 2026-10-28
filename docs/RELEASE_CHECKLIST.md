@@ -10,6 +10,8 @@
 - [ ] 扩展打包、Manifest V3 引用文件检查通过
 - [ ] Chromium 本地模拟 ChatGPT 功能测试通过
 - [ ] npm audit --audit-level=high 无阻断问题
+- [ ] Firebase 模拟器在 CI 中加载实际 firestore.rules，验证 A/B/匿名用户隔离与写入格式
+- [ ] main 发布门禁验证已填写维护者 Firebase GitHub Actions Variables
 - [ ] 集成分支（rebuild/lunatoc-1.0.0）合并后 CI 再次通过
 
 ## 真实 ChatGPT 账号与浏览器
@@ -20,7 +22,7 @@
 
 ## 真实 Firebase 项目（阻断发布）
 
-- [ ] 在**用户持有**的 Firebase Spark 测试项目启用 Email/Password + 默认 Cloud Firestore，并部署 firestore.rules。
+- [ ] 在**LunaTOC 维护者持有**的 Firebase Spark 测试项目启用 Email/Password + 默认 Cloud Firestore，并部署 firestore.rules。
 - [ ] 使用两个不同 Firebase 测试 UID 验证 Firestore 安全规则：UID A 只可访问自己的账户文档；UID B 无法读取、修改或列出 UID A 的文档；匿名访问和非法路径均被拒绝。
 - [ ] 在两台设备或相互隔离的 Chrome 用户配置下，以相同 Firebase UID 和同一个 ChatGPT 测试账号测试：新增 Tips、编辑目录别名、修改偏好、手动同步、第二台设备读取。
 - [ ] 验证同一个 Firebase UID 下的两个 ChatGPT 账号互不读取或覆盖对方内容。
@@ -37,4 +39,4 @@
 
 ## 当前未完成的外部前提
 
-仓库不包含 Firebase 管理员凭据、可公开的测试账号或可自动部署的真实 Firebase 项目，因此无法在 GitHub Actions 中对用户的实际 Firebase 配置执行上述跨账号安全与双设备联调。此项需项目拥有者在测试环境中执行并记录结果，再决定是否发布。参见 [Firebase 同步操作说明](FIREBASE_SYNC.md)。
+Firestore 规则测试在无生产凭据的 Firebase Emulator 中自动完成；真实 Firebase 项目尚需维护者建立、部署规则并设置公开 GitHub Actions Variables，随后运行一次真实网络和 Chrome 冒烟测试。这些运营前提不能通过模拟测试自动变成已部署事实。参见 [Firebase 同步操作说明](FIREBASE_SYNC.md)。

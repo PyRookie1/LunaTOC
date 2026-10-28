@@ -68,6 +68,9 @@ jobs:
         run: npm test
 
       - name: Build Chrome extension
+        env:
+          VITE_LUNATOC_FIREBASE_PROJECT_ID: ${{ vars.LUNATOC_FIREBASE_PROJECT_ID }}
+          VITE_LUNATOC_FIREBASE_WEB_API_KEY: ${{ vars.LUNATOC_FIREBASE_WEB_API_KEY }}
         run: npm run build
 
       - name: Verify built extension files
@@ -146,3 +149,43 @@ jobs:
             lunatoc-chrome.zip.sha256
           if-no-files-found: error
           retention-days: 14
+
+  firebase-rules:
+    name: Firestore emulator and real security rules
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+      - name: Set up Firestore emulator Java runtime
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install isolated Firebase emulator test tooling
+        run: npm --prefix test/firebase install --no-package-lock --no-audit --no-fund
+      - name: Execute actual firestore.rules with two simulated Firebase UIDs
+        run: test/firebase/node_modules/.bin/firebase emulators:exec --only firestore --project demo-lunatoc-ci "node --test test/firebase/firestore.rules.test.mjs"
+
+  release-config:
+    name: Managed Firebase config gate for main
+    if: github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.base_ref == 'main')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+      - name: Prevent publication without maintainer-owned Firebase config
+        env:
+          VITE_LUNATOC_FIREBASE_PROJECT_ID: ${{ vars.LUNATOC_FIREBASE_PROJECT_ID }}
+          VITE_LUNATOC_FIREBASE_WEB_API_KEY: ${{ vars.LUNATOC_FIREBASE_WEB_API_KEY }}
+        run: node scripts/check-managed-firebase-release.mjs

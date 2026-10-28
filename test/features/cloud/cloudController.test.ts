@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createCloudController, CLOUD_CONFIG_KEY, CLOUD_MESSAGE_TYPE } from '@/features/cloud/cloudController';
+import { createCloudController, CLOUD_MESSAGE_TYPE } from '@/features/cloud/cloudController';
 import { createSerialWriteQueue } from '@/features/storage/serialWriteQueue';
 import { PROMPT_STORAGE_KEY } from '@/features/myPrompts/promptWriteCoordinator';
 import { ACCOUNT_SETTINGS_KEY } from '@/features/storage/accountSettings';
@@ -65,11 +65,9 @@ async function ready(local: ReturnType<typeof storage>, cloud: ReturnType<typeof
   verified = async () => true) {
   const sessions = storage();
   const service = createCloudController(local.api, sessions.api, createSerialWriteQueue(),
-    verified, cloud.fetcher as unknown as typeof fetch);
-  const config = await service.execute(request('configure', {
-    config: { apiKey: 'AIzaSy-Test-api-key-public', projectId: 'lunatoc-demo' },
-  }));
-  expect(config.ok).toBe(true);
+    verified, cloud.fetcher as unknown as typeof fetch,
+    { apiKey: 'AIzaSy-Test-api-key-public', projectId: 'lunatoc-demo' });
+  expect(await service.execute(request('status'))).toMatchObject({ ok: true, configured: true });
   const login = await service.execute(request('sign-in', {
     email: 'test@example.com', password: 'sixcharacters',
   }));
@@ -77,6 +75,30 @@ async function ready(local: ReturnType<typeof storage>, cloud: ReturnType<typeof
   return { service, sessions };
 }
 describe('Firebase REST account sync', () => {
+  it('rejects user-specified Firebase backend and ignores legacy config', async () => {
+    const local = storage({ 'lunatoc:cloud:config:v1': {
+      projectId: 'attacker-project', apiKey: 'AIzaSy-Attacker-public-key',
+    } });
+    const sessions = storage(), remote = firebaseHarness();
+    const service = createCloudController(local.api, sessions.api, createSerialWriteQueue(),
+      async () => true, remote.fetcher as unknown as typeof fetch, null);
+    expect(await service.execute(request('status'))).toMatchObject({ ok: true, configured: false });
+    expect(await service.execute(request('configure', {
+      config: { projectId: 'attacker-project', apiKey: 'AIzaSy-Attacker-public-key' },
+    }))).toMatchObject({ ok: false, error: expect.stringContaining('禁止') });
+    expect(await service.execute(request('sign-in', {
+      email: 'user@example.com', password: 'sixcharacters',
+    }))).toMatchObject({ ok: false, error: expect.stringContaining('尚未配置') });
+    expect(remote.fetcher).not.toHaveBeenCalled();
+  });
+  it('never persists managed Firebase project identifiers to local storage', async () => {
+    const local = storage(initialLocal()), remote = firebaseHarness();
+    const { service } = await ready(local, remote);
+    expect((await service.execute(request('sync', { ownerId: owner }))).ok).toBe(true);
+    expect(local.state).not.toHaveProperty('lunatoc:cloud:config:v1');
+    expect(JSON.stringify(local.state)).not.toContain('AIzaSy-Test-api-key-public');
+  });
+
   it('uploads only allowed account snapshot on explicit sync, never usage or auth secrets', async () => {
     const local = storage(initialLocal()), remote = firebaseHarness();
     const { service } = await ready(local, remote);
