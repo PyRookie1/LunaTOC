@@ -227,7 +227,12 @@ async function runAutomaticSync(): Promise<void> {
         try {
           const auth = await chrome.identity.getAuthToken({ interactive: false });
           const accessToken = typeof auth === 'string' ? auth : auth?.token;
-          if (!accessToken) break;
+          if (!accessToken) {
+            await chrome.storage.local.set({ [CLOUD_AUTO_SYNC_STATUS_KEY]: {
+              state: 'error', message: '自动同步无法恢复 Google 授权，请重新开启云同步', updatedAt: Date.now(),
+            } });
+            break;
+          }
           const login = await cloudController.execute({
             type: CLOUD_MESSAGE_TYPE, action: 'google-sign-in', accessToken,
           });
@@ -237,6 +242,9 @@ async function runAutomaticSync(): Promise<void> {
           }
         } catch {
           // The user may need to enable sync again if Chrome has no cached consent.
+          await chrome.storage.local.set({ [CLOUD_AUTO_SYNC_STATUS_KEY]: {
+            state: 'error', message: '自动同步无法恢复 Google 授权，请重新开启云同步', updatedAt: Date.now(),
+          } });
           break;
         }
       }
