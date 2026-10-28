@@ -2,11 +2,24 @@
  * Tests isolated conversationStore state, pagination accumulation,
  * chronological sorting, snapshot caching, and route transition migrations.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createConversationStore } from '@/navigation/state/conversationStore';
 import type { ChatMessage, ConversationData } from '@/features/conversationPrompts/message';
 
 describe('conversationStore', () => {
+  it('skips snapshot deep clones for unchanged routes', () => {
+    const store = createConversationStore({ getCurrentRouteKey: () => 'same-route' });
+    store.setCurrentConversationKey('same-route');
+    store.setMessages([{ id: 'a', text: 'hello', canMatchByText: true, createTime: 1 }]);
+    store.cacheConversationMessages('same-route');
+    const cloneSpy = vi.spyOn(globalThis, 'structuredClone');
+    const transition = store.syncRouteState('same-route');
+    expect(transition.isTransition).toBe(false);
+    expect(transition.cachedMessages).toEqual([]);
+    expect(cloneSpy).not.toHaveBeenCalled();
+    cloneSpy.mockRestore();
+  });
+
   it('uses injected route resolver when provided', () => {
     let activeRoute = 'custom-route-1';
     const store = createConversationStore({
@@ -74,6 +87,53 @@ describe('conversationStore', () => {
       'msg-2',
       'msg-3',
     ]);
+  });
+
+  it('ignores an old paginated response after a fresh branch snapshot', () => {
+    const store = createConversationStore({ getCurrentRouteKey: () => 'conv-123' });
+    const current = {
+      id: 'active', author: { role: 'user' }, content: { parts: ['Current branch'] }, create_time: 2,
+    };
+    const abandoned = {
+      id: 'abandoned', author: { role: 'user' }, content: { parts: ['Old branch'] }, create_time: 1,
+    };
+    const staleRequestStartedAt = Date.now() - 1000;
+    expect(store.replaceWithFreshSnapshot({ activeBranchVerified: true, messages: [current, {
+      id: 'answer', author: { role: 'assistant' }, content: { parts: ['Reply'] }, create_time: 2.5,
+    }] }, 'conv-123')).toBe(true);
+    store.handleConversationData({ messages: [abandoned] }, 'conv-123', staleRequestStartedAt);
+    expect(store.getMessages().map((message) => message.id)).toEqual(['active']);
+    store.handleConversationData({
+      messages: [{
+        id: 'new', author: { role: 'user' }, content: { parts: ['New message'] }, create_time: 3,
+      }],
+    }, 'conv-123', Date.now() + 1000);
+    // A newer unverified page must not reintroduce another branch.
+    expect(store.getMessages().map((message) => message.id)).toEqual(['active']);
+    // A directly observed user submission may still extend the active TOC.
+    store.handleNewUserMessage({
+      id: 'new', author: { role: 'user' },
+      content: { parts: ['New message'] }, create_time: 3,
+    }, 'conv-123');
+    expect(store.getMessages().map((message) => message.id)).toEqual(['active', 'new']);
+  });
+
+  it('keeps prior prompts and invalidates completeness on uncertain refresh', () => {
+    const store = createConversationStore({ getCurrentRouteKey: () => 'conv-uncertain' });
+    store.setCurrentConversationKey('conv-uncertain');
+    const selected = { id: 'chosen', author: { role: 'user' }, content: { parts: ['Chosen'] } };
+    store.replaceWithFreshSnapshot({ activeBranchVerified: true, messages: [selected] }, 'conv-uncertain');
+    expect(store.isConversationComplete('conv-uncertain')).toBe(true);
+    const changed = store.replaceWithFreshSnapshot({
+      current_node: 'other', messages: [
+        { id: 'other', author: { role: 'user' }, content: { parts: ['Other edit'] } },
+      ],
+    }, 'conv-uncertain');
+    expect(changed).toBe(false);
+    expect(store.isConversationComplete('conv-uncertain')).toBe(false);
+    expect(store.getMessages().map((m) => m.id)).toEqual(['chosen']);
+    expect(store.getCachedConversationMessages('conv-uncertain').map((m) => m.id))
+      .toEqual(['chosen']);
   });
 
   it('deduplicates incoming user messages by message ID', () => {
@@ -458,274 +518,29 @@ describe('conversationStore', () => {
     expect(transitionPerm.isComplete).toBe(true);
     expect(store.isConversationComplete('c-perm-migration-key')).toBe(true);
   });
-
-  it('preserves optimistic message with real event payload shape (createTime, missing author) across delayed conversationData', () => {
-    const store = createConversationStore({
-      getCurrentRouteKey: () => 'conv-real-shape',
+  it('invalidates incomplete refreshes without discarding cached prompts', () => {
+    const store = createConversationStore({ getCurrentRouteKey: () => 'conversation-123' });
+    store.setCurrentConversationKey('conversation-123');
+    store.handleConversationData({
+      messages: [{
+        id: 'question-1', author: { role: 'user' },
+        content: { parts: ['Original question'] }, create_time: 1,
+      }],
     });
-
-    // Real event payload shape emitted by pageHook/conversationStream.ts
-    const optimisticPayload = {
-      id: 'msg-opt-hi8',
-      content: { parts: ['hi8 real prompt'] },
-      metadata: { attachments: [] },
-      createTime: 1712345690,
-    } as unknown as ChatMessage;
-
-    store.handleNewUserMessage(optimisticPayload, 'conv-real-shape');
-    expect(store.getMessages().map((m) => m.id)).toEqual(['msg-opt-hi8']);
-
-    // Delayed background pagination / backfill arrives with older history
-    store.handleConversationData(
-      {
-        messages: [
-          {
-            id: 'msg-older-hi7',
-            author: { role: 'user' },
-            content: { parts: ['hi7 older prompt'] },
-            create_time: 1712345600,
-          } as ChatMessage,
-          {
-            id: 'asst-older-hi7',
-            author: { role: 'assistant' },
-            content: { parts: ['hi7 reply'] },
-            create_time: 1712345650,
-          } as ChatMessage,
-        ],
-      },
-      'conv-real-shape'
-    );
-
-    // Optimistic prompt must NOT be discarded by extractUserMessages
-    expect(store.getMessages().map((m) => m.id)).toEqual([
-      'msg-older-hi7',
-      'msg-opt-hi8',
-    ]);
+    store.markConversationComplete();
+    store.markConversationIncomplete();
+    expect(store.isConversationComplete()).toBe(false);
+    expect(store.getCachedConversationMessages('conversation-123')).toHaveLength(1);
+    store.deleteConversation('conversation-123');
+    expect(store.getCachedConversationMessages('conversation-123')).toEqual([]);
+    expect(store.getMessages()).toEqual([]);
   });
 
-  it('reconciles confirmed server message with optimistic message without creating duplicates', () => {
-    const store = createConversationStore({
-      getCurrentRouteKey: () => 'conv-reconcile-dup',
-    });
-
-    // 1. Optimistic message appended
-    store.handleNewUserMessage(
-      {
-        id: 'msg-opt-hi8',
-        content: { parts: ['hi8 pending'] },
-        createTime: 1712345690,
-      } as ChatMessage,
-      'conv-reconcile-dup'
-    );
-
-    expect(store.getMessages()).toHaveLength(1);
-    expect(store.getMessages()[0].id).toBe('msg-opt-hi8');
-
-    // 2. Server response arrives with confirmed message (same ID, server create_time, metadata) and assistant turn
-    store.handleConversationData(
-      {
-        messages: [
-          {
-            id: 'msg-opt-hi8',
-            author: { role: 'user' },
-            content: { parts: ['hi8 confirmed'] },
-            metadata: { finish_details: { type: 'stop' } },
-            create_time: 1712345690,
-          } as ChatMessage,
-          {
-            id: 'asst-reply-hi8',
-            author: { role: 'assistant' },
-            content: { parts: ['hi8 answer'] },
-            create_time: 1712345700,
-          } as ChatMessage,
-        ],
-      },
-      'conv-reconcile-dup'
-    );
-
-    // Replaces in-place without producing duplicate TOC entries
-    expect(store.getMessages()).toHaveLength(1);
-    expect(store.getMessages()[0].id).toBe('msg-opt-hi8');
-    expect(store.getMessages()[0].text).toBe('hi8 confirmed');
-  });
-
-  describe('collapsedMessageMap lifecycle', () => {
-    it('accumulates collapsed message mappings across paginated backfill', () => {
-      const store = createConversationStore({
-        getCurrentRouteKey: () => 'conv-collapsed-backfill',
-      });
-
-      // Page 2 arrives first (newer messages: user-2 interrupted, followed by user-3)
-      store.handleConversationData({
-        messages: [
-          {
-            id: 'user-2',
-            author: { role: 'user' },
-            content: { parts: ['Interrupted 2'] },
-            create_time: 200,
-          } as ChatMessage,
-          {
-            id: 'user-3',
-            author: { role: 'user' },
-            content: { parts: ['Prompt 3'] },
-            create_time: 210,
-          } as ChatMessage,
-          {
-            id: 'asst-3',
-            author: { role: 'assistant' },
-            content: { parts: ['Reply 3'] },
-            create_time: 220,
-          } as ChatMessage,
-        ],
-      });
-
-      let map = store.getCollapsedMessageMap();
-      expect(map.size).toBe(1);
-      expect(map.get('user-2')).toBe('user-3');
-
-      // Page 1 arrives later (older messages: user-1a interrupted, followed by user-1b)
-      store.handleConversationData({
-        messages: [
-          {
-            id: 'user-1a',
-            author: { role: 'user' },
-            content: { parts: ['Interrupted 1'] },
-            create_time: 100,
-          } as ChatMessage,
-          {
-            id: 'user-1b',
-            author: { role: 'user' },
-            content: { parts: ['Prompt 1b'] },
-            create_time: 110,
-          } as ChatMessage,
-          {
-            id: 'asst-1',
-            author: { role: 'assistant' },
-            content: { parts: ['Reply 1'] },
-            create_time: 120,
-          } as ChatMessage,
-        ],
-      });
-
-      map = store.getCollapsedMessageMap();
-      expect(map.size).toBe(2);
-      expect(map.get('user-1a')).toBe('user-1b');
-      expect(map.get('user-2')).toBe('user-3');
-    });
-
-    it('migrates collapsed message mapping on new-chat route promotion', () => {
-      let currentKey = 'new-chat:/';
-      const store = createConversationStore({
-        getCurrentRouteKey: () => currentKey,
-      });
-
-      store.syncRouteState();
-
-      // Data arrives on new-chat route
-      store.handleConversationData({
-        messages: [
-          {
-            id: 'user-stop',
-            author: { role: 'user' },
-            content: { parts: ['Stopped'] },
-            create_time: 100,
-          } as ChatMessage,
-          {
-            id: 'user-final',
-            author: { role: 'user' },
-            content: { parts: ['Final'] },
-            create_time: 110,
-          } as ChatMessage,
-          {
-            id: 'asst-final',
-            author: { role: 'assistant' },
-            content: { parts: ['Reply'] },
-            create_time: 120,
-          } as ChatMessage,
-        ],
-      });
-
-      expect(store.getCollapsedMessageMap().get('user-stop')).toBe('user-final');
-
-      // Route transition from new-chat to permanent ID
-      currentKey = 'c/perm-123';
-      const transition = store.syncRouteState();
-      expect(transition.shouldPreserveMessages).toBe(true);
-
-      // Collapsed map should now be accessible under the permanent route key
-      expect(store.getCollapsedMessageMap('c/perm-123').get('user-stop')).toBe(
-        'user-final'
-      );
-      // And the old new-chat key mapping was cleaned up
-      expect(store.getCollapsedMessageMap('new-chat:/').size).toBe(0);
-    });
-
-    it('clears collapsed mapping when resetting route without preserving messages', () => {
-      const store = createConversationStore({
-        getCurrentRouteKey: () => 'conv-reset',
-      });
-
-      store.handleConversationData({
-        messages: [
-          {
-            id: 'u1',
-            author: { role: 'user' },
-            content: { parts: ['Prompt 1'] },
-            create_time: 100,
-          } as ChatMessage,
-          {
-            id: 'u2',
-            author: { role: 'user' },
-            content: { parts: ['Prompt 2'] },
-            create_time: 110,
-          } as ChatMessage,
-          {
-            id: 'a2',
-            author: { role: 'assistant' },
-            content: { parts: ['Reply'] },
-            create_time: 120,
-          } as ChatMessage,
-        ],
-      });
-
-      expect(store.getCollapsedMessageMap().size).toBe(1);
-
-      store.resetForCurrentRoute({ preserveMessages: false });
-      expect(store.getCollapsedMessageMap().size).toBe(0);
-    });
-
-    it('clears collapsed mapping on setMessages and full reset', () => {
-      const store = createConversationStore({
-        getCurrentRouteKey: () => 'conv-reset-all',
-      });
-
-      store.handleConversationData({
-        messages: [
-          {
-            id: 'u1',
-            author: { role: 'user' },
-            content: { parts: ['Prompt 1'] },
-            create_time: 100,
-          } as ChatMessage,
-          {
-            id: 'u2',
-            author: { role: 'user' },
-            content: { parts: ['Prompt 2'] },
-            create_time: 110,
-          } as ChatMessage,
-          {
-            id: 'a2',
-            author: { role: 'assistant' },
-            content: { parts: ['Reply'] },
-            create_time: 120,
-          } as ChatMessage,
-        ],
-      });
-
-      expect(store.getCollapsedMessageMap().size).toBe(1);
-
-      store.setMessages([]);
-      expect(store.getCollapsedMessageMap().size).toBe(0);
-    });
+  it('does not retain reset navigation snapshots', () => {
+    const store = createConversationStore({ getCurrentRouteKey: () => 'conversation-123' });
+    store.setCurrentConversationKey('conversation-123');
+    store.markConversationComplete();
+    store.reset();
+    expect(store.isConversationComplete('conversation-123')).toBe(false);
   });
 });

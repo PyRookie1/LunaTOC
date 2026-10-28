@@ -1,7 +1,7 @@
 /**
  * Platform abstraction contract.
  *
- * Every AI chat host (ChatGPT, Copilot, Gemini, Claude, …) is described by
+ * Each registered AI chat host is described by
  * a single `Platform` record composed of typed adapter interfaces. Adding a
  * new host means creating `src/platforms/<host>/` and exporting a
  * `Platform` aggregator — no edits anywhere else.
@@ -13,14 +13,16 @@
  *
  * Generic machinery (fetch interception skeleton, SSE line reader, request
  * header collection, contract-mismatch reporter, Proxy/event synthesis for
- * matchMedia) stays in `src/pageHook/`; only platform-specific dispatch
+ * request interception) stays in `src/pageHook/`; only platform-specific dispatch
  * points use this interface.
  */
+import type { ResponseFingerprintRecord } from '@/navigation/fingerprint/index';
+import type { NavigationTurn } from '@/navigation/navigationData';
 
 /**
  * Literal platform id. Add new members as adapters are added.
  */
-export type PlatformId = 'chatgpt' | 'copilot';
+export type PlatformId = 'chatgpt';
 
 /**
  * A platform-known host match pattern (mirrors a `content_scripts.matches`
@@ -49,8 +51,6 @@ export interface PlatformMessageTypes {
   routeChanged: string;
   /** Page → content title mutation. */
   titleChanged: string;
-  /** Content → page sidebar visibility toggle. */
-  setWidthSpoof: string;
   /** Content → page effective contract values. */
   configUpdate: string;
   /** Page → content contract-drift alert. */
@@ -84,8 +84,7 @@ export interface PlatformFetchBumping {
 }
 
 /**
- * Page-hook concerns. Each host exposes its own matchMedia spoof install,
- * backfill URL builder, contract probe, and postMessage channels.
+ * Page-hook concerns: backfill URLs, contract probes, and message channels.
  */
 export interface PlatformPageHookAdapter {
   request: PlatformRequestShape;
@@ -98,16 +97,8 @@ export interface PlatformPageHookAdapter {
     conversationId: string,
     authHeaders: Record<string, string> | null
   ): Promise<void>;
-  /** Replaces `window.matchMedia` with a width-spoofing Proxy. */
-  installMatchMediaSpoof(): void;
-  /** Listens for the content-script visibility toggle message. */
-  installMatchMediaToggleListener(): void;
   /** Posts a contract-values update to the page-hook from the content script. */
   postContractUpdate(values: Record<string, string>): void;
-  /** Sets the matchMedia spoof on/off from the sidebar visibility toggle. */
-  setSidebarSpoofEnabled(enabled: boolean): void;
-  /** The forced width used for width queries when spoofing. */
-  spoofedViewportWidthPx: number;
   /** Sentinel string flagged on `window` to detect double installation. */
   installFlag: string;
 }
@@ -124,34 +115,51 @@ export interface ContentRequestMeta {
 }
 
 /**
- * Content-side data adapter. Inspects fetch requests and identifies route key types.
+ * Content-side data adapter. Converts host payloads into platform-agnostic
+ * navigation turns, creates the rendered-text fingerprint collector, and
+ * tells the controller whether a given route key represents a "new chat".
  */
 export interface PlatformContentCapture {
   inspectFetchRequest(
     args: Parameters<typeof fetch>,
     fallbackRouteKey: string
   ): ContentRequestMeta | null;
+  createNavigationTurns(data: unknown): NavigationTurn[];
+  createRenderedFingerprintCollector(
+    opts: PlatformRenderedFingerprintCollectorOptions
+  ): PlatformRenderedFingerprintCollector;
   isNewChatRouteKey(routeKey: string): boolean;
 }
 
 /**
- * Result of querying host virtualizer layout for an unmounted prompt jump target.
+ * Rendered-text fingerprint collector context — passed in by the controller.
  */
-export type VirtualJumpTargetResult =
-  | {
-      readonly status: 'ok';
-      readonly targetIndex: number;
-      readonly topOffsetPx: number;
-      readonly turnCount: number;
-    }
-  | {
-      readonly status: 'target-not-in-layout';
-      readonly turnCount: number;
-    }
-  | {
-      readonly status: 'unavailable';
-      readonly reason?: string;
-    };
+export interface PlatformRenderedFingerprintContext {
+  conversationKey: string;
+  revision: number;
+  responsePromptIndexes: ReadonlyMap<string, number>;
+}
+
+/**
+ * Rendered-text fingerprint collector options.
+ */
+export interface PlatformRenderedFingerprintCollectorOptions {
+  debounceMs?: number;
+  onFingerprintRecord: (
+    context: PlatformRenderedFingerprintContext,
+    record: ResponseFingerprintRecord
+  ) => void;
+}
+
+/**
+ * Collector instance returned by `createRenderedFingerprintCollector`.
+ */
+export interface PlatformRenderedFingerprintCollector {
+  collect(root?: ParentNode): Promise<void>;
+  observe(root?: HTMLElement): void;
+  setContext(context: PlatformRenderedFingerprintContext | null): void;
+  disconnect(): void;
+}
 
 /**
  * Per-platform scroll container / mounted-DOM adapter used by the
@@ -165,14 +173,6 @@ export interface PlatformNavigationAdapter {
    * `getScrollContainer`, which may resolve to an inner overflow wrapper.
    */
   getThreadScrollContainer?(root?: ParentNode): HTMLElement | null;
-  /**
-   * Queries host-managed virtualizer layout for a specific target message ID.
-   * Returns coordinates synchronously, or indicates unmount/unavailability.
-   */
-  queryVirtualJumpTarget?(
-    container: HTMLElement,
-    messageId: string
-  ): VirtualJumpTargetResult;
   findRenderedPrompt(promptId: string, root?: ParentNode): HTMLElement | null;
   /**
    * Finds a currently mounted user message by normalized text prefix.
@@ -258,6 +258,7 @@ export interface PlatformNavigationDiagnostics {
  */
 export interface PlatformRuntimeConfig {
   useLocalConfig: boolean;
+  showCompatibilityAlert: boolean;
 }
 
 /**
@@ -279,12 +280,13 @@ export interface PlatformContractTable<Id extends string> {
 export interface PlatformConfigBlock {
   promptTopOffsetPx: number;
   settleAttempts: number;
-  backfillMaxPages?: number;
+  backfillMaxPages: number;
   interceptFetchNumTurns: {
     pagination: number | null;
     initialLoad: number | null;
   };
   useLocalConfig: boolean;
+  showCompatibilityAlert: boolean;
   /** Default DOM selectors used by the navigation controller. */
   selectors: {
     userMessage: string;

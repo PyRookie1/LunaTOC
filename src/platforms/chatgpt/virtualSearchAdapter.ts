@@ -149,8 +149,9 @@ export function findRenderedChatGptPrompt(
  * Text-match fallback for finding a currently mounted user message. Used
  * when the id-based `findRenderedChatGptPrompt` returns null but the
  * target prompt text is distinctive enough to identify it. Returns the
- * first mounted bubble whose textContent starts with `promptText` (after
- * whitespace normalization).
+ * uniquely mounted bubble whose normalized text matches the whole prompt.
+ * Prefixes are unsafe: a short historical prompt may match a different,
+ * longer message from another branch.
  */
 export function findRenderedChatGptPromptByText(
   promptText: string,
@@ -162,14 +163,12 @@ export function findRenderedChatGptPromptByText(
   const candidates = Array.from(
     root.querySelectorAll<HTMLElement>(USER_MESSAGE_SELECTOR)
   );
-  for (const element of candidates) {
-    if (
-      normalizeForTextMatch(element.textContent || '').startsWith(needle)
-    ) {
-      return element;
-    }
-  }
-  return null;
+  const matches = candidates.filter((element) =>
+    normalizeForTextMatch(element.textContent || '') === needle
+  );
+  // The first visible match is not necessarily the correct message in a
+  // virtualized conversation; never guess when the DOM is ambiguous.
+  return matches.length === 1 ? matches[0] : null;
 }
 
 function normalizeForTextMatch(text: string): string {

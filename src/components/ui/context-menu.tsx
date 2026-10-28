@@ -1,12 +1,14 @@
 /**
  * Provides a reusable floating context menu for LunaTOC feature surfaces.
  */
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 import {
+  ArrowDownIcon,
+  ArrowUpIcon,
   BookmarkPlusIcon,
-  CheckIcon,
   ClipboardIcon,
   CopyIcon,
+  ListCollapseIcon,
   PencilLineIcon,
   Trash2Icon,
 } from 'lucide-react';
@@ -14,10 +16,9 @@ import {
 export interface ContextMenuItem {
   id: string;
   label: string;
-  icon?: 'clipboard' | 'copy' | 'trash' | 'bookmark-plus' | 'pencil-line' | 'check';
+  icon?: 'clipboard' | 'copy' | 'trash' | 'bookmark-plus' | 'pencil-line' | 'arrow-up' | 'arrow-down' | 'list-collapse';
   variant?: 'default' | 'destructive';
   disabled?: boolean;
-  selected?: boolean;
 }
 
 interface ContextMenuProps {
@@ -31,13 +32,31 @@ interface ContextMenuProps {
 const MENU_GAP = 8;
 const MENU_WIDTH = 220;
 
+/** Fits a measured popup inside the visible viewport without assuming its height. */
+export function fitContextMenuPosition(
+  desired: { left: number; top: number },
+  size: { width: number; height: number },
+  viewport: { width: number; height: number }
+): { left: number; top: number } {
+  return {
+    left: Math.max(MENU_GAP, Math.min(desired.left, viewport.width - size.width - MENU_GAP)),
+    top: Math.max(MENU_GAP, Math.min(desired.top, viewport.height - size.height - MENU_GAP)),
+  };
+}
+
 function ContextMenuIcon({
   icon,
 }: Pick<ContextMenuItem, 'icon'>): React.JSX.Element | null {
   if (!icon) return null;
   const Icon =
-    icon === 'trash'
-      ? Trash2Icon
+    icon === 'list-collapse'
+      ? ListCollapseIcon
+    : icon === 'arrow-down'
+      ? ArrowDownIcon
+      : icon === 'arrow-up'
+        ? ArrowUpIcon
+      : icon === 'trash'
+        ? Trash2Icon
       : icon === 'clipboard'
         ? ClipboardIcon
         : icon === 'bookmark-plus'
@@ -62,7 +81,6 @@ export function ContextMenu({
   onSelect,
 }: ContextMenuProps): React.JSX.Element {
   const menuRef = useRef<HTMLDivElement>(null);
-  const [resolvedTop, setResolvedTop] = useState<number | null>(null);
 
   useEffect(() => {
     const closeOnPointerDown = (event: PointerEvent): void => {
@@ -86,28 +104,31 @@ export function ContextMenu({
   useLayoutEffect(() => {
     const menu = menuRef.current;
     if (!menu) return;
-
-    const actualHeight = menu.getBoundingClientRect().height;
-    const maxTop = window.innerHeight - actualHeight - MENU_GAP;
-    const clampedTop = Math.max(MENU_GAP, Math.min(position.top, maxTop));
-    setResolvedTop(clampedTop);
-  }, [position.top, items]);
-
-  const left = Math.min(
-    position.left,
-    window.innerWidth - MENU_WIDTH - MENU_GAP
-  );
+    const update = (): void => {
+      const fitted = fitContextMenuPosition(
+        position,
+        { width: menu.offsetWidth || MENU_WIDTH, height: menu.offsetHeight },
+        { width: window.innerWidth, height: window.innerHeight }
+      );
+      menu.style.left = `${fitted.left}px`;
+      menu.style.top = `${fitted.top}px`;
+    };
+    update();
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, [position.left, position.top, items.length]);
 
   return (
     <div
       ref={menuRef}
       role="menu"
       aria-label={ariaLabel}
-      className="fixed z-[var(--ct-z-popover,1020)] w-55 rounded-lg border border-border bg-popover p-1 shadow-xl"
+      className="fixed z-[var(--ct-z-popover,1020)] w-55 overflow-y-auto rounded-lg border border-border bg-popover p-1 shadow-xl"
       style={{
-        left: Math.max(MENU_GAP, left),
-        top: resolvedTop ?? position.top,
-        visibility: resolvedTop === null ? 'hidden' : 'visible',
+        left: Math.max(MENU_GAP, Math.min(position.left, window.innerWidth - MENU_WIDTH - MENU_GAP)),
+        top: MENU_GAP,
+        maxHeight: `calc(100vh - ${2 * MENU_GAP}px)`,
+        maxWidth: `calc(100vw - ${2 * MENU_GAP}px)`,
       }}
     >
       {items.map((item) => {
@@ -116,8 +137,7 @@ export function ContextMenu({
           <button
             key={item.id}
             type="button"
-            role={item.selected !== undefined ? 'menuitemradio' : 'menuitem'}
-            aria-checked={item.selected}
+            role="menuitem"
             disabled={item.disabled}
             className={`flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm outline-none transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
               isDestructive
@@ -126,19 +146,8 @@ export function ContextMenu({
             }`}
             onClick={() => onSelect(item.id)}
           >
-            {item.selected !== undefined && (
-              <span className="flex size-4 shrink-0 items-center justify-center">
-                {item.selected && (
-                  <CheckIcon
-                    aria-hidden="true"
-                    className="size-4 text-primary"
-                    strokeWidth={2.2}
-                  />
-                )}
-              </span>
-            )}
             <ContextMenuIcon icon={item.icon} />
-            <span className="flex-1">{item.label}</span>
+            {item.label}
           </button>
         );
       })}

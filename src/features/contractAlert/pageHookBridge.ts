@@ -66,6 +66,9 @@ void getActiveContractValue;
 /** Message type posted by the page-hook when it observes a contract mismatch. */
 export const PAGE_HOOK_MISMATCH_MESSAGE_TYPE = 'LUNA_CONTRACT_MISMATCH';
 
+/** Posted after the page hook has positive evidence that a contract works again. */
+export const PAGE_HOOK_RECOVERY_MESSAGE_TYPE = 'LUNA_CONTRACT_RECOVERED';
+
 /** Message type posted by the content script to sync contract values to the page-hook. */
 export const CHATGPT_CONFIG_UPDATE_MESSAGE_TYPE = 'LUNA_CHATGPT_CONFIG_UPDATE';
 
@@ -82,23 +85,15 @@ interface PageHookMismatchMessage {
  */
 export function startPageHookMismatchBridge(): () => void {
   const handler = (event: MessageEvent): void => {
-    if (event.source !== window) return;
+    if (event.source !== window || event.origin !== location.origin) return;
+    const data = event.data as Partial<PageHookMismatchMessage> | null;
+    if (!data || data.type !== PAGE_HOOK_MISMATCH_MESSAGE_TYPE) return;
 
-    if (!event.data || typeof event.data !== 'object') return;
-    const data = event.data as Partial<PageHookMismatchMessage>;
-    if (data.type !== PAGE_HOOK_MISMATCH_MESSAGE_TYPE) return;
-
-    if (
-      typeof data.contractId !== 'string' ||
-      !Object.prototype.hasOwnProperty.call(
-        APP_CONFIG.platforms.chatgpt.contract,
-        data.contractId
-      )
-    ) {
+    const contractId = data.contractId as ChatGptContractId;
+    if (!contractId || !(contractId in APP_CONFIG.platforms.chatgpt.contract)) {
       return;
     }
 
-    const contractId = data.contractId as ChatGptContractId;
     recordMismatch(
       contractId,
       typeof data.expected === 'string' ? data.expected : '',
@@ -142,6 +137,7 @@ export function startChatGptConfigSync(
           {
             type: CHATGPT_CONFIG_UPDATE_MESSAGE_TYPE,
             useLocalConfig: cfg.useLocalConfig,
+            showCompatibilityAlert: cfg.showCompatibilityAlert,
             contractValues: values,
           },
           window.location.origin

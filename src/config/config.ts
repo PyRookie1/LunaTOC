@@ -11,10 +11,8 @@ export type ChatGptContractId =
   | 'dom.selector.user-message'
   | 'dom.selector.message-id'
   | 'postmessage.channel.conversation-data'
-  | 'postmessage.channel.width-spoof'
   | 'postmessage.hook-flag'
-  | 'response.messages-field'
-  | 'behavior.viewport-spoof-width';
+  | 'response.messages-field';
 
 /** A single ChatGPT external-contract value with parallel `formal`/`local` slots and a display label. */
 export interface ChatGptContractValue {
@@ -68,6 +66,7 @@ export const APP_CONFIG = {
     chatgpt: {
       promptTopOffsetPx: 16,
       settleAttempts: 3,
+      backfillMaxPages: 10,
       // Rewrites ChatGPT's own older-page pagination requests so its
       // renderer fills the message store in a single fetch (speeds up
       // far-jump navigation). Set to null to disable.
@@ -127,11 +126,6 @@ export const APP_CONFIG = {
           local: 'CHATGPT_CONVERSATION_DATA',
           label: 'Page-to-extension conversation data channel',
         },
-        'postmessage.channel.width-spoof': {
-          formal: 'CHATGPT_NAVIGATOR_SET_WIDTH_SPOOF',
-          local: 'CHATGPT_NAVIGATOR_SET_WIDTH_SPOOF',
-          label: 'Sidebar width-spoof toggle channel',
-        },
         'postmessage.hook-flag': {
           formal: '__conversationNavigatorFetchHookInstalled',
           local: '__conversationNavigatorFetchHookInstalled',
@@ -142,18 +136,36 @@ export const APP_CONFIG = {
           local: 'messages',
           label: 'Conversation messages field',
         },
-        'behavior.viewport-spoof-width': {
-          formal: '1400',
-          local: '1400',
-          label: 'Sidebar viewport spoof width',
-        },
       } as ChatGptContractTable,
       // When true, getActiveContractValue() returns the `local` slot instead of
       // `formal`. Flipped by the developer during local debugging/testing.
       useLocalConfig: false,
+      // When true, the content-script compatibility alert renders a topmost
+      // portal modal on chatgpt.com when the detector observes a mismatch.
+      // Exposed in the Options page; defaults OFF so end users are unaffected.
+      showCompatibilityAlert: false,
     },
   },
   navigation: {
+    fingerprint: {
+      countPerAssistant: 3,
+      probeLength: 40,
+      verificationLength: 256,
+      segmentViewportRatio: 0.75,
+      segmentOverlapRatio: 0.15,
+      estimatedCharsPerVisualLine: 60,
+      estimatedRowsPerViewport: 30,
+      maximumSegmentsPerAssistant: 20,
+      buildBatchSize: 10,
+      buildTimeBudgetMs: 8,
+      observationDebounceMs: 750,
+    },
+    anchorCache: {
+      maxConversations: 50,
+      maxAnchorsPerConversation: 100,
+      maxAgeMs: 30 * 24 * 60 * 60 * 1_000,
+      viewportWidthTolerance: 48,
+    },
     search: {
       maxAttempts: 32,
       maxUnproductiveAttempts: 6,
@@ -212,6 +224,7 @@ export function platformRuntimeConfigKey(platformId: string): string {
 /** Runtime overrides for ChatGPT config flags, loaded from `chrome.storage.local`. */
 export interface ChatGptRuntimeConfig {
   useLocalConfig: boolean;
+  showCompatibilityAlert: boolean;
 }
 
 /**
@@ -229,10 +242,11 @@ export async function loadPlatformRuntimeConfig(
   storage: Pick<chrome.storage.StorageArea, 'get' | 'set' | 'remove'> = chrome.storage.local
 ): Promise<ChatGptRuntimeConfig> {
   const block = (
-    APP_CONFIG as { platforms: Record<string, { useLocalConfig: boolean }> }
+    APP_CONFIG as { platforms: Record<string, { useLocalConfig: boolean; showCompatibilityAlert: boolean }> }
   ).platforms[platformId];
   const defaults: ChatGptRuntimeConfig = {
     useLocalConfig: block?.useLocalConfig ?? false,
+    showCompatibilityAlert: block?.showCompatibilityAlert ?? false,
   };
 
   const newKey = platformRuntimeConfigKey(platformId);
@@ -246,6 +260,10 @@ export async function loadPlatformRuntimeConfig(
           typeof overrides.useLocalConfig === 'boolean'
             ? overrides.useLocalConfig
             : defaults.useLocalConfig,
+        showCompatibilityAlert:
+          typeof overrides.showCompatibilityAlert === 'boolean'
+            ? overrides.showCompatibilityAlert
+            : defaults.showCompatibilityAlert,
       };
     }
 
@@ -258,6 +276,10 @@ export async function loadPlatformRuntimeConfig(
           typeof overrides.useLocalConfig === 'boolean'
             ? overrides.useLocalConfig
             : defaults.useLocalConfig,
+        showCompatibilityAlert:
+          typeof overrides.showCompatibilityAlert === 'boolean'
+            ? overrides.showCompatibilityAlert
+            : defaults.showCompatibilityAlert,
       };
       try {
         await storage.set({ [newKey]: migrated });
@@ -297,6 +319,10 @@ export async function savePlatformRuntimeConfig(
       overrides.useLocalConfig !== undefined
         ? overrides.useLocalConfig
         : current.useLocalConfig,
+    showCompatibilityAlert:
+      overrides.showCompatibilityAlert !== undefined
+        ? overrides.showCompatibilityAlert
+        : current.showCompatibilityAlert,
   };
 
   try {
@@ -320,6 +346,7 @@ export async function loadChatGptRuntimeConfig(
 ): Promise<ChatGptRuntimeConfig> {
   const defaults: ChatGptRuntimeConfig = {
     useLocalConfig: APP_CONFIG.platforms.chatgpt.useLocalConfig,
+    showCompatibilityAlert: APP_CONFIG.platforms.chatgpt.showCompatibilityAlert,
   };
 
   try {
@@ -333,6 +360,10 @@ export async function loadChatGptRuntimeConfig(
         typeof overrides.useLocalConfig === 'boolean'
           ? overrides.useLocalConfig
           : defaults.useLocalConfig,
+      showCompatibilityAlert:
+        typeof overrides.showCompatibilityAlert === 'boolean'
+          ? overrides.showCompatibilityAlert
+          : defaults.showCompatibilityAlert,
     };
   } catch {
     return defaults;
@@ -359,6 +390,10 @@ export async function saveChatGptRuntimeConfig(
       overrides.useLocalConfig !== undefined
         ? overrides.useLocalConfig
         : current.useLocalConfig,
+    showCompatibilityAlert:
+      overrides.showCompatibilityAlert !== undefined
+        ? overrides.showCompatibilityAlert
+        : current.showCompatibilityAlert,
   };
 
   try {

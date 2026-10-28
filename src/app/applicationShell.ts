@@ -4,7 +4,11 @@
  * orchestrator that wires them together.
  */
 import { myPrompts } from '@/features/myPrompts/myPrompts';
-import { initializeSidebarVisibility } from '@/features/sidebarVisibility';
+import { initializeSidebarVisibility, setSidebarLayoutMode } from '@/features/sidebarVisibility';
+import { initializeChatGptSideBySide, setChatGptSideBySideEnabled, syncChatGptSideBySide } from '@/features/sidebar/chatGptSideBySide';
+import { initializeJumpControlsPosition } from '@/features/sidebar/jumpControlsPosition';
+import { DEFAULT_SIDEBAR_PREFERENCES, readSidebarPreferences, sidebarAppearance, subscribeSidebarPreferences, type SidebarPreferences } from '@/features/sidebar/sidebarPreferences';
+import { createSidebarToggleButton } from '@/features/SidebarToggleButton';
 import { buttonTooltip, previewTooltip } from '@/features/tooltip';
 import {
   getChatGPTTheme,
@@ -12,27 +16,33 @@ import {
   writeResolvedChatGPTTheme,
 } from '@/features/theme/chatGptTheme';
 import {
-  applyTheme,
   readThemeSettings,
   subscribeThemeSettings,
   type ResolvedTheme,
   type ThemeSettings,
 } from '@/features/theme/themeSettings';
-import {
-  applyPromptColorStyles,
-  readPromptColorSettings,
-  subscribePromptColorSettings,
-  type PromptColorSettings,
-} from '@/features/theme/promptColorSettings';
+import { getLunaTocTheme, setLunaTocTheme } from '@/features/theme/lunaTocTheme';
 import { APP_CONFIG } from '@/config/config';
-import { initializeCustomTocTitles } from '@/features/customTocTitles/customTocTitleStore';
-import {
-  openTocFilterMenu,
-  resetTocFilterMode,
-} from '@/features/tocFilter/tocFilterStore';
 import { navigatorController } from '@/navigation/navigatorController';
 import { sidebarController } from '@/features/sidebar/sidebarController';
-import { initFloatingPanel } from '@/features/sidebar/FloatingPanel';
+import { createJumpToEdgeControls } from '@/features/sidebar/jumpToEdgeControls';
+
+let currentSidebarPreferences: SidebarPreferences = DEFAULT_SIDEBAR_PREFERENCES;
+
+/** Reapplies local sidebar colors whenever a theme or preference changes. */
+function applySidebarAppearance(): void {
+  const theme = getLunaTocTheme();
+  const colors = sidebarAppearance(currentSidebarPreferences, theme);
+  const sidebar = document.getElementById('luna-toc-sidebar');
+  if (colors.background) sidebar?.style.setProperty('--ct-bg-sidebar', colors.background);
+  else sidebar?.style.removeProperty('--ct-bg-sidebar');
+  if (colors.header) sidebar?.style.setProperty('--ct-bg-header', colors.header);
+  else sidebar?.style.removeProperty('--ct-bg-header');
+  document.getElementById('luna-toc-floating-dock')?.style.setProperty(
+    '--luna-toc-reveal-bg', colors.reveal
+  );
+}
+
 
 /**
  * Resolves when document.body exists during document_start execution.
@@ -62,18 +72,12 @@ function waitForBody(): Promise<HTMLElement> {
 async function createSidebar(): Promise<HTMLElement> {
   await waitForBody();
 
-  if (document.getElementById('luna-toc-sidebar')) {
-    throw new Error(
-      'LunaTOC: cannot initialize application shell because #luna-toc-sidebar already exists in DOM'
-    );
-  }
-
   const sidebar = document.createElement('div');
   const sidebarConfig = APP_CONFIG.ui.sidebar;
 
   sidebar.id = 'luna-toc-sidebar';
-  sidebar.dataset.viewMode = 'toc';
-  sidebar.className = 'luna-toc-navigator-initializing';
+  sidebar.className =
+    'luna-toc-navigator-initializing luna-toc-navigator-hidden';
   sidebar.style.setProperty(
     '--navigator-width',
     `${sidebarConfig.defaultWidthPx}px`
@@ -89,9 +93,45 @@ async function createSidebar(): Promise<HTMLElement> {
   sidebar.innerHTML = `
       <div id="navigator-resizer"></div>
       <div class="navigator-topbar">
-        <div id="navigator-header" class="navigator-header"></div>
-        <div id="navigator-search-container"></div>
-        <div id="myprompts-toolbar-container" style="display: none;"></div>
+        <div class="navigator-header">
+          <button
+            class="navigator-icon-btn navigator-header-icon-btn luna-toc-sidebar-pin-btn"
+            id="luna-toc-sidebar-pin-btn"
+            type="button"
+            aria-label="固定侧边栏"
+            aria-pressed="false"
+          >
+            <svg aria-hidden="true" viewBox="0 0 24 24">
+              <path d="M12 17v5M7 3h10l-1 8 4 4v2H4v-2l4-4-1-8Z" />
+            </svg>
+          </button>
+          <button
+            id="navigator-title"
+            type="button"
+            aria-label="重置目录视图"
+            data-tooltip=""
+            data-tooltip-overflow-only="true"
+          ></button>
+          <button
+            class="navigator-icon-btn navigator-header-icon-btn"
+            id="search-toggle-btn"
+            type="button"
+            aria-label="显示或隐藏搜索框"
+            disabled
+          >
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+          </button>
+        </div>
+        <input
+          id="navigator-search"
+          type="search"
+          placeholder="搜索提示词..."
+          autocomplete="off"
+        />
+        <div id="myprompts-toolbar-container"></div>
       </div>
       <div
         id="luna-toc-status"
@@ -99,9 +139,14 @@ async function createSidebar(): Promise<HTMLElement> {
         aria-live="polite"
         role="status"
       ></div>
-      <div class="navigator-jump-controls"></div>
+      <div class="navigator-jump-controls">
+        <button class="navigator-icon-btn" id="toggle-view-mode-btn" type="button" aria-label="切换到 Tips" title="切换到 Tips">
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="15 2 6 13 11 13 9 22 18 11 13 11 15 2"></polygon>
+          </svg>
+        </button>
+      </div>
       <div id="navigator-list"></div>
-      <div id="myprompts-list" class="navigator-list" style="display: none;"></div>
     `;
 
   document.body.appendChild(sidebar);
@@ -125,6 +170,7 @@ function initSidebarResize(sidebar: HTMLElement): void {
         Math.max(sidebarConfig.minimumWidthPx, startWidth + delta)
       );
       sidebar.style.setProperty('--navigator-width', `${nextWidth}px`);
+      syncChatGptSideBySide();
     }
 
     function handleMouseUp(): void {
@@ -140,10 +186,12 @@ function initSidebarResize(sidebar: HTMLElement): void {
 function initTheme(): void {
   let settings: ThemeSettings | null = null;
 
+  const applyTheme = (theme: ResolvedTheme): void => {
+    setLunaTocTheme(theme);
+    applySidebarAppearance();
+  };
   const handleChatGPTTheme = (theme: ResolvedTheme): void => {
-    void writeResolvedChatGPTTheme(theme).catch((error) => {
-      console.error('[LunaTOC] Failed to write resolved theme:', error);
-    });
+    void writeResolvedChatGPTTheme(theme);
     if (settings?.followChatGPT) applyTheme(theme);
   };
   const applySettings = (nextSettings: ThemeSettings): void => {
@@ -156,55 +204,10 @@ function initTheme(): void {
   };
 
   observeChatGPTTheme(handleChatGPTTheme);
-  void readThemeSettings()
-    .then(applySettings)
-    .catch((error) => {
-      console.error('[LunaTOC] Failed to read theme settings:', error);
-    });
+  void readThemeSettings().then(applySettings);
   subscribeThemeSettings((nextSettings) => {
     applySettings(nextSettings);
   });
-}
-
-function initPromptColors(): void {
-  const currentSettings: PromptColorSettings = {
-    favouriteColor: 'original',
-    renamedColor: 'original',
-  };
-
-  let hasLiveFavUpdate = false;
-  let hasLiveRenamedUpdate = false;
-
-  subscribePromptColorSettings((patch) => {
-    if (patch.favouriteColor !== undefined) {
-      hasLiveFavUpdate = true;
-      currentSettings.favouriteColor = patch.favouriteColor;
-    }
-    if (patch.renamedColor !== undefined) {
-      hasLiveRenamedUpdate = true;
-      currentSettings.renamedColor = patch.renamedColor;
-    }
-    applyPromptColorStyles(currentSettings);
-  });
-
-  void readPromptColorSettings()
-    .then((stored) => {
-      let shouldApply = false;
-      if (!hasLiveFavUpdate) {
-        currentSettings.favouriteColor = stored.favouriteColor;
-        shouldApply = true;
-      }
-      if (!hasLiveRenamedUpdate) {
-        currentSettings.renamedColor = stored.renamedColor;
-        shouldApply = true;
-      }
-      if (shouldApply) {
-        applyPromptColorStyles(currentSettings);
-      }
-    })
-    .catch((error) => {
-      console.error('[LunaTOC] Failed to read prompt color settings:', error);
-    });
 }
 
 /**
@@ -227,76 +230,59 @@ function applyStackingConfig(): void {
   rootStyle.setProperty('--ct-z-modal', String(baseZIndex + offsets.modal));
 }
 
-let initializationPromise: Promise<void> | null = null;
-
 /**
  * Starts the application after all feature and controller scripts load.
- * Returns the cached Promise on repeated calls for runtime idempotency.
- * @returns {Promise<void>}
  */
-export function initializeApplication(): Promise<void> {
-  if (initializationPromise) {
-    return initializationPromise;
-  }
+export async function initializeApplication(): Promise<void> {
+  applyStackingConfig();
+  initTheme();
+  navigatorController.init({
+    onPromptCountChanged: sidebarController.setPromptCount,
+    onPromptAdded: () => sidebarController.setViewMode('toc'),
+    onRouteChanged: () => {
+      sidebarController.clearSearch();
+      sidebarController.setNavigatorTitle();
+    },
+    onSavePrompt: sidebarController.handleSavePrompt,
+    onTitleChanged: sidebarController.setNavigatorTitle,
+  });
+  const sidebar = await createSidebar();
+  sidebarController.init();
+  initSidebarResize(sidebar);
+  createJumpToEdgeControls(() => sidebarController.isMyPromptsView());
+  initializeJumpControlsPosition(sidebar);
+  const toggleButton = createSidebarToggleButton();
+  initializeChatGptSideBySide(sidebar);
+  initializeSidebarVisibility(sidebar, toggleButton, {
+    onOpened: () => {
+      navigatorController.resumeActivePromptTracking();
+      if (!sidebarController.isMyPromptsView()) {
+        navigatorController.refreshCurrentConversation();
+      }
+    },
+    onClosed: () => navigatorController.pauseActivePromptTracking(),
+  });
+  const applyPreferences = (preferences: SidebarPreferences): void => {
+    currentSidebarPreferences = preferences;
+    setChatGptSideBySideEnabled(preferences.layoutMode === 'side-by-side');
+    setSidebarLayoutMode(preferences.layoutMode);
+    applySidebarAppearance();
+  };
+  applySidebarAppearance();
+  void readSidebarPreferences().then(applyPreferences).catch(() => {
+    applyPreferences(DEFAULT_SIDEBAR_PREFERENCES);
+  });
+  subscribeSidebarPreferences(applyPreferences);
+  previewTooltip.init({ anchorSelector: '#navigator-list' });
+  buttonTooltip.init();
+  myPrompts.initAutocomplete();
+  navigatorController.attach();
 
-  initializationPromise = (async () => {
-    if (document.getElementById('luna-toc-sidebar')) {
-      throw new Error(
-        'LunaTOC: cannot initialize application shell because #luna-toc-sidebar already exists in DOM'
-      );
-    }
-
-    applyStackingConfig();
-    await initializeCustomTocTitles();
-    initTheme();
-    initPromptColors();
-    navigatorController.init({
-      onPromptCountChanged: sidebarController.setPromptCount,
-      onPromptAdded: () => sidebarController.setViewMode('toc'),
-      onRouteChanged: () => {
-        sidebarController.clearSearch();
-        sidebarController.setNavigatorTitle();
-        resetTocFilterMode();
-      },
-      onSavePrompt: sidebarController.handleSavePrompt,
-      onTitleChanged: sidebarController.setNavigatorTitle,
-    });
-    const sidebar = await createSidebar();
-    sidebar.addEventListener('contextmenu', (event) => {
-      if (sidebarController.getViewSnapshot().viewMode !== 'toc') return;
-      const target = event.target as HTMLElement | null;
-      if (!target) return;
-      if (target.closest('input, textarea')) return;
-      if (target.closest('.navigator-item')) return;
-
-      event.preventDefault();
-      openTocFilterMenu({ left: event.clientX, top: event.clientY });
-    });
-    sidebarController.init();
-    initSidebarResize(sidebar);
-    initFloatingPanel();
-
-    initializeSidebarVisibility(sidebar);
-    previewTooltip.init({
-      anchorSelector: '#navigator-list, #myprompts-list',
-    });
-    buttonTooltip.init();
-    myPrompts.initAutocomplete();
-    navigatorController.attach();
-
-    myPrompts.onPromptsChanged((prompts) => {
-      sidebarController.setMyPromptsCount(prompts.length);
-      sidebarController.refreshMyPromptsIfActive();
-    });
-    void myPrompts
-      .getMyPrompts()
-      .then((prompts) => {
-        sidebarController.setMyPromptsCount(prompts.length);
-      })
-      .catch((error) => {
-        console.error('[LunaTOC] Failed to load initial prompt count:', error);
-      });
-  })();
-
-  return initializationPromise;
+  myPrompts.onPromptsChanged((prompts) => {
+    sidebarController.setMyPromptsCount(prompts.length);
+    sidebarController.refreshMyPromptsIfActive();
+  });
+  void myPrompts.getMyPrompts().then((prompts) => {
+    sidebarController.setMyPromptsCount(prompts.length);
+  });
 }

@@ -1,10 +1,11 @@
 /**
  * Extracts per-prompt answer heading outlines from rendered ChatGPT DOM elements.
  * Resolves user messages, locates following assistant responses in DOM order,
- * and normalizes Markdown headings into a two-level hierarchy.
+ * and normalizes the first three existing Markdown heading levels.
  */
 import { getActivePlatform } from '@/platforms';
 import { logOutlineDiagnostic } from './outlineDiagnostics';
+import { parseUnrenderedBoldMarkdown } from '@/platforms/chatgpt/markdownBoldRepair';
 
 export interface OutlineEntry {
   level: number;
@@ -22,8 +23,8 @@ function platform() {
 }
 
 /**
- * Extracts the two-level heading outline from a rendered prompt answer.
- * @param {number} index Prompt index in the main ChatTOC navigator.
+ * Extracts up to three present heading levels from a rendered prompt answer.
+ * @param {number} index Prompt index in the main LunaTOC navigator.
  * @param {string | null} [messageId] Expected prompt message ID, if known.
  * @returns {Array<OutlineEntry>} List of extracted heading descriptors.
  */
@@ -103,7 +104,7 @@ function getAnswerContainerForPrompt(
 /**
  * Finds the next mounted assistant message element following a user message.
  */
-function findNextAssistantMessage(
+export function findNextAssistantMessage(
   userMessage: HTMLElement
 ): HTMLElement | null {
   const userSelector = platform().config.selectors.userMessage;
@@ -208,11 +209,16 @@ function getCenteredRenderedUserMessage(
  * Checks whether a heading element is for accessibility / screen readers only.
  */
 function isAccessibilityHeading(heading: HTMLElement): boolean {
-  return heading.closest('.sr-only') !== null;
+  if (heading.closest('.sr-only, [hidden], [aria-hidden="true"], [inert], pre, code')) {
+    return true;
+  }
+  const style = window.getComputedStyle(heading);
+  return style.display === 'none' || style.visibility === 'hidden' ||
+    style.visibility === 'collapse';
 }
 
 /**
- * Extracts the highest heading level and the next level from an answer.
+ * Extracts up to three existing levels, skipping absent heading ranks.
  */
 function extractHeadingOutline(answerContainer: HTMLElement): OutlineEntry[] {
   const headings = Array.from(
@@ -225,23 +231,24 @@ function extractHeadingOutline(answerContainer: HTMLElement): OutlineEntry[] {
 
   if (!headings.length) return [];
 
-  const baseLevel = Math.min(
-    ...headings.map((heading) => getHeadingLevel(heading))
+  // H2/H4/H6 is a valid three-level outline even though H3 and H5 are absent.
+  // Keep document order, compact indentation, and stable native heading tags.
+  const presentLevels = [...new Set(headings.map(getHeadingLevel))]
+    .sort((a, b) => a - b)
+    .slice(0, 3);
+  const normalizedLevels = new Map(
+    presentLevels.map((headingLevel, index) => [headingLevel, index + 1])
   );
-  const childLevel = baseLevel + 1;
-
   const occurrenceByDescriptor = new Map<string, number>();
 
   return headings
-    .filter((heading) => {
-      const level = getHeadingLevel(heading);
-
-      return level === baseLevel || level === childLevel;
-    })
+    .filter((heading) => normalizedLevels.has(getHeadingLevel(heading)))
     .map((heading) => {
       const headingLevel = getHeadingLevel(heading);
-      const level = headingLevel === baseLevel ? 1 : 2;
-      const text = heading.textContent.trim();
+      const level = normalizedLevels.get(headingLevel)!;
+      const rawText = heading.textContent.trim();
+      const text = parseUnrenderedBoldMarkdown(rawText)
+        ?.map((segment) => segment.text).join('') ?? rawText;
       const descriptorKey = `${headingLevel}\u0000${text}`;
       const occurrence = occurrenceByDescriptor.get(descriptorKey) || 0;
       occurrenceByDescriptor.set(descriptorKey, occurrence + 1);

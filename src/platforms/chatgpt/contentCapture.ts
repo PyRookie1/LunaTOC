@@ -2,7 +2,9 @@
  * ChatGPT content-side adapter.
  *
  * `inspectFetchRequest` classifies a `window.fetch` call site for the
- * page-hook entry. `isNewChatRouteKey` mirrors the controller's
+ * page-hook entry. `createNavigationTurns` and
+ * `createRenderedFingerprintCollector` delegate to the existing
+ * platform-specific factories. `isNewChatRouteKey` mirrors the controller's
  * `new-chat:` / `WEB:` prefix check.
  */
 import {
@@ -60,3 +62,8 @@ export function isNewChatRouteKey(routeKey: string): boolean {
     routeKey.startsWith('local-')
   );
 }
+
+// Re-export under interface-aligned names so the platform aggregator can
+// wire these directly.
+export { createChatGptNavigationTurns as createNavigationTurns } from './navigationAdapter';
+export { createRenderedFingerprintCollector } from './renderedFingerprintCollector';

@@ -1,5 +1,5 @@
 /**
- * Shared tooltips for ChatTOC:
+ * Shared tooltips for LunaTOC:
  * 1. Preview tooltip: For viewing truncated prompt text in the sidebar.
  * 2. Button tooltip: For showing fast, custom floating tooltips on buttons and icons.
  */
@@ -8,8 +8,6 @@
 export interface PreviewTooltipContent {
   title?: string;
   content?: string;
-  originalPrompt?: string;
-  customTitle?: string;
 }
 
 /**
@@ -93,19 +91,7 @@ export const previewTooltip = (() => {
     showTimer = setTimeout(() => {
       tooltip.innerHTML = '';
       if (typeof text === 'object' && text !== null) {
-        if (text.customTitle && text.originalPrompt) {
-          tooltip.innerHTML =
-            '<div class="navigator-preview-tooltip-custom"></div>' +
-            '<div class="navigator-preview-tooltip-original"></div>';
-          const customEl = tooltip.querySelector<HTMLElement>(
-            '.navigator-preview-tooltip-custom'
-          );
-          const origEl = tooltip.querySelector<HTMLElement>(
-            '.navigator-preview-tooltip-original'
-          );
-          if (customEl) customEl.textContent = text.customTitle;
-          if (origEl) origEl.textContent = text.originalPrompt;
-        } else if (text.title && text.content) {
+        if (text.title && text.content) {
           const titleEl = document.createElement('div');
           titleEl.className = 'navigator-preview-tooltip-title';
           titleEl.textContent = text.title;
@@ -130,11 +116,8 @@ export const previewTooltip = (() => {
 
   /**
    * Hides the tooltip after a short delay so pointer transitions are not abrupt.
-   * If immediate is true, cancels pending timers and removes the visible class immediately.
-   *
-   * @param {boolean} [immediate=false]
    */
-  function hide(immediate: boolean = false): void {
+  function hide(): void {
     if (hideTimer !== null) clearTimeout(hideTimer);
     if (showTimer !== null) clearTimeout(showTimer);
 
@@ -142,12 +125,6 @@ export const previewTooltip = (() => {
 
     const tooltip = getTooltip();
     if (!tooltip) return;
-
-    if (immediate) {
-      tooltip.classList.remove('luna-toc-tooltip-visible');
-      hideTimer = null;
-      return;
-    }
 
     hideTimer = setTimeout(() => {
       tooltip.classList.remove('luna-toc-tooltip-visible');
@@ -170,21 +147,9 @@ export const previewTooltip = (() => {
   ): void {
     const gap = 8;
     const margin = 16;
-    let anchor: Element | null = null;
-    if (anchorSelector) {
-      for (const candidate of document.querySelectorAll(anchorSelector)) {
-        if (
-          candidate instanceof HTMLElement &&
-          candidate.style.display !== 'none'
-        ) {
-          anchor = candidate;
-          break;
-        }
-      }
-      if (!anchor) {
-        anchor = document.querySelector(anchorSelector);
-      }
-    }
+    const anchor = anchorSelector
+      ? document.querySelector(anchorSelector)
+      : null;
     const anchorRect = anchor?.getBoundingClientRect();
     const tooltipAnchorRect = anchorElement?.getBoundingClientRect();
 

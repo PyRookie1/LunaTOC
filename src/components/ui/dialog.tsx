@@ -48,17 +48,15 @@ function DialogContent({
   showCloseButton = true,
   portalContainer,
   overlayClassName,
-  overlayStyle,
   ...props
 }: DialogPrimitive.Popup.Props & {
   showCloseButton?: boolean
   portalContainer?: DialogPrimitive.Portal.Props["container"]
   overlayClassName?: string
-  overlayStyle?: React.CSSProperties
 }) {
   return (
     <DialogPortal container={portalContainer}>
-      <DialogOverlay className={overlayClassName} style={overlayStyle} />
+      <DialogOverlay className={overlayClassName} />
       <DialogPrimitive.Popup
         data-slot="dialog-content"
         className={cn(
@@ -81,7 +79,7 @@ function DialogContent({
           >
             <XIcon
             />
-            <span className="sr-only">Close</span>
+            <span className="sr-only">关闭</span>
           </DialogPrimitive.Close>
         )}
       </DialogPrimitive.Popup>
@@ -119,7 +117,7 @@ function DialogFooter({
       {children}
       {showCloseButton && (
         <DialogPrimitive.Close render={<Button variant="outline" />}>
-          Close
+          关闭
         </DialogPrimitive.Close>
       )}
     </div>

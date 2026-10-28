@@ -1,11 +1,23 @@
-# Privacy Policy
+# LunaTOC-SC 隐私说明 / Privacy
 
-ChatTOC does not collect, store, transmit, sell, or share any user data.
+LunaTOC-SC 是仅支持 ChatGPT 的 Chrome 浏览器扩展。本说明针对 [PyRookie1/luna-toc-sc](https://github.com/PyRookie1/luna-toc-sc) 的源码版本，不代表上游项目的隐私政策。
 
-The extension operates entirely within the user's browser and only reads visible ChatGPT conversation content to generate a local table of contents and navigation sidebar.
+## 处理的信息
 
-No conversation content is transmitted to external servers.
+- 为生成提问目录和回答标题索引，扩展会读取 ChatGPT 页面中已经渲染的对话内容，并处理 ChatGPT 页面请求返回的会话消息数据。处理过程主要发生在浏览器内。
+- 为了在编辑历史问题、切换回答分支后更新目录，当侧边栏由隐藏变为展开时，扩展可以通过浏览器现有登录会话，向 **ChatGPT 站点自身的同源会话接口** 发起请求并读取响应。此操作需要网络连接，不应描述为完全离线。
+- “我的提示词”、自定义目录标题、主题、标记等数据会使用 Chrome 的本地存储能力保存。部分界面位置及会话状态也可能使用当前标签页的 Web Storage。
+- 为隔离不同 ChatGPT 账号的目录别名，扩展隔离环境会使用现有登录状态请求 ChatGPT 自身的 `/api/auth/session` 同源接口，仅读取响应中的账号 ID；不会采信网页 `postMessage` 中的账号 ID。失败时目录别名不可见且不能编辑。已绑定账号的目录别名仅在当前账号匹配时显示；历史未绑定记录保留但不自动归属。浏览器本地 JSON 备份仍包含多个账号的本地记录，备份属于敏感文件。
+- 用户手动导出的提示词会保存为本地文件；用户选择导入文件时，扩展会在浏览器中解析文件内容。
 
-No analytics, tracking, advertising, or third-party services are used.
+## 不包含的功能
 
-If you have any questions, please open an issue on the GitHub repository.
+当前项目未实现向项目维护者自有服务器上传对话的功能，也未集成项目自有的分析、广告追踪或遥测服务。扩展所依赖的 ChatGPT 网页和接口由 ChatGPT 服务方提供，并遵循该服务自身的隐私政策。
+
+## 权限及范围
+
+`manifest.json` 使用 Chrome 的 `storage` 和 `webRequest` 权限，并将主机权限限定为 `chatgpt.com` 与 `chat.openai.com`。`webRequest` 观察器只监听这两个站点下的会话 API 路径，用于确认顶层 DELETE 或非归档 `PATCH is_visible=false` 是否以 2xx 状态完成。它不会阻止或修改请求，不保存请求正文；对 PATCH 正文只在内存中读取删除判定所需的两个字段。权限允许浏览器向扩展提供匹配请求的 URL、方法、发起方和响应状态，因此 Chrome 可能在安装或更新时显示新增权限提示。扩展不会在 Microsoft Copilot 或其他聊天站点注入脚本，也不会将这些请求数据发送到维护者服务器。
+
+## 联系方式
+
+仓库目前尚未开启 GitHub Issues；请勿将 Issues 页面视为已启用的反馈渠道。

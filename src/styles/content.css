@@ -1,23 +1,19 @@
 /* ============================================================
-   ChatTOC Theme Tokens
-   Applied via [data-lunatoc-theme] on <html>. Default = dark.
+   LunaTOC Theme Tokens
+   Applied via [data-luna-toc-theme] on <html>. Default = dark.
    ============================================================ */
 
 :root,
-html[data-lunatoc-theme='dark'] {
+html[data-luna-toc-theme='dark'] {
   /* Backgrounds */
   --ct-bg-sidebar: rgba(16, 24, 39, 0.85);
   --ct-bg-sidebar-solid: #101827;
   --ct-bg-item-hover: #18243a;
   --ct-bg-item-active: #1d2c50;
-  --ct-bg-item-marked: rgba(234, 179, 8, 0.12);
   --ct-bg-icon-btn-hover: #18243a;
   --ct-bg-icon-btn-active: #1d2c50;
   --ct-bg-jump-controls: rgba(16, 24, 39, 0.45);
   --ct-bg-jump-btn-hover: rgba(255, 255, 255, 0.08);
-  --ct-jump-icon-color: #9ab0d3;
-  --ct-jump-icon-hover-color: #3b82f6;
-  --ct-jump-icon-active-color: #60a5fa;
   --ct-bg-input: #0b111d;
   --ct-bg-select: #162033;
   --ct-bg-add-btn: #162033;
@@ -33,16 +29,12 @@ html[data-lunatoc-theme='dark'] {
   /* Borders */
   --ct-border-sidebar: #27354a;
   --ct-border-input: #27354a;
-  --ct-border-input-hover: #374862;
-  --ct-border-input-focus: #4b6288;
-  --ct-focus-ring-input: rgba(75, 98, 136, 0.28);
   --ct-border-select: #27354a;
   --ct-border-modal: #27354a;
   --ct-border-jump-controls: rgba(148, 163, 184, 0.16);
   --ct-border-autocomplete: #27354a;
   --ct-border-autocomplete-item: rgba(39, 53, 74, 0.6);
   --ct-border-tooltip-preview: #27354a;
-  --ct-border-tooltip-divider: rgba(39, 53, 74, 0.6);
 
   /* Text */
   --ct-text-primary: #dce6f5;
@@ -52,7 +44,6 @@ html[data-lunatoc-theme='dark'] {
   --ct-text-item-active: #ffffff;
   --ct-text-item-index: #8fa2bc;
   --ct-text-item-index-active: #7f91ff;
-  --ct-text-item-marked: #fde68a;
   --ct-text-outline: #dce6f5;
   --ct-text-outline-l2: #8fa2bc;
   --ct-text-modal: #dce6f5;
@@ -62,17 +53,11 @@ html[data-lunatoc-theme='dark'] {
   --ct-text-tooltip-preview: #cbd5e1;
   --ct-text-tooltip-title: #f8fafc;
   --ct-text-tooltip-content: #cbd5e1;
-  --ct-text-tooltip-custom: var(--ct-text-custom-title);
-  --ct-text-tooltip-original: #8fa2bc;
   --ct-text-tooltip-button: #ffffff;
   --ct-text-autocomplete-title: #7f91ff;
   --ct-text-autocomplete-preview: #8fa2bc;
   --ct-text-select: #cbd5e1;
   --ct-text-select-hover: #f1f5f9;
-
-  /* Custom TOC Title (indigo) */
-  --ct-text-custom-title: #a5b4fc;
-  --ct-text-custom-title-active: #c7d2fe;
 
   /* Accent (blue) */
   --ct-accent: #7f91ff;
@@ -84,25 +69,19 @@ html[data-lunatoc-theme='dark'] {
   --ct-accent-outline-indicator: #7f91ff;
 
   /* Flag / Bookmark (gold) */
-  --ct-flag-color: #f0c341;
-  --ct-flag-hover: #f6cf5a;
 
   /* Floating toggle button */
   --ct-toggle-btn-color: #7f91ff;
-  --ct-toggle-btn-hover-bg: rgba(127, 145, 255, 0.12);
-  --ct-toggle-btn-hover-active-bg: rgba(127, 145, 255, 0.18);
+  --ct-toggle-btn-hover-bg: rgba(147, 197, 253, 0.35);
+  --ct-toggle-btn-hover-active-bg: rgba(147, 197, 253, 0.5);
   --ct-toggle-label-color: #dce6f5;
   --ct-toggle-label-shadow: #101827;
-
-  /* TOC Filter indicator */
-  --ct-filter-indicator: #38bdf8;
 
   /* Misc */
   --ct-sidebar-box-shadow-jump: 0 10px 30px rgba(15, 23, 42, 0.22);
   --ct-sidebar-shadow: none;
   --ct-select-color-scheme: dark;
   --ct-modal-overlay-bg: rgba(0, 0, 0, 0.65);
-  --ct-active-item-box-shadow-mark: inset 3px 0 0 var(--ct-flag-color);
   --ct-active-item-box-shadow-outline:
     inset 0 0 0 1px #7f91ff, inset 3px 0 0 #7f91ff;
 
@@ -114,20 +93,16 @@ html[data-lunatoc-theme='dark'] {
   --ct-icon-header-hover-bg: rgba(255, 255, 255, 0.08);
 }
 
-html[data-lunatoc-theme='light'] {
+html[data-luna-toc-theme='light'] {
   /* Backgrounds */
   --ct-bg-sidebar: rgba(238, 245, 255, 0.85);
   --ct-bg-sidebar-solid: #eef5ff;
   --ct-bg-item-hover: #e6f0fd;
   --ct-bg-item-active: #dce9ff;
-  --ct-bg-item-marked: rgba(217, 165, 20, 0.1);
   --ct-bg-icon-btn-hover: #e6f0fd;
   --ct-bg-icon-btn-active: #dce9ff;
   --ct-bg-jump-controls: rgba(238, 245, 255, 0.65);
   --ct-bg-jump-btn-hover: rgba(82, 110, 245, 0.08);
-  --ct-jump-icon-color: #9ab0d3;
-  --ct-jump-icon-hover-color: #2563eb;
-  --ct-jump-icon-active-color: #1d4ed8;
   --ct-bg-input: #e4eefc;
   --ct-bg-select: #e4eefc;
   --ct-bg-add-btn: #e4eefc;
@@ -143,16 +118,12 @@ html[data-lunatoc-theme='light'] {
   /* Borders */
   --ct-border-sidebar: #cddcf0;
   --ct-border-input: #cddcf0;
-  --ct-border-input-hover: #b9ceea;
-  --ct-border-input-focus: #7b9ec4;
-  --ct-focus-ring-input: rgba(123, 158, 196, 0.28);
   --ct-border-select: #cddcf0;
   --ct-border-modal: #cddcf0;
   --ct-border-jump-controls: rgba(82, 110, 245, 0.2);
   --ct-border-autocomplete: #cddcf0;
   --ct-border-autocomplete-item: rgba(205, 220, 240, 0.6);
   --ct-border-tooltip-preview: #cddcf0;
-  --ct-border-tooltip-divider: rgba(205, 220, 240, 0.6);
 
   /* Text */
   --ct-text-primary: #23456f;
@@ -162,7 +133,6 @@ html[data-lunatoc-theme='light'] {
   --ct-text-item-active: #23456f;
   --ct-text-item-index: #7087a6;
   --ct-text-item-index-active: #526ef5;
-  --ct-text-item-marked: #8a6708;
   --ct-text-outline: #23456f;
   --ct-text-outline-l2: #6c82a0;
   --ct-text-modal: #23456f;
@@ -172,17 +142,11 @@ html[data-lunatoc-theme='light'] {
   --ct-text-tooltip-preview: #23456f;
   --ct-text-tooltip-title: #23456f;
   --ct-text-tooltip-content: #6c82a0;
-  --ct-text-tooltip-custom: var(--ct-text-custom-title);
-  --ct-text-tooltip-original: #6c82a0;
   --ct-text-tooltip-button: #23456f;
   --ct-text-autocomplete-title: #526ef5;
   --ct-text-autocomplete-preview: #6c82a0;
   --ct-text-select: #23456f;
   --ct-text-select-hover: #23456f;
-
-  /* Custom TOC Title (indigo) */
-  --ct-text-custom-title: #4f46e5;
-  --ct-text-custom-title-active: #4338ca;
 
   /* Accent (blue) */
   --ct-accent: #526ef5;
@@ -194,24 +158,18 @@ html[data-lunatoc-theme='light'] {
   --ct-accent-outline-indicator: #526ef5;
 
   /* Flag / Bookmark (gold) */
-  --ct-flag-color: #d9a514;
-  --ct-flag-hover: #c2930e;
 
   /* Floating toggle button */
   --ct-toggle-btn-color: #526ef5;
-  --ct-toggle-btn-hover-bg: rgba(82, 110, 245, 0.12);
-  --ct-toggle-btn-hover-active-bg: rgba(82, 110, 245, 0.2);
+  --ct-toggle-btn-hover-bg: rgba(147, 197, 253, 0.35);
+  --ct-toggle-btn-hover-active-bg: rgba(147, 197, 253, 0.5);
   --ct-toggle-label-color: #23456f;
   --ct-toggle-label-shadow: #eef5ff;
-
-  /* TOC Filter indicator */
-  --ct-filter-indicator: #0284c7;
 
   /* Misc */
   --ct-sidebar-box-shadow-jump: 0 10px 30px rgba(82, 110, 245, 0.1);
   --ct-sidebar-shadow: -4px 0 24px rgba(35, 69, 111, 0.08);
   --ct-modal-overlay-bg: rgba(0, 0, 0, 0.4);
-  --ct-active-item-box-shadow-mark: inset 3px 0 0 var(--ct-flag-color);
   --ct-active-item-box-shadow-outline:
     inset 0 0 0 1px #526ef5, inset 3px 0 0 #526ef5;
   --ct-select-color-scheme: light;
@@ -246,7 +204,7 @@ html[data-lunatoc-theme='light'] {
   -webkit-backdrop-filter: blur(12px);
   color: var(--ct-text-primary);
   z-index: var(--ct-z-sidebar, 1000);
-  padding: 0 6px 12px;
+  padding: 0 0 12px 6px;
   box-sizing: border-box;
   font-size: 14px;
   border-left: 1px solid var(--ct-border-sidebar);
@@ -259,25 +217,43 @@ html[data-lunatoc-theme='light'] {
 }
 
 #luna-toc-sidebar.luna-toc-navigator-ready {
-  transition: transform 160ms ease;
+  transition: transform 100ms ease;
+}
+
+
+/* Keep the native ChatGPT navigation outside the resized chat column. */
+.luna-toc-chat-side-by-side {
+  box-sizing: border-box !important;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: calc(100% - var(--luna-toc-reserved-sidebar-width)) !important;
+  margin-right: var(--luna-toc-reserved-sidebar-width) !important;
+  flex-shrink: 1 !important;
+  transition: margin-right 160ms ease, max-width 160ms ease;
 }
 
 .navigator-topbar {
   flex: 0 0 auto;
-  margin: 0 -6px;
+  margin: 0 0 0 -6px;
   padding: 7px 14px 8px;
   background: var(--ct-bg-header);
   border-bottom: 1px solid var(--ct-border-divider);
 }
 
-#navigator-list,
-#myprompts-list {
+#navigator-list {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
   padding-bottom: 80vh;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(156, 163, 175, 0.25) transparent;
+  /* Preserve wheel, trackpad and touch scrolling without a visible track. */
+  scrollbar-width: none;
+}
+
+/* Chrome and older WebKit versions need an explicit scrollbar rule. */
+#navigator-list::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 .navigator-header {
@@ -294,10 +270,6 @@ html[data-lunatoc-theme='light'] {
 }
 
 #navigator-title {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
   margin: 0;
   min-width: 0;
   padding: 1px 4px;
@@ -316,20 +288,6 @@ html[data-lunatoc-theme='light'] {
   white-space: nowrap;
   cursor: pointer;
   transition: color 150ms ease;
-}
-
-.navigator-title-text {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.navigator-filter-indicator {
-  display: inline-flex;
-  align-items: center;
-  color: var(--ct-filter-indicator);
-  flex-shrink: 0;
-  pointer-events: none;
 }
 
 #navigator-title:hover {
@@ -361,29 +319,58 @@ html[data-lunatoc-theme='light'] {
 
 .navigator-jump-controls {
   position: absolute;
-  right: 8px;
-  top: clamp(120px, 30vh, 280px);
+  right: 0;
+  top: 50%;
+  bottom: auto;
   z-index: 2;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  width: 30px;
-  padding: 4px 0;
-  border-radius: 0;
+  gap: 6px;
+  padding: 8px 0 8px 6px;
+  border-radius: 18px 0 0 18px;
   background: transparent;
-  border: none;
+  border: 1px solid transparent;
+  border-right: 0;
   box-shadow: none;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-  overflow: visible;
-  cursor: ns-resize;
-  touch-action: none;
+  cursor: default;
+  touch-action: auto;
   user-select: none;
+  transition: background-color 120ms ease, border-color 120ms ease;
 }
 
-.navigator-jump-controls.navigator-jump-controls-dragging {
-  cursor: grabbing;
+/* The toolbar is fully dormant until the pointer reaches the right edge. */
+.navigator-jump-controls:not(.navigator-jump-controls-visible) {
+  pointer-events: none;
+}
+
+.navigator-jump-controls > button {
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+/* The full button-sized transparent footprint remains hit-testable on hover. */
+.navigator-jump-controls.navigator-jump-controls-visible {
+  background: var(--ct-bg-jump-controls);
+  border-color: var(--ct-border-jump-controls);
+  box-shadow:
+    var(--ct-sidebar-box-shadow-jump),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+}
+
+.navigator-jump-controls:focus-visible {
+  outline: 1px solid var(--ct-accent);
+  outline-offset: 1px;
+}
+
+.navigator-jump-controls.navigator-jump-controls-visible > button {
+  opacity: 1;
+}
+
+/* Hidden buttons cannot be clicked; their parent remains the hover target. */
+.navigator-jump-controls:not(.navigator-jump-controls-visible) > button {
+  pointer-events: none;
 }
 
 .navigator-icon-btn {
@@ -404,65 +391,25 @@ html[data-lunatoc-theme='light'] {
 }
 
 .navigator-jump-controls .navigator-icon-btn {
-  width: 30px;
-  height: 30px;
-  padding: 0;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--ct-jump-icon-color, #9ab0d3);
-  box-shadow: none;
+  background: var(--ct-bg-jump-btn-hover);
+  color: var(--ct-text-muted);
   justify-self: auto;
   transform: none;
-  cursor: pointer;
-  outline: none;
   transition:
-    color 180ms ease,
-    transform 180ms cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.navigator-jump-controls .navigator-icon-btn svg {
-  width: 18px;
-  height: 18px;
-  fill: none;
-  stroke: currentColor;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-width: 2;
-  display: block;
-  transform-origin: center center;
-  transition:
-    transform 180ms cubic-bezier(0.16, 1, 0.3, 1),
-    filter 180ms ease;
+    opacity 120ms ease,
+    color 120ms ease,
+    transform 80ms ease;
 }
 
 .navigator-jump-controls .navigator-icon-btn:hover {
-  background: transparent;
-  color: var(--ct-jump-icon-hover-color, #2563eb);
-  transform: scale(1.08);
-}
-
-.navigator-jump-controls .navigator-icon-btn:hover svg {
-  filter: drop-shadow(0 0 2px rgba(37, 99, 235, 0.35));
+  background: var(--ct-bg-jump-btn-hover);
+  color: var(--ct-accent-hover);
 }
 
 .navigator-jump-controls .navigator-icon-btn:active {
-  background: transparent;
-  color: var(--ct-jump-icon-active-color, #1d4ed8);
-  transform: scale(0.96);
-}
-
-.navigator-jump-controls .navigator-icon-btn:focus-visible {
-  outline: 2px solid var(--ct-jump-icon-hover-color, #2563eb);
-  outline-offset: 2px;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .navigator-jump-controls .navigator-icon-btn,
-  .navigator-jump-controls .navigator-icon-btn svg {
-    transition: none;
-    transform: none;
-  }
+  background: var(--ct-bg-jump-btn-hover);
+  color: var(--ct-accent-active);
+  transform: translateY(1px) scale(0.94);
 }
 
 .navigator-icon-btn:hover {
@@ -542,97 +489,43 @@ html[data-lunatoc-theme='light'] {
 }
 
 html.luna-toc-external-overlay-open #luna-toc-sidebar,
-html.luna-toc-external-overlay-open #luna-toc-toggle-btn,
+html.luna-toc-external-overlay-open #luna-toc-floating-dock,
 html.luna-toc-external-overlay-open #luna-toc-preview-tooltip,
 html.luna-toc-external-overlay-open #luna-toc-button-tooltip,
-html.luna-toc-external-overlay-open #luna-toc-react-host {
+html.luna-toc-external-overlay-open #luna-toc-react-host,
+html.luna-toc-external-overlay-open .navigator-jump-controls {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* Collapsed sidebar: an invisible, full-height pointer activation region. */
+#luna-toc-floating-dock {
+  position: fixed;
+  right: 0;
+  top: 0;
+  width: 6px;
+  height: 100vh;
+  z-index: var(--ct-z-toggle, 1010);
+  transition: opacity 120ms ease, visibility 120ms ease;
+}
+
+#luna-toc-floating-dock.luna-toc-floating-dock-hidden {
+  opacity: 0;
   visibility: hidden;
   pointer-events: none;
 }
 
 #luna-toc-toggle-btn {
-  position: fixed;
-  right: 0;
-  top: calc(50% - 21px);
-  bottom: auto;
-  width: 42px;
-  height: 42px;
-  z-index: var(--ct-z-toggle, 1010);
-  border-radius: 50%;
-  background: transparent;
-  color: var(--ct-toggle-btn-color);
-  border: none;
-  cursor: pointer;
-  font-size: 20px;
-  line-height: 1;
-  opacity: 0.6;
-  touch-action: none;
-  display: grid;
-  place-items: center;
-  transition:
-    background-color 120ms ease,
-    color 120ms ease,
-    opacity 120ms ease,
-    transform 120ms ease;
-}
-
-#luna-toc-toggle-btn:hover {
-  background: var(--ct-toggle-btn-hover-bg);
-  color: var(--ct-accent-hover);
-  opacity: 0.8;
-  transform: translateY(-1px);
-}
-
-#luna-toc-toggle-btn:active {
-  background: var(--ct-toggle-btn-hover-active-bg);
-  transform: translateY(0);
-}
-
-#luna-toc-toggle-btn.luna-toc-toggle-btn-dragging {
-  cursor: grabbing;
-  transition: none;
-  transform: none;
-}
-
-#luna-toc-toggle-btn.luna-toc-sidebar-hidden {
-  color: var(--ct-toggle-btn-color);
-  opacity: 0.42;
-}
-
-#luna-toc-toggle-btn.luna-toc-sidebar-hidden:hover {
-  background: var(--ct-toggle-btn-hover-bg);
-  color: var(--ct-accent-hover);
-  opacity: 0.68;
-}
-
-#luna-toc-toggle-btn svg,
-#luna-toc-toggle-btn .toggle-sidebar-label {
-  grid-area: 1 / 1;
-}
-
-#luna-toc-toggle-btn svg {
-  width: 42px;
-  height: 42px;
   display: block;
-  z-index: 0;
-}
-
-#luna-toc-toggle-btn .toggle-sidebar-label {
-  font-size: 11px;
-  font-weight: 700;
-  font-family:
-    system-ui,
-    -apple-system,
-    BlinkMacSystemFont,
-    'Segoe UI',
-    Roboto,
-    sans-serif;
-  letter-spacing: 0.5px;
-  /* Moved upwards to avoid undesired overlap with the moon's inner edge */
-  transform: translate(-2px, -1px);
-  z-index: 1;
-  color: var(--ct-bg-primary);
-  pointer-events: none;
+  box-sizing: border-box;
+  width: 6px;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: var(--luna-toc-reveal-bg, transparent);
+  cursor: pointer;
+  touch-action: manipulation;
 }
 
 .navigator-icon-btn span {
@@ -660,9 +553,9 @@ html.luna-toc-external-overlay-open #luna-toc-react-host {
   box-sizing: border-box;
   width: 100%;
   min-height: 34px;
-  padding: 7px 8px;
+  padding: 7px 0 7px 6px;
   margin-top: 1px;
-  border-radius: 7px;
+  border-radius: 7px 0 0 7px;
   cursor: pointer;
   color: var(--ct-text-item);
   line-height: 20px;
@@ -670,7 +563,6 @@ html.luna-toc-external-overlay-open #luna-toc-react-host {
 }
 
 .navigator-item-main {
-  position: relative;
   display: flex;
   align-items: center;
   gap: 3px;
@@ -681,9 +573,9 @@ html.luna-toc-external-overlay-open #luna-toc-react-host {
 }
 
 .navigator-item-index {
-  flex: 0 0 24px;
-  width: 24px;
-  text-align: right;
+  flex: 0 0 auto;
+  width: auto;
+  text-align: left;
   font-size: 12.5px;
   font-weight: 500;
   letter-spacing: -0.01em;
@@ -691,6 +583,11 @@ html.luna-toc-external-overlay-open #luna-toc-react-host {
   line-height: 20px;
   user-select: none;
   white-space: nowrap;
+}
+
+.navigator-item.navigator-item-active .navigator-item-index {
+  color: var(--ct-text-item-index-active);
+  font-weight: 600;
 }
 
 .navigator-item-text {
@@ -704,84 +601,45 @@ html.luna-toc-external-overlay-open #luna-toc-react-host {
   overflow: hidden;
 }
 
-.navigator-item.navigator-item-custom-title .navigator-item-text {
-  color: var(--ct-text-custom-title);
+/* Multi-line title editor grows with wrapped content inside its own TOC row. */
+.navigator-item.navigator-item-editing {
+  cursor: text;
 }
 
-.navigator-item.navigator-item-custom-title .navigator-item-index {
-  color: var(--ct-text-custom-title);
-  opacity: 0.85;
-}
-
-/* Favourite colours both text and number, taking precedence over custom title */
-.navigator-item.navigator-item-marked .navigator-item-text,
-.navigator-item.navigator-item-marked.navigator-item-custom-title .navigator-item-text {
-  color: var(--ct-text-item-marked);
-}
-
-.navigator-item.navigator-item-marked .navigator-item-index,
-.navigator-item.navigator-item-marked.navigator-item-custom-title .navigator-item-index {
-  color: var(--ct-text-item-marked);
-  opacity: 0.85;
-}
-
-/* Active + Favourite applies Active background, left border, and default text/number colours */
-.navigator-item.navigator-item-active.navigator-item-marked .navigator-item-text,
-.navigator-item.navigator-item-active.navigator-item-marked.navigator-item-custom-title .navigator-item-text {
+.navigator-item-inline-input {
+  box-sizing: border-box;
+  flex: 1 1 0;
+  width: 100%;
+  min-width: 0;
+  min-height: 28px;
+  height: auto;
+  padding: 3px 6px;
+  border: 1px solid var(--ct-border-input);
+  border-radius: 5px;
+  outline-offset: 1px;
+  background: var(--ct-bg-input);
   color: var(--ct-text-item);
+  font: inherit;
+  line-height: 20px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow: hidden;
+  resize: none;
+  vertical-align: top;
 }
 
-.navigator-item.navigator-item-active.navigator-item-marked .navigator-item-index,
-.navigator-item.navigator-item-active.navigator-item-marked.navigator-item-custom-title .navigator-item-index {
-  color: var(--ct-text-item-index);
-  opacity: 1;
+.navigator-item-inline-input:focus-visible {
+  outline: 2px solid currentColor;
 }
 
-.navigator-outline-indicator {
-  flex: 0 0 14px;
-  color: var(--ct-accent-outline-indicator);
-  line-height: 1;
-  width: 14px;
-  height: 18px;
-  display: grid;
-  place-items: center;
-}
-
-.navigator-outline-indicator:not(:empty) {
-  margin-right: 21px;
-}
-
-.navigator-outline-indicator:empty {
-  display: none;
-}
-
-.navigator-outline-indicator svg {
-  width: 12px;
-  height: 12px;
-  fill: none;
-  stroke: currentColor;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-width: 1.8;
-  transition: transform 120ms ease;
-}
-
-.navigator-outline-indicator[data-expanded='true'] svg {
-  transform: rotate(180deg);
+.navigator-item-inline-error {
+  padding: 2px 6px 2px 20px;
+  color: #ed7777;
+  font-size: 12px;
 }
 
 .navigator-item:hover {
   background: var(--ct-bg-item-hover);
-}
-
-.navigator-item.navigator-item-marked {
-  background: var(--ct-bg-item-marked);
-  color: var(--ct-text-item-marked);
-}
-
-.navigator-item.navigator-item-active.navigator-item-marked {
-  background: var(--ct-bg-item-active);
-  box-shadow: var(--ct-active-item-box-shadow-mark);
 }
 
 .navigator-item.navigator-item-active.navigator-item-outline-expanded {
@@ -807,7 +665,12 @@ html.luna-toc-external-overlay-open #luna-toc-react-host {
 
 .navigator-outline-item[data-level='2'] {
   padding-left: 22px;
-  color: #94a3b8;
+  color: var(--ct-text-outline-l2);
+}
+
+.navigator-outline-item[data-level='3'] {
+  padding-left: 32px;
+  color: var(--ct-text-secondary);
 }
 
 .navigator-outline-item:hover {
@@ -824,95 +687,12 @@ html.luna-toc-external-overlay-open #luna-toc-react-host {
     box-shadow 160ms ease;
 }
 
-.navigator-mark-btn {
-  position: absolute;
-  right: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  z-index: 1;
-  width: 18px;
-  height: 18px;
-  padding: 0;
-  border: none;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--ct-text-muted);
-  cursor: pointer;
-  display: grid;
-  opacity: 0;
-  pointer-events: none;
-  place-items: center;
-  transition:
-    color 120ms ease,
-    opacity 120ms ease,
-    background 120ms ease;
-}
-
-.navigator-item:hover .navigator-mark-btn,
-.navigator-mark-btn:focus-visible,
-.navigator-mark-btn.navigator-mark-btn-active {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-.navigator-mark-btn:focus-visible {
-  background-color: var(--ct-bg-sidebar-solid);
-  box-shadow: -4px 0 6px var(--ct-bg-sidebar-solid);
-}
-
-.navigator-item:hover .navigator-mark-btn {
-  background-color: var(--ct-bg-item-hover);
-  background-image: none;
-  box-shadow: -4px 0 6px var(--ct-bg-item-hover);
-}
-
-.navigator-item.navigator-item-marked .navigator-mark-btn {
-  background-color: var(--ct-bg-sidebar-solid);
-  background-image: linear-gradient(var(--ct-bg-item-marked), var(--ct-bg-item-marked));
-  box-shadow: -4px 0 6px var(--ct-bg-sidebar-solid);
-}
-
-.navigator-item.navigator-item-active .navigator-mark-btn,
-.navigator-item.navigator-item-active.navigator-item-marked .navigator-mark-btn {
-  background-color: var(--ct-bg-item-active);
-  background-image: none;
-  box-shadow: -4px 0 6px var(--ct-bg-item-active);
-}
-
-.navigator-mark-btn:hover {
-  color: var(--ct-flag-hover);
-}
-
-.navigator-mark-btn.navigator-mark-btn-active {
-  color: var(--ct-flag-color);
-}
-
-.navigator-mark-btn.navigator-mark-btn-active:hover {
-  color: var(--ct-flag-hover);
-}
-
-.navigator-mark-btn svg {
-  width: 14px;
-  height: 14px;
-  fill: none;
-  stroke: currentColor;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-width: 1.8;
-}
-
-.navigator-mark-btn.navigator-mark-btn-active svg {
-  fill: currentColor;
-}
-
 #luna-toc-preview-tooltip {
   position: fixed;
   right: 320px;
   top: 80px;
 
-  box-sizing: border-box;
   width: 380px;
-  max-width: calc(100vw - 32px);
   max-height: 60vh;
 
   overflow-y: auto;
@@ -939,27 +719,6 @@ html.luna-toc-external-overlay-open #luna-toc-react-host {
   display: block;
 }
 
-.navigator-preview-tooltip-custom {
-  font-weight: 600;
-  font-size: 12.5px;
-  line-height: 1.5;
-  color: var(--ct-text-tooltip-custom);
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.navigator-preview-tooltip-original {
-  font-weight: 400;
-  font-size: 12.5px;
-  line-height: 1.5;
-  color: var(--ct-text-tooltip-original);
-  white-space: pre-wrap;
-  word-break: break-word;
-  margin-top: 7px;
-  padding-top: 6px;
-  border-top: 1px solid var(--ct-border-tooltip-divider);
-}
-
 .navigator-preview-tooltip-title {
   font-weight: 600;
   color: var(--ct-text-tooltip-title);
@@ -971,8 +730,6 @@ html.luna-toc-external-overlay-open #luna-toc-react-host {
 
 .navigator-preview-tooltip-content {
   white-space: pre-wrap;
-  overflow-wrap: break-word;
-  word-break: break-word;
   font-size: 12.5px;
   line-height: 1.5;
   color: var(--ct-text-tooltip-content);
@@ -1003,6 +760,7 @@ html.luna-toc-external-overlay-open #luna-toc-react-host {
 
 .navigator-item.navigator-item-active {
   background: var(--ct-bg-item-active);
+  color: var(--ct-text-item-active);
 }
 
 #navigator-search {
@@ -1018,35 +776,14 @@ html.luna-toc-external-overlay-open #luna-toc-react-host {
   color: var(--ct-text-primary);
   font-size: 13px;
   outline: none;
-  transition:
-    border-color 140ms ease,
-    box-shadow 140ms ease,
-    background-color 140ms ease;
 }
 
 #navigator-search::placeholder {
   color: var(--ct-text-muted);
 }
 
-#navigator-search:hover:not(:disabled):not(:focus) {
-  border-color: var(--ct-border-input-hover);
-}
-
 #navigator-search:focus {
-  outline: none;
-  border-color: var(--ct-border-input-focus);
-  box-shadow: 0 0 0 2px var(--ct-focus-ring-input);
-}
-
-#navigator-search:focus-visible {
-  outline: none;
-  border-color: var(--ct-border-input-focus);
-  box-shadow: 0 0 0 2px var(--ct-focus-ring-input);
-}
-
-#navigator-search:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
+  border-color: var(--ct-accent);
 }
 
 .navigator-status {
@@ -1077,10 +814,6 @@ html.luna-toc-external-overlay-open #luna-toc-react-host {
   opacity: 1;
   margin: 2px 0 0;
   pointer-events: auto;
-}
-
-#luna-toc-sidebar[data-view-mode='myPrompts'] #luna-toc-status {
-  display: none;
 }
 
 .navigator-status .jumping-dots {
@@ -1139,9 +872,9 @@ html.luna-toc-external-overlay-open #luna-toc-react-host {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin: 6px 0 0;
-  padding: 0;
-  border-bottom: none;
+  padding: 6px 0 8px;
+  border-bottom: 1px solid var(--ct-border-sidebar);
+  margin-bottom: 6px;
   color: var(--ct-text-muted);
 }
 
@@ -1152,100 +885,102 @@ html.luna-toc-external-overlay-open #luna-toc-react-host {
 .sort-bar-left {
   display: flex;
   align-items: center;
-  gap: 4px;
-  min-width: 0;
-  flex: 0 1 auto;
+  gap: 6px;
 }
 
 .sort-bar-left .sort-icon {
   width: 14px;
   height: 14px;
-  color: var(--ct-icon-header);
-  flex-shrink: 0;
+  color: var(--ct-text-muted);
 }
 
 .my-prompts-sort-select {
-  background: transparent;
-  color: var(--ct-icon-header);
-  border: 1px solid transparent;
-  border-radius: 4px;
-  padding: 0 2px;
-  font-size: 11.5px;
-  font-weight: 500;
-  line-height: 20px;
-  height: 22px;
-  max-width: 108px;
-  min-width: 0;
-  text-overflow: ellipsis;
+  background: var(--ct-bg-select);
+  color: var(--ct-text-select);
+  border: 1px solid var(--ct-border-select);
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 11px;
   outline: none;
   cursor: pointer;
   color-scheme: var(--ct-select-color-scheme);
   transition:
-    background-color 120ms ease,
-    color 120ms ease,
-    border-color 120ms ease;
+    border-color 150ms ease,
+    color 150ms ease;
 }
 
 .my-prompts-sort-select:hover {
-  background-color: var(--ct-icon-header-hover-bg);
-  color: var(--ct-text-header-title);
-  border-color: transparent;
+  border-color: var(--ct-accent);
+  color: var(--ct-text-select-hover);
 }
 
-.my-prompts-sort-select:focus,
-.my-prompts-sort-select:focus-visible {
-  outline: none;
+.my-prompts-sort-select:focus {
   border-color: var(--ct-accent);
-  color: var(--ct-text-header-title);
+  color: var(--ct-text-select-hover);
+}
+
+#myprompt-add-new-btn {
+  background: var(--ct-bg-add-btn);
+  border: 1px solid var(--ct-border-select);
+  color: var(--ct-accent-strong);
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  margin: 0;
+  padding: 0;
+  transition: all 150ms ease;
 }
 
 .my-prompts-toolbar-actions {
   display: flex;
   align-items: center;
   gap: 4px;
-  flex: 0 0 auto;
-  flex-shrink: 0;
 }
 
-#myprompt-add-new-btn,
 .myprompt-canvas-btn {
+  background: var(--ct-bg-add-btn);
+  border: 1px solid var(--ct-border-select);
+  color: var(--ct-accent-strong);
+  cursor: pointer;
   width: 22px;
   height: 22px;
-  box-sizing: border-box;
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 4px;
-  color: var(--ct-icon-header);
   display: flex;
   align-items: center;
   justify-content: center;
+  border-radius: 6px;
   margin: 0;
   padding: 0;
-  cursor: pointer;
-  transition:
-    background-color 120ms ease,
-    color 120ms ease,
-    transform 80ms ease;
+  transition: all 150ms ease;
 }
 
-#myprompt-add-new-btn:hover,
+.myprompt-canvas-btn canvas {
+  display: block;
+}
+
 .myprompt-canvas-btn:hover {
-  background-color: var(--ct-icon-header-hover-bg);
-  color: var(--ct-text-header-title);
-  border-color: transparent;
+  background: var(--ct-bg-item-hover);
+  border-color: var(--ct-accent-strong);
+  color: var(--ct-accent);
 }
 
-#myprompt-add-new-btn:active,
 .myprompt-canvas-btn:active {
-  background-color: var(--ct-icon-header-hover-bg);
-  color: var(--ct-text-header-title);
-  transform: scale(0.94);
+  transform: scale(0.95);
 }
 
-#myprompt-add-new-btn:focus-visible,
-.myprompt-canvas-btn:focus-visible {
-  outline: none;
-  border-color: var(--ct-accent);
+#myprompt-add-new-btn:hover {
+  background: var(--ct-bg-item-hover);
+  border-color: var(--ct-accent-strong);
+  color: var(--ct-accent);
+}
+
+#myprompt-add-new-btn:active {
+  transform: scale(0.95);
 }
 
 /* My Prompts Item Actions */
@@ -1297,4 +1032,101 @@ html.luna-toc-external-overlay-open #luna-toc-react-host {
 .delete-myprompt-btn:hover {
   color: #ef4444;
   background-color: rgba(239, 68, 68, 0.12);
+}
+
+/* Modal Dialog */
+.myprompt-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: var(--ct-modal-overlay-bg);
+  backdrop-filter: blur(4px);
+  z-index: var(--ct-z-modal, 1100);
+  display: none;
+  justify-content: center;
+  align-items: center;
+}
+
+.myprompt-modal-content {
+  background: var(--ct-bg-modal);
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--ct-border-modal);
+  border-radius: 12px;
+  width: 90%;
+  max-width: 480px;
+  padding: 24px;
+  box-shadow:
+    0 20px 25px -5px rgba(0, 0, 0, 0.5),
+    0 10px 10px -5px rgba(0, 0, 0, 0.4);
+  color: var(--ct-text-modal);
+}
+
+.myprompt-modal-title {
+  margin: 0 0 20px;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--ct-accent-hover);
+  border-bottom: 1px solid var(--ct-border-modal);
+  padding-bottom: 10px;
+}
+
+.myprompt-message-modal-content {
+  max-width: 420px;
+}
+
+.myprompt-modal-message {
+  margin: 0;
+  color: var(--ct-text-modal);
+  font-size: 14px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.myprompt-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.myprompt-btn {
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: 6px;
+  cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    transform 80ms ease;
+  border: none;
+  outline: none;
+}
+
+.myprompt-btn-secondary {
+  background: var(--ct-bg-btn-secondary);
+  color: var(--ct-text-btn-secondary);
+}
+
+.myprompt-btn-secondary:hover {
+  background: var(--ct-bg-btn-secondary-hover);
+}
+
+.myprompt-btn-primary {
+  background: var(--ct-accent-strong);
+  color: white;
+}
+
+.myprompt-btn-primary:hover {
+  background: var(--ct-accent-strong-hover);
+}
+
+.myprompt-btn:active {
+  transform: scale(0.97);
+}
+
+/* Keep repaired Markdown bold visible if the host page resets strong weights. */
+strong[data-luna-toc-markdown-bold='true'] {
+  font-weight: 700 !important;
 }

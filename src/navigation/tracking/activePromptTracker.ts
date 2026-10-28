@@ -11,19 +11,11 @@ export interface ActivePromptTrackerOptions {
    */
   getMessages: () => Array<{ id: string }>;
   /**
-   * Optional mapping of collapsed user message IDs to surviving TOC message IDs.
-   */
-  getCollapsedMessageMap?: () => ReadonlyMap<string, string>;
-  /**
-   * Called when active viewport index is updated.
+   * Called when active index is updated.
    * @param index The active prompt index.
    * @param changed True if the index is different from the previous active index.
    */
   onActiveIndexChange?: (index: number, changed: boolean) => void;
-  /**
-   * Called when genuine user browse intent (wheel/touch inside active chat) is detected.
-   */
-  onUserBrowseIntent?: () => void;
   /**
    * Optional platform resolver for dependency injection in tests.
    */
@@ -32,28 +24,11 @@ export interface ActivePromptTrackerOptions {
 
 export interface ActivePromptTracker {
   getActiveIndex(): number | null;
-  getViewportIndex(): number | null;
   findConversationIndexByElement(element: HTMLElement): number;
   checkActivePrompt(): void;
-  /**
-   * Synchronously seeds viewport index at target following successful navigation.
-   * Cancels pending RAF and emits change notification without establishing locks.
-   *
-   * @param index 0-indexed position of the active prompt.
-   */
-  syncViewportIndex(index: number): void;
-  syncActiveIndex(index: number): void;
   initTracking(): void;
   disconnect(): void;
   reset(): void;
-}
-
-function isIgnoredSidebarEvent(event: Event): boolean {
-  const target = event.target;
-  return (
-    target instanceof Element &&
-    Boolean(target.closest('#luna-toc-sidebar, #navigator-list'))
-  );
 }
 
 /**
@@ -74,72 +49,39 @@ export function createActivePromptTracker(
     return options.getPlatform ? options.getPlatform() : getActivePlatform();
   }
 
-  function resolveScrollContainer(): HTMLElement | null {
-    const platform = resolvePlatform();
-    return (
-      platform.navigation.getThreadScrollContainer?.() ??
-      platform.navigation.getScrollContainer?.() ??
-      null
-    );
-  }
-
   function getActiveIndex(): number | null {
     return activeNavigatorIndex;
   }
 
-  function getViewportIndex(): number | null {
-    return activeNavigatorIndex;
-  }
-
-  function getMessageIdFromElement(element: HTMLElement): string | null {
+  function findConversationIndexByElement(
+    element: HTMLElement,
+    indexByMessageId: ReadonlyMap<string, number> = buildMessageIndex()
+  ): number {
     const platform = resolvePlatform();
-    return (
-      (platform.navigation.getMessageIdFromElement?.(element) ??
-        (platform.config.selectors.messageId
-          ? element.getAttribute(platform.config.selectors.messageId) ||
-            element
-              .closest<HTMLElement>(`[${platform.config.selectors.messageId}]`)
-              ?.getAttribute(platform.config.selectors.messageId)
-          : null)) ??
-      null
-    );
-  }
-
-  function findConversationIndexByElement(element: HTMLElement): number {
-    const id = getMessageIdFromElement(element);
+    const id =
+      platform.navigation.getMessageIdFromElement?.(element) ??
+      (platform.config.selectors.messageId
+        ? element.getAttribute(platform.config.selectors.messageId) ||
+          element
+            .closest<HTMLElement>(`[${platform.config.selectors.messageId}]`)
+            ?.getAttribute(platform.config.selectors.messageId)
+        : null);
     if (!id) return -1;
-    return options.getMessages().findIndex((message) => message.id === id);
+    return indexByMessageId.get(id) ?? -1;
   }
 
-  /**
-   * Seeds viewport index synchronously, cancels pending RAF, and emits change callback.
-   *
-   * @param index 0-indexed position of landed prompt.
-   */
-  function syncViewportIndex(index: number): void {
-    if (rafId !== null) {
-      if (typeof cancelAnimationFrame !== 'undefined') {
-        cancelAnimationFrame(rafId);
-      }
-      rafId = null;
-    }
-
-    const previousIndex = activeNavigatorIndex;
-    activeNavigatorIndex = index;
-
-    const changed = previousIndex !== index;
-    options.onActiveIndexChange?.(index, changed);
+  function buildMessageIndex(): Map<string, number> {
+    return new Map(options.getMessages().map((message, index) => [message.id, index]));
   }
 
   function checkActivePrompt(): void {
     if (typeof window === 'undefined' || typeof document === 'undefined') return;
-
     const platform = resolvePlatform();
-    const container = resolveScrollContainer();
-    const containerRect = container ? container.getBoundingClientRect() : null;
-    const containerTop = containerRect ? containerRect.top : 0;
-    const containerBottom = containerRect ? containerRect.bottom : 0;
-
+    const container =
+      platform.navigation.getThreadScrollContainer?.() ??
+      platform.navigation.getScrollContainer?.() ??
+      null;
+    const containerTop = container ? container.getBoundingClientRect().top : 0;
     // Aligns with promptNavigation landing geometry: elements land at `containerTop + promptTopOffsetPx`
     // via scrollMarginTop. Aligning the activation boundary ensures that landing at the intended top
     // position immediately and consistently activates the target prompt.
@@ -147,45 +89,21 @@ export function createActivePromptTracker(
     const SUBPIXEL_TOLERANCE_PX = 2;
     const referenceBoundary = containerTop + targetOffset + SUBPIXEL_TOLERANCE_PX;
 
-    const renderedPromptElements = Array.from(
-      document.querySelectorAll<HTMLElement>(
-        platform.config.selectors.userMessage
-      )
+    const userSelector = platform.config.selectors.userMessage;
+    if (!userSelector || typeof document === 'undefined') return;
+
+    const elements = Array.from(
+      document.querySelectorAll<HTMLElement>(userSelector)
     );
-
-    const collapsedMap = options.getCollapsedMessageMap?.();
-
-    interface VisibleCandidate {
-      index: number;
-      top: number;
-    }
-    const directVisibleCandidates: VisibleCandidate[] = [];
-    const collapsedVisibleCandidates: VisibleCandidate[] = [];
+    if (elements.length === 0) return;
 
     let latestAboveTop: number | null = null;
     let lowestMountedIndex: number | null = null;
-    const viewportTop = containerTop + targetOffset;
-    const viewportBottom = containerBottom;
+    // Index messages once per check rather than linearly scanning for each DOM node.
+    const indexByMessageId = buildMessageIndex();
 
-    for (const element of renderedPromptElements) {
-      let index = findConversationIndexByElement(element);
-      let isCollapsed = false;
-
-      if (index === -1 && collapsedMap && collapsedMap.size > 0) {
-        const id = getMessageIdFromElement(element);
-        if (id) {
-          const survivingId = collapsedMap.get(id);
-          if (survivingId) {
-            index = options
-              .getMessages()
-              .findIndex((message) => message.id === survivingId);
-            if (index !== -1) {
-              isCollapsed = true;
-            }
-          }
-        }
-      }
-
+    for (const element of elements) {
+      const index = findConversationIndexByElement(element, indexByMessageId);
       if (index === -1) continue;
 
       if (lowestMountedIndex === null || index < lowestMountedIndex) {
@@ -193,61 +111,24 @@ export function createActivePromptTracker(
       }
 
       const rect = element.getBoundingClientRect();
-
-      // Rule B fallback tracking: preserve existing top-boundary ownership calculation
       if (rect.top <= referenceBoundary) {
         if (latestAboveTop === null || index > latestAboveTop) {
           latestAboveTop = index;
         }
       }
-
-      // Rule A / Rule C candidate evaluation: is element visible within the scroll container viewport?
-      const entryThreshold = Math.min(16, Math.max(1, rect.height * 0.5));
-      const isVisible =
-        Boolean(container) &&
-        rect.height > 0 &&
-        rect.bottom >= viewportTop + SUBPIXEL_TOLERANCE_PX &&
-        rect.top <= viewportBottom - entryThreshold;
-
-      if (isVisible) {
-        if (isCollapsed) {
-          collapsedVisibleCandidates.push({ index, top: rect.top });
-        } else {
-          directVisibleCandidates.push({ index, top: rect.top });
-        }
-      }
     }
 
     let nextIndex: number | null = null;
-
-    // Rule A: Directly visible valid TOC Prompt (visually topmost)
-    if (directVisibleCandidates.length > 0) {
-      directVisibleCandidates.sort((a, b) => a.top - b.top);
-      nextIndex = directVisibleCandidates[0].index;
-    } else if (collapsedVisibleCandidates.length > 0) {
-      // Rule C: Visible collapsed prompt mapped to surviving valid TOC entry
-      collapsedVisibleCandidates.sort((a, b) => a.top - b.top);
-      nextIndex = collapsedVisibleCandidates[0].index;
+    if (latestAboveTop !== null) {
+      nextIndex = latestAboveTop;
+    } else if (lowestMountedIndex === 0) {
+      nextIndex = 0;
     } else {
-      // Rule B: Fallback to existing top-boundary ownership algorithm unchanged
-      const isAtTop = Boolean(
-        container && container.scrollTop <= SUBPIXEL_TOLERANCE_PX
-      );
-      const canFallbackToZero =
-        lowestMountedIndex === 0 &&
-        (activeNavigatorIndex === null || isAtTop);
-
-      if (latestAboveTop !== null) {
-        nextIndex = latestAboveTop;
-      } else if (canFallbackToZero) {
-        nextIndex = 0;
-      } else {
-        nextIndex =
-          activeNavigatorIndex ??
-          (lowestMountedIndex !== null
-            ? Math.max(0, lowestMountedIndex - 1)
-            : null);
-      }
+      nextIndex =
+        activeNavigatorIndex ??
+        (lowestMountedIndex !== null
+          ? Math.max(0, lowestMountedIndex - 1)
+          : null);
     }
 
     if (nextIndex !== null && nextIndex !== activeNavigatorIndex) {
@@ -270,29 +151,8 @@ export function createActivePromptTracker(
     });
   }
 
-  function handleScroll(event: Event): void {
-    if (isIgnoredSidebarEvent(event)) return;
+  function handleScroll(): void {
     scheduleGeometryCheck();
-  }
-
-  function isEventInsideActiveChat(
-    event: Event,
-    container: HTMLElement
-  ): boolean {
-    if (isIgnoredSidebarEvent(event)) return false;
-    const target = event.target;
-    return (
-      target instanceof Node &&
-      (target === container || container.contains(target))
-    );
-  }
-
-  function handleWheelOrTouch(event: Event): void {
-    const container = resolveScrollContainer();
-    if (!container) return;
-    if (isEventInsideActiveChat(event, container)) {
-      options.onUserBrowseIntent?.();
-    }
   }
 
   function initTracking(): void {
@@ -301,16 +161,6 @@ export function createActivePromptTracker(
     isTracking = true;
 
     document.addEventListener('scroll', handleScroll, {
-      capture: true,
-      passive: true,
-    });
-
-    document.addEventListener('wheel', handleWheelOrTouch, {
-      capture: true,
-      passive: true,
-    });
-
-    document.addEventListener('touchmove', handleWheelOrTouch, {
       capture: true,
       passive: true,
     });
@@ -339,16 +189,6 @@ export function createActivePromptTracker(
         handleScroll,
         { capture: true } as EventListenerOptions
       );
-      document.removeEventListener(
-        'wheel',
-        handleWheelOrTouch,
-        { capture: true } as EventListenerOptions
-      );
-      document.removeEventListener(
-        'touchmove',
-        handleWheelOrTouch,
-        { capture: true } as EventListenerOptions
-      );
     }
     if (activePromptMutationObserver) {
       activePromptMutationObserver.disconnect();
@@ -369,11 +209,8 @@ export function createActivePromptTracker(
 
   return {
     getActiveIndex,
-    getViewportIndex,
     findConversationIndexByElement,
     checkActivePrompt,
-    syncViewportIndex,
-    syncActiveIndex: syncViewportIndex,
     initTracking,
     disconnect,
     reset,

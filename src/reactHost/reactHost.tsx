@@ -6,15 +6,8 @@ import { createRoot } from 'react-dom/client';
 
 import { PromptAutocompleteHost } from '@/components/my-prompts/PromptAutocomplete';
 import { PromptContextMenuHost } from '@/components/my-prompts/PromptContextMenu';
-import { TocFilterContextMenuHost } from '@/components/toc-filter/TocFilterContextMenu';
 import { PromptEditorDialogHost } from '@/components/my-prompts/PromptEditorDialog';
-import { CustomTocTitleDialogHost } from '@/components/custom-toc-titles/CustomTocTitleDialog';
-import { ConfirmDialogHost } from '@/components/my-prompts/ConfirmDialog';
-import { SidebarHeader } from '@/components/sidebar-header/SidebarHeader';
-import { SidebarStatus } from '@/components/sidebar-status/SidebarStatus';
-import { SidebarJumpControls } from '@/components/sidebar-jump/SidebarJumpControls';
-import { SidebarToggleButton } from '@/components/sidebar-toggle/SidebarToggleButton';
-import { MyPromptsView } from '@/components/my-prompts/MyPromptsView';
+import { ContractAlert } from '@/features/contractAlert/ContractAlert';
 import {
   setReactPortalContainer,
   getReactPortalContainer,
@@ -64,15 +57,8 @@ export async function initializeReactHost(): Promise<void> {
     <>
       <PromptAutocompleteHost />
       <PromptContextMenuHost />
-      <TocFilterContextMenuHost />
       <PromptEditorDialogHost />
-      <CustomTocTitleDialogHost />
-      <ConfirmDialogHost />
-      <SidebarHeader />
-      <SidebarStatus />
-      <SidebarJumpControls />
-      <MyPromptsView />
-      <SidebarToggleButton />
+      <ContractAlert />
     </>
   );
 }
@@ -96,18 +82,18 @@ function waitForBody(): Promise<HTMLElement> {
 }
 
 /**
- * Mirrors the document theme onto the host because selectors cannot cross the
- * Shadow DOM boundary from the component stylesheet.
+ * Mirrors LunaTOC's isolated theme marker onto the host because selectors cannot
+ * cross the Shadow DOM boundary from the component stylesheet.
  */
 function synchronizeTheme(host: HTMLElement): void {
   const updateTheme = (): void => {
     host.dataset.theme =
-      document.documentElement.dataset.lunatocTheme === 'light' ? 'light' : 'dark';
+      document.documentElement.dataset.lunaTocTheme === 'light' ? 'light' : 'dark';
   };
 
   updateTheme();
   new MutationObserver(updateTheme).observe(document.documentElement, {
     attributes: true,
-    attributeFilter: ['data-lunatoc-theme'],
+    attributeFilter: ['data-luna-toc-theme'],
   });
 }

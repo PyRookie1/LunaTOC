@@ -1,151 +1,53 @@
-# LunaTOC
+# LunaTOC-SC — ChatGPT 中文对话目录
 
-A lightweight Chrome extension that adds a Table of Contents (TOC) sidebar to ChatGPT conversations.
+LunaTOC-SC 是面向 ChatGPT 长对话的 Chrome 扩展，将用户提问整理成可搜索的目录，支持回答标题导航与常用提示词管理。
 
-LunaTOC helps you navigate long conversations by automatically turning your prompts into a searchable, clickable outline.
+本项目基于 [Leo7805/luna-toc](https://github.com/Leo7805/luna-toc) 修改与维护，代码仓库为 [PyRookie1/luna-toc-sc](https://github.com/PyRookie1/luna-toc-sc)。
 
-👉 [Install from Chrome Web Store](https://chromewebstore.google.com/detail/chattoc/ibfdglfgljonajofiiaonlimoiolkcpa)
+## 核心功能
 
-[![Release](https://img.shields.io/badge/release-latest-blue)](https://github.com/Leo7805/chat-toc/releases/latest)
+- **对话目录**：提取用户提问，支持搜索、当前问题跟踪和长对话定位。
+- **回答标题导航**：按实际存在的标题级别最多显示三级，跳过缺失级别，不产生空级别占位；支持展开、收起及章节跳转。
+- **活动分支识别**：在 ChatGPT 提供节点关系时，按当前活动分支恢复目录。
+- **会话生命周期管理**：由扩展隔离脚本直接读取 ChatGPT 同源登录会话以识别账号，不信任页面发来的账号信息；页面发出的删除通知不能作为可靠的删除证明，因此不会据此自动清理本地目录别名；即使网页误报或消息被伪造，也不会因此删除本地文字。**不会把接口 404 当成对话删除**。
+- **目录操作**：右键菜单提供「复制文字」「添加Tips」「编辑文字」，当前回答标题目录展开时始终提供「收起目录」；只有**目录行或展开的标题有部分超出侧边栏可视区域**时，才在它的前后加上「回到顶部」「回到底部」（顺序为「回到顶部 → 收起目录 → 回到底部」）；有自定义名称时还可「恢复原文」。选择「编辑文字」后直接在当前目录行展开多行编辑区，随文字长度和侧边栏宽度自动换行、增高，编辑前即可完整查看原文字，不弹出对话框；Enter 保存、Shift+Enter 换行、Esc 取消、失焦保存，保存失败时保留输入以便重试。**回到顶部／底部只作用于扩展侧边栏的已展开回答标题列表**：顶部将当前问题目录行完整显示在顶部毛玻璃栏下方；底部优先完整露出下一条可见问题目录（如有），否则对齐当前回答的最后一个标题；不会滚动 ChatGPT 对话正文。未展开标题或目录行及全部展开标题均可完整看见时，不显示这两项。自定义目录文字只是本地显示别名，不修改 ChatGPT 的消息内容、消息 ID 或跳转逻辑。
+- **Tips**：支持提示词保存、管理、Markdown 导入导出及输入补全；右键任一已保存提示词可清空当前账号的全部 Tips。
+- **布局选择**：可切换对话与目录并列排布或浮于上层；并排模式默认固定展开，浮层模式默认自动隐藏，仍可手动调整固定状态。
+- **背景配色**：默认使用半透明背景，也可选择与 ChatGPT 常见主题配色对应的预设颜色，支持深色及浅色主题。
+- **触发区显示**：可选择完全透明或以所选背景色系半透明显示。
+- **导航快捷操作**：顶部、视图切换、底部首次触碰浏览器最右侧只展开侧边栏；离开右缘后再次进入，停留 0.05 秒才会按指针高度显示三个按钮，提前离开取消显示；三个按钮出现后，鼠标移开延迟 0.4 秒再隐藏，重新进入会取消隐藏；位置自动避让视口顶部和底部，不再拖动固定或保存位置。键盘用户可在侧边栏内按 `Alt+Shift+J` 显示按钮组并聚焦第一个按钮。
+- **侧边栏滚动**：隐藏目录列表的可见滚动条，保留鼠标滚轮、触控板、触屏滚动和现有目录导航行为。
+- **兼容性兜底**：当关键接口、已渲染对话的 DOM 标记或页面钩子持续异常时，扩展工具栏图标显示 `!`。点击扩展图标可查看升级提示和 [Releases](https://github.com/PyRookie1/luna-toc-sc/releases) 入口；不依赖开发者诊断开关、不上传对话内容。
+- **本地优先**：无需维护者服务器，扩展不添加使用行为遥测。
 
-![Demo](assets/demo-v1.5.gif)
+## 下载安装
 
----
+1. 在 [GitHub Releases](https://github.com/PyRookie1/luna-toc-sc/releases) 下载最新预览版的 `luna-toc-sc-chrome.zip`。
+2. 解压 ZIP 文件；不要使用 GitHub 自动生成的 Source code 压缩包。
+3. 打开 Chrome 的 `chrome://extensions/`，启用开发者模式。
+4. 选择“加载已解压的扩展程序”，定位至包含 `manifest.json` 的文件夹。
+5. 打开或刷新 [ChatGPT](https://chatgpt.com/)。
 
-## Features
+## 支持范围与限制
 
-- Automatically generates a TOC from user prompts
-- Expand prompts to navigate answer headings
-- Click any prompt to instantly jump to its location
-- Mark important prompts for quick visual reference
-- Search and filter prompts
-- Save and reuse custom prompt templates
-- Import and export saved prompts as editable Markdown files
-- Autocomplete saved prompts inside ChatGPT's input box
-- Highlights the prompt currently visible in the conversation
-- Preview full prompt content on hover
-- View the full conversation title from the sidebar title tooltip
-- Automatically updates when new prompts are sent
-- Resizable sidebar
-- Pinnable sidebar with optional hover-based auto-hide
-- Draggable floating toggle button with per-tab position memory
-- SVG refresh button to rebuild the TOC
-- Detects text, image, and file prompts
-- Works entirely in the browser
+- 适用于 Chrome（Manifest V3）上的 `chatgpt.com` 和 `chat.openai.com`；不支持 Copilot。
+- 目录数据及章节定位依赖 ChatGPT 的会话接口和网页结构，网页更新后可能需要适配。工具栏兜底只针对可观察的接口、页面标记和注入异常发出提醒，不能保证识别所有未来改版；网络故障、空对话不会仅因没有目录而触发提示。
+- 并排布局依赖 ChatGPT 实际对话容器；窄窗口会自动回退为浮层形式。
+- 回答标题仅能从已加载的内容提取，远距离导航可能需要等待历史内容挂载。最多显示三级实际存在的标题层级（如回答仅含 H2、H4、H6，则压缩显示为第 1、2、3 级），超过三级的更深标题不显示。
+- 重复内容、含附件提问不会使用存在歧义的文本定位回退。
+- 仅已获得永久 ChatGPT 会话 ID 的对话支持目录原位重命名；新建会话的临时路由待完成保存后才能修改。编辑内容限制为 240 字符，支持多行换行并自动增高，空白内容不能保存；切换会话会取消未完成编辑。搜索同时匹配本地别名和原始提问，复制及添加仍使用原始内容。
+- Tips 数据按可信的 ChatGPT 账号 ID 隔离，同一账号下的不同对话共享同一提示词库；切换账号后只展示该账号的提示词。未绑定账号的旧提示词会被清理，清空操作只清理当前账号的提示词和对应使用统计，不影响其他账号。
+- 目录别名按已验证的 ChatGPT 账号和会话归属保存，只在对应账号下展示；新版本会清理未绑定账号的旧别名，不会把旧记录自动认领给当前账号。主题与侧边栏偏好、已绑定提示词、目录别名和使用统计均包含在本地 JSON 备份中。无法可信确认会话已删除时，不会仅凭网页消息自动清除本地别名；仍可在设置页通过明确确认清理本地记录。收藏功能及其会话存储状态已经移除。
+- 每次打开或刷新 ChatGPT 只进行一次账号识别，不启用定时轮询。真实删除通过扩展后台的 `webRequest` 观察器确认：只接受两个 ChatGPT 站点上顶层会话 API 的 DELETE，或明确的非归档 `PATCH is_visible=false`，并要求浏览器观察到 2xx 完成响应。页面 `postMessage`、历史列表缺失和含糊的 GET 404/410 都不授权清理。
+- **防误删边界**：请求失败、重定向、非 2xx、账号变化、别名账号不匹配或本地存储读取失败时保留数据。观察器不阻止或改写请求，不保存请求正文；PATCH 正文只在内存中检查删除相关字段。该功能需要 `webRequest` 权限和仅限 ChatGPT 两个站点的主机权限；若浏览器或 ChatGPT 接口变化，自动清理可能停止，届时仍可使用设置页的本地清理。单标签页内的目录编辑直接保存，不执行跨标签页旧值冲突比对；备份恢复仍保留独立校验与失败回滚。
+- 会话导航快照只保留少量标签页内缓存；权威刷新失败或超时会标记“目录缓存未验证”，下次打开侧边栏可重试。右键菜单会依据实际高度自动避让窗口边缘。
+- **使用限制：一次仅在一个 ChatGPT 标签页编辑扩展数据。** 已删除提示词、目录别名和设置的跨标签页写入冲突检测及自动重试。多个标签页同时修改相同记录时，后写入者可能覆盖之前的值且不提示。单标签页内保留异步保存顺序、输入校验和备份恢复隔离。 **执行 JSON 备份恢复期间，不得在 ChatGPT 页面或扩展设置页进行其他修改；恢复完成后刷新 ChatGPT 页面，再继续编辑。** 跨窗口同时操作或使用恢复前的旧页面缓存可能覆盖刚恢复的数据。
+- 自动化测试不等同于真实 ChatGPT 页面上的手动验收。
 
----
+## 隐私
 
-## Installation
+目录信息主要在当前浏览器页面内处理；常用提示词与目录自定义文字存储在 `chrome.storage.local`，本地目录别名保存关联会话 ID、消息 ID，并在登录状态能够确认时记录账号归属。启动校验仅使用 ChatGPT 自己的同源接口，不向维护者服务器发送对话内容。项目不会向维护者服务器上传对话数据。详见 [PRIVACY.md](PRIVACY.md)。
 
-### Option 1: Load Unpacked (Developer Mode)
+## 致谢与许可
 
-1. Download or clone this repository.
-2. Install dependencies and build the extension:
-
-   ```bash
-   npm install
-   npm run build
-   ```
-
-3. Open Chrome and navigate to:
-
-   ```text
-   chrome://extensions
-   ```
-
-4. Enable **Developer Mode**.
-5. Click **Load unpacked**.
-6. Select the generated `luna-toc/dist` directory.
-
----
-
-## Usage
-
-1. Open any ChatGPT conversation.
-2. The LunaTOC sidebar will appear on the right side.
-3. Click a TOC item to jump to that prompt.
-4. Use the search box to filter prompts.
-5. Switch to My Prompts to manage saved prompt templates.
-6. Right-click a prompt item to add it to My Prompts.
-7. Use the My Prompts import and export buttons to transfer saved prompts as Markdown.
-8. Type `#` or `//` in the ChatGPT input box to autocomplete a saved prompt.
-9. Hover over a truncated prompt to preview the full content.
-10. Drag the left edge of the sidebar to resize it.
-11. Use the sidebar pin button to keep the sidebar open or enable auto-hide.
-12. Hover the floating button to reveal an auto-hidden sidebar, or drag it to reposition it for the current tab.
-
----
-
-## Why LunaTOC?
-
-ChatGPT conversations can become very long, making it difficult to find previous prompts.
-
-LunaTOC provides a lightweight navigation layer that lets you:
-
-- Quickly revisit earlier questions
-- Navigate long technical discussions
-- Review project planning conversations
-- Jump between different topics without endless scrolling
-
----
-
-## Tech Stack
-
-- TypeScript
-- ES Modules
-- Vite and CRXJS
-- Chrome Extension (Manifest V3)
-- DOM Manipulation
-- MutationObserver
-- Fetch Hooking
-- Server-Sent Events (SSE)
-
----
-
-## Development
-
-Start the Vite development process:
-
-```bash
-npm run dev
-```
-
-Create a production extension in `dist/`:
-
-```bash
-npm run typecheck
-npm run build
-```
-
-The root `manifest.json` is the source Manifest. Chrome loads the generated
-`dist/` directory. Browser source, Vite configuration, and release tooling are
-all written in TypeScript and checked by `npm run typecheck`.
-
----
-
-## Versioning
-
-The native npm version commands require a clean Git working tree, synchronize
-`package.json` and `manifest.json`, create a version commit, and tag that commit.
-The lifecycle runs `scripts/version.ts` through `tsx`. It does not push the
-commit or tag.
-
-```bash
-npm version patch
-npm version minor
-npm version major
-```
-
----
-
-## Privacy
-
-LunaTOC runs entirely in your browser.
-
-No conversation data is collected, stored, transmitted, or shared with any external service.
-
----
-
-## License
-
-MIT License
+感谢 [Leo7805/luna-toc](https://github.com/Leo7805/luna-toc) 的开源工作。本衍生项目沿用 [MIT License](LICENSE)，与原作者官方发布渠道无隶属关系。

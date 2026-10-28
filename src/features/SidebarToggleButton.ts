@@ -1,234 +1,27 @@
 /**
- * Builds and manages drag positioning and persistence for the floating ChatTOC sidebar toggle button.
- */
-export interface ToggleButtonPosition {
-  left: number;
-  top: number;
-}
-
-export const POSITION_MARGIN = 8;
-export const RIGHT_POSITION_MARGIN = 0;
-export const POSITION_STORAGE_KEY = 'chatTocToggleButtonPosition';
-
-/**
- * Enables pointer dragging for the toggle button with boundary clamping and persistence.
+ * Creates the minimal, unlabeled, full-height right-edge sidebar reveal handle.
  *
- * @param {HTMLButtonElement} toggleBtn The button element.
- * @param {(pos: ToggleButtonPosition) => void} [onPositionChange] Optional callback invoked on position updates.
- * @returns {() => void} Cleanup function to detach listeners.
+ * This handle replaces the movable dock. Its fixed position is intentionally
+ * independent of saved positions from previous versions.
  */
-export function initDrag(
-  toggleBtn: HTMLButtonElement,
-  onPositionChange?: (pos: ToggleButtonPosition) => void
-): () => void {
-  const handleResize = (): void => {
-    const updated = keepButtonInViewport(toggleBtn);
-    if (updated && onPositionChange) {
-      onPositionChange(updated);
-    }
-  };
-
-  window.addEventListener('resize', handleResize);
-
-  const handlePointerDown = (event: PointerEvent): void => {
-    if (event.button !== 0) return;
-
-    const rect = toggleBtn.getBoundingClientRect();
-    const startX = event.clientX;
-    const startY = event.clientY;
-    const startLeft = rect.left;
-    const startTop = rect.top;
-    let didDrag = false;
-    let lastPosition: ToggleButtonPosition | null = null;
-
-    try {
-      toggleBtn.setPointerCapture(event.pointerId);
-    } catch {}
-    toggleBtn.classList.add('luna-toc-toggle-btn-dragging');
-
-    function handlePointerMove(moveEvent: PointerEvent): void {
-      const deltaX = moveEvent.clientX - startX;
-      const deltaY = moveEvent.clientY - startY;
-
-      if (!didDrag && Math.hypot(deltaX, deltaY) < 4) {
-        return;
-      }
-
-      didDrag = true;
-
-      lastPosition = clampPosition(
-        startLeft + deltaX,
-        startTop + deltaY,
-        rect.width || 42,
-        rect.height || 42
-      );
-
-      setPosition(toggleBtn, lastPosition.left, lastPosition.top);
-    }
-
-    function handlePointerUp(): void {
-      try {
-        toggleBtn.releasePointerCapture(event.pointerId);
-      } catch {}
-      toggleBtn.classList.remove('luna-toc-toggle-btn-dragging');
-      toggleBtn.removeEventListener('pointermove', handlePointerMove);
-      toggleBtn.removeEventListener('pointerup', handlePointerUp);
-      toggleBtn.removeEventListener('pointercancel', handlePointerUp);
-
-      if (!didDrag || !lastPosition) return;
-
-      toggleBtn.dataset.dragged = 'true';
-      storageSet(POSITION_STORAGE_KEY, lastPosition);
-
-      if (onPositionChange) {
-        onPositionChange(lastPosition);
-      }
-    }
-
-    toggleBtn.addEventListener('pointermove', handlePointerMove);
-    toggleBtn.addEventListener('pointerup', handlePointerUp);
-    toggleBtn.addEventListener('pointercancel', handlePointerUp);
-  };
-
-  toggleBtn.addEventListener('pointerdown', handlePointerDown);
-
-  return () => {
-    window.removeEventListener('resize', handleResize);
-    toggleBtn.removeEventListener('pointerdown', handlePointerDown);
-  };
-}
 
 /**
- * Applies a fixed viewport position to the toggle button.
- * @param {HTMLElement} toggleBtn
- * @param {number} left
- * @param {number} top
+ * Creates the accessible right-edge trigger without visible text or icons.
+ * The invisible 6px-wide, full-height activation area is defined in content.css.
+ * @returns {HTMLButtonElement} The sidebar reveal handle.
  */
-export function setPosition(
-  toggleBtn: HTMLElement,
-  left: number,
-  top: number
-): void {
-  toggleBtn.style.left = `${left}px`;
-  toggleBtn.style.top = `${top}px`;
-  toggleBtn.style.right = 'auto';
-  toggleBtn.style.bottom = 'auto';
-}
+export function createSidebarToggleButton(): HTMLButtonElement {
+  const dock = document.createElement('div');
+  dock.id = 'luna-toc-floating-dock';
 
-/**
- * Re-clamps the current session position after viewport size changes.
- * @param {HTMLElement} toggleBtn
- * @returns {ToggleButtonPosition | null} The new clamped position if changed; null otherwise.
- */
-export function keepButtonInViewport(
-  toggleBtn: HTMLElement
-): ToggleButtonPosition | null {
-  const rect = toggleBtn.getBoundingClientRect();
-  const parsedLeft = parseFloat(toggleBtn.style.left);
-  const parsedTop = parseFloat(toggleBtn.style.top);
-  const currentLeft = Number.isFinite(parsedLeft) ? parsedLeft : rect.left;
-  const currentTop = Number.isFinite(parsedTop) ? parsedTop : rect.top;
+  const trigger = document.createElement('button');
+  trigger.id = 'luna-toc-toggle-btn';
+  trigger.type = 'button';
+  trigger.className = 'luna-toc-sidebar-hidden';
+  trigger.setAttribute('aria-label', '展开目录');
+  trigger.setAttribute('aria-expanded', 'false');
 
-  const nextPosition = clampPosition(
-    currentLeft,
-    currentTop,
-    rect.width || 42,
-    rect.height || 42
-  );
-
-  if (nextPosition.left === currentLeft && nextPosition.top === currentTop) {
-    return null;
-  }
-
-  setPosition(toggleBtn, nextPosition.left, nextPosition.top);
-  storageSet(POSITION_STORAGE_KEY, nextPosition);
-  return nextPosition;
-}
-
-/**
- * Keeps the button fully inside the viewport.
- * @param {number} left
- * @param {number} top
- * @param {number} width
- * @param {number} height
- * @returns {{ left: number, top: number }}
- */
-export function clampPosition(
-  left: number,
-  top: number,
-  width: number,
-  height: number
-): ToggleButtonPosition {
-  const maxLeft = Math.max(
-    POSITION_MARGIN,
-    window.innerWidth - width - RIGHT_POSITION_MARGIN
-  );
-  const maxTop = Math.max(
-    POSITION_MARGIN,
-    window.innerHeight - height - POSITION_MARGIN
-  );
-
-  return {
-    left: Math.min(maxLeft, Math.max(POSITION_MARGIN, left)),
-    top: Math.min(maxTop, Math.max(POSITION_MARGIN, top)),
-  };
-}
-
-/**
- * Restores the button's position from sessionStorage.
- * @param {HTMLElement} toggleBtn
- * @returns {ToggleButtonPosition | null} The restored position if found; null otherwise.
- */
-export function restorePosition(
-  toggleBtn: HTMLElement
-): ToggleButtonPosition | null {
-  const savedPosition = storageGet<ToggleButtonPosition>(POSITION_STORAGE_KEY);
-
-  if (!savedPosition) return null;
-  if (
-    !Number.isFinite(savedPosition.left) ||
-    !Number.isFinite(savedPosition.top)
-  ) {
-    return null;
-  }
-
-  const rect = toggleBtn.getBoundingClientRect();
-  const nextPosition = clampPosition(
-    savedPosition.left,
-    savedPosition.top,
-    rect.width || 42,
-    rect.height || 42
-  );
-
-  setPosition(toggleBtn, nextPosition.left, nextPosition.top);
-  return nextPosition;
-}
-
-/**
- * Saves the button's current position to sessionStorage.
- * @param {HTMLElement} toggleBtn
- */
-export function savePosition(toggleBtn: HTMLElement): void {
-  const rect = toggleBtn.getBoundingClientRect();
-
-  storageSet(POSITION_STORAGE_KEY, {
-    left: rect.left,
-    top: rect.top,
-  });
-}
-
-export function storageGet<T>(key: string): T | null {
-  try {
-    const rawValue = sessionStorage.getItem(key);
-
-    return rawValue ? (JSON.parse(rawValue) as T) : null;
-  } catch {
-    return null;
-  }
-}
-
-export function storageSet(key: string, value: unknown): void {
-  try {
-    sessionStorage.setItem(key, JSON.stringify(value));
-  } catch {}
+  dock.appendChild(trigger);
+  document.body.appendChild(dock);
+  return trigger;
 }

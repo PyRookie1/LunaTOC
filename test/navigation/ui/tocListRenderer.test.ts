@@ -4,7 +4,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTocListRenderer } from '@/navigation/ui/tocListRenderer';
 import { setLoading } from '@/navigation/loading/promptLoadingState';
-import { getStatusSnapshot, resetStatusForTesting } from '@/navigation/ui/sidebarStatus';
+import { promptContextMenuController } from '@/features/myPrompts/promptContextMenu';
 import type { NavigatorMessage } from '@/features/conversationPrompts/message';
 
 describe('tocListRenderer', () => {
@@ -21,6 +21,22 @@ describe('tocListRenderer', () => {
     listElement = document.getElementById('navigator-list')!;
     hintElement = document.querySelector('.navigator-hint')!;
   });
+
+  /** Expands heading rows in the sidebar without invoking ChatGPT navigation. */
+  function showOutline(row: HTMLElement, count = 3): HTMLElement[] {
+    const outline = row.querySelector<HTMLElement>('.navigator-outline-list')!;
+    outline.hidden = false;
+    row.setAttribute('aria-expanded', 'true');
+    row.classList.add('navigator-item-outline-expanded');
+    const headings = Array.from({ length: count }, (_, index) => {
+      const heading = document.createElement('div');
+      heading.className = 'navigator-outline-item';
+      heading.textContent = `Heading ${index + 1}`;
+      outline.appendChild(heading);
+      return heading;
+    });
+    return headings;
+  }
 
   const mockMessages: NavigatorMessage[] = [
     { id: 'msg-1', text: 'First user prompt', canMatchByText: true, createTime: 100 },
@@ -43,6 +59,44 @@ describe('tocListRenderer', () => {
     expect(listElement.children[1].classList.contains('navigator-item-active')).toBe(false);
   });
 
+  it('reuses unchanged rows and replaces only a modified row', () => {
+    let messages = mockMessages.map((message) => ({ ...message }));
+    const onItemClick = vi.fn();
+    const renderer = createTocListRenderer({
+      getMessages: () => messages,
+      getActiveIndex: () => null,
+      onItemClick,
+    });
+    renderer.render();
+    const first = listElement.children[0];
+    const second = listElement.children[1];
+    renderer.render();
+    expect(listElement.children[0]).toBe(first);
+    expect(listElement.children[1]).toBe(second);
+    messages = messages.map((message, index) =>
+      index === 1 ? { ...message, text: 'Updated second prompt' } : message);
+    renderer.render();
+    expect(listElement.children[0]).toBe(first);
+    expect(listElement.children[1]).not.toBe(second);
+    expect(listElement.children[1].textContent).toContain('Updated second prompt');
+    (listElement.children[1] as HTMLElement).click();
+    expect(onItemClick).toHaveBeenLastCalledWith(messages[1], 1);
+  });
+
+  it('preserves expanded heading DOM when unchanged', () => {
+    const renderer = createTocListRenderer({
+      getMessages: () => mockMessages,
+      getActiveIndex: () => null,
+      onItemClick: vi.fn(),
+    });
+    renderer.render();
+    const first = listElement.children[0] as HTMLElement;
+    const headings = showOutline(first, 2);
+    renderer.render();
+    expect(listElement.children[0]).toBe(first);
+    expect(first.querySelectorAll('.navigator-outline-item')[0]).toBe(headings[0]);
+  });
+
   it('filters rows by search query and updates hint when no match found', () => {
     const renderer = createTocListRenderer({
       getMessages: () => mockMessages,
@@ -57,7 +111,7 @@ describe('tocListRenderer', () => {
     renderer.setSearchQuery('nonexistent keyword');
     expect(listElement.children.length).toBe(0);
     expect(hintElement.hidden).toBe(false);
-    expect(hintElement.textContent).toBe('No matching prompts.');
+    expect(hintElement.textContent).toBe('没有匹配的提示词。');
   });
 
   it('shows empty hint when message list is empty', () => {
@@ -70,11 +124,14 @@ describe('tocListRenderer', () => {
     renderer.render();
     expect(listElement.children.length).toBe(0);
     expect(hintElement.hidden).toBe(false);
-    expect(hintElement.textContent).toBe('Waiting for prompts...');
+    expect(hintElement.textContent).toBe('等待提示词...');
   });
 
   it('renders stable empty state when prompts are empty and loading is false', () => {
-    resetStatusForTesting();
+    const statusElement = document.createElement('div');
+    statusElement.id = 'luna-toc-status';
+    document.body.appendChild(statusElement);
+
     setLoading(false);
     const renderer = createTocListRenderer({
       getMessages: () => [],
@@ -84,17 +141,11 @@ describe('tocListRenderer', () => {
 
     // Initial render with completed=true renders empty state
     renderer.render({ completed: true });
-    expect(getStatusSnapshot()).toEqual({
-      state: 'empty',
-      text: 'No prompts',
-    });
+    expect(statusElement.textContent).toBe('暂无提示词');
 
     // Subsequent normal render without completed=true must stay empty, not revert to idle
     renderer.render();
-    expect(getStatusSnapshot()).toEqual({
-      state: 'empty',
-      text: 'No prompts',
-    });
+    expect(statusElement.textContent).toBe('暂无提示词');
   });
 
   it('invokes onItemClick callback when a TOC row is clicked', () => {
@@ -110,6 +161,43 @@ describe('tocListRenderer', () => {
     secondItem.click();
 
     expect(onItemClick).toHaveBeenCalledWith(mockMessages[1], 1);
+  });
+
+  it('renders only the index and title, without any inline action buttons', () => {
+    const renderer = createTocListRenderer({
+      getMessages: () => mockMessages,
+      getActiveIndex: () => null,
+      onItemClick: vi.fn(),
+    });
+    renderer.render();
+
+    const main = listElement.querySelector('.navigator-item-main')!;
+    expect(Array.from(main.children).map(element => element.className))
+      .toEqual([
+        'navigator-item-index',
+        'navigator-item-text',
+      ]);
+    expect(main.querySelector('button')).toBeNull();
+  });
+
+  it('sends repeat row clicks to navigation for outline toggling without the chevron', () => {
+    const onItemClick = vi.fn();
+    const renderer = createTocListRenderer({
+      getMessages: () => mockMessages,
+      getActiveIndex: () => null,
+      onItemClick,
+    });
+
+    renderer.render();
+    const row = listElement.children[1] as HTMLElement;
+    expect(row.querySelector('.navigator-outline-indicator')).toBeNull();
+    expect(row.getAttribute('aria-expanded')).toBe('false');
+
+    row.click();
+    row.click();
+    expect(onItemClick).toHaveBeenCalledTimes(2);
+    expect(onItemClick).toHaveBeenNthCalledWith(1, mockMessages[1], 1);
+    expect(onItemClick).toHaveBeenNthCalledWith(2, mockMessages[1], 1);
   });
 
   it('updates active item UI and toggles active class', () => {
@@ -130,6 +218,46 @@ describe('tocListRenderer', () => {
     renderer.updateActiveItemUI(1, true);
     expect(items[0].classList.contains('navigator-item-active')).toBe(false);
     expect(items[1].classList.contains('navigator-item-active')).toBe(true);
+  });
+
+  it('reconciles the active row after rerender, replacement, search and reset', () => {
+    let activeIndex: number | null = 0;
+    let messages = mockMessages.map((message) => ({ ...message }));
+    const renderer = createTocListRenderer({
+      getMessages: () => messages,
+      getActiveIndex: () => activeIndex,
+      onItemClick: vi.fn(),
+      isFollowingMode: () => false,
+    });
+
+    renderer.render();
+    const firstRow = renderer.getNavigatorItems()[0];
+    activeIndex = 1;
+    renderer.render();
+    expect(renderer.getNavigatorItems()[0]).toBe(firstRow);
+    expect(firstRow.classList.contains('navigator-item-active')).toBe(false);
+    expect(renderer.getNavigatorItems()[1].classList.contains('navigator-item-active')).toBe(true);
+
+    const oldSecondRow = renderer.getNavigatorItems()[1];
+    messages = messages.map((message, index) =>
+      index === 1 ? { ...message, text: 'Updated second question' } : message
+    );
+    renderer.render();
+    expect(renderer.getNavigatorItems()[1]).not.toBe(oldSecondRow);
+    expect(oldSecondRow.classList.contains('navigator-item-active')).toBe(false);
+    expect(renderer.getNavigatorItems()[1].classList.contains('navigator-item-active')).toBe(true);
+
+    renderer.setSearchQuery('First user prompt');
+    expect(listElement.children.length).toBe(1);
+    expect(listElement.querySelector('.navigator-item-active')).toBeNull();
+    renderer.setSearchQuery('');
+    expect(renderer.getNavigatorItems()[1].classList.contains('navigator-item-active')).toBe(true);
+
+    const oldActiveRow = renderer.getNavigatorItems()[1];
+    renderer.resetList();
+    expect(oldActiveRow.classList.contains('navigator-item-active')).toBe(false);
+    renderer.render();
+    expect(renderer.getNavigatorItems()[1].classList.contains('navigator-item-active')).toBe(true);
   });
 
   it('determines correct status band state', () => {
@@ -181,199 +309,430 @@ describe('tocListRenderer', () => {
     expect(rendererB.getSearchQuery()).toBe('');
   });
 
-  it('renders custom TOC title and applies styling class when set', async () => {
-    vi.stubGlobal('chrome', {
-      storage: {
-        local: {
-          get: vi.fn(async () => ({})),
-          set: vi.fn(async () => {}),
-        },
-      },
-    });
-
-    const { setCustomTitle, removeCustomTitle } = await import(
-      '@/features/customTocTitles/customTocTitleStore'
-    );
-    await setCustomTitle('msg-2', 'Renamed Step 2');
-
+  it('uses original prompt text without custom title styling', () => {
     const renderer = createTocListRenderer({
       getMessages: () => mockMessages,
       getActiveIndex: () => null,
       onItemClick: vi.fn(),
     });
-
     renderer.render();
-
-    const secondItem = listElement.children[1] as HTMLElement;
-    expect(secondItem.querySelector('.navigator-item-index')?.textContent).toBe('2.');
-    expect(secondItem.querySelector('.navigator-item-text')?.textContent).toBe('Renamed Step 2');
-    expect(secondItem.classList.contains('navigator-item-custom-title')).toBe(true);
-
-    const firstItem = listElement.children[0] as HTMLElement;
-    expect(firstItem.querySelector('.navigator-item-index')?.textContent).toBe('1.');
-    expect(firstItem.querySelector('.navigator-item-text')?.textContent).toBe('First user prompt');
-    expect(firstItem.classList.contains('navigator-item-custom-title')).toBe(false);
-
-    await removeCustomTitle('msg-2');
+    const item = listElement.children[1] as HTMLElement;
+    expect(item.querySelector('.navigator-item-index')?.textContent).toBe('2.');
+    expect(item.querySelector('.navigator-item-text')?.textContent).toBe('Second user prompt');
+    expect(item.classList.contains('navigator-item-custom-title')).toBe(false);
   });
 
-  describe('TOC filter mode integration', () => {
-    let resetFilterMode: typeof import('@/features/tocFilter/tocFilterStore').resetTocFilterMode;
-    let setFilterMode: typeof import('@/features/tocFilter/tocFilterStore').setTocFilterMode;
-    let setCustomTitleFn: typeof import('@/features/customTocTitles/customTocTitleStore').setCustomTitle;
-    let removeCustomTitleFn: typeof import('@/features/customTocTitles/customTocTitleStore').removeCustomTitle;
-    let initPromptMarkFn: typeof import('@/features/conversationPrompts/promptMark').initializePromptMark;
-
-    beforeEach(async () => {
-      const filterStore = await import('@/features/tocFilter/tocFilterStore');
-      resetFilterMode = filterStore.resetTocFilterMode;
-      setFilterMode = filterStore.setTocFilterMode;
-      resetFilterMode();
-
-      const titleStore = await import('@/features/customTocTitles/customTocTitleStore');
-      setCustomTitleFn = titleStore.setCustomTitle;
-      removeCustomTitleFn = titleStore.removeCustomTitle;
-
-      const markModule = await import('@/features/conversationPrompts/promptMark');
-      initPromptMarkFn = markModule.initializePromptMark;
-      initPromptMarkFn({ conversationKey: 'test-convo' });
+  it('hides raw Markdown bold delimiters in question labels', () => {
+    const message = { ...mockMessages[0]!, text: 'Question **bold** title' };
+    const renderer = createTocListRenderer({
+      getMessages: () => [message],
+      getActiveIndex: () => null,
+      onItemClick: vi.fn(),
     });
+    renderer.render();
 
-    afterEach(async () => {
-      resetFilterMode?.();
-      await removeCustomTitleFn?.('msg-1');
-      await removeCustomTitleFn?.('msg-2');
-      await removeCustomTitleFn?.('msg-3');
+    expect(listElement.querySelector('.navigator-item-text')?.textContent)
+      .toBe('Question bold title');
+  });
+
+  it('shows no outline-boundary commands while the sidebar answer outline is collapsed', () => {
+    const onSavePrompt = vi.fn();
+    const renderer = createTocListRenderer({
+      getMessages: () => mockMessages,
+      getActiveIndex: () => null,
+      onItemClick: vi.fn(),
+      onSavePrompt,
     });
+    renderer.render();
+    const item = listElement.children[1] as HTMLElement;
+    expect(item.dispatchEvent(new MouseEvent('contextmenu', {
+      bubbles: true, cancelable: true, clientX: 70, clientY: 90,
+    }))).toBe(false);
+    expect(promptContextMenuController.getSnapshot()?.items.map(({ id }) => id))
+      .toEqual(['copy-prompt', 'save-prompt']);
+    promptContextMenuController.select('save-prompt');
+    expect(onSavePrompt).toHaveBeenCalledWith(mockMessages[1]);
+    item.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true }));
+    expect(promptContextMenuController.getSnapshot()?.items.map(({ label }) => label))
+      .toEqual(['复制文字', '添加Tips']);
+  });
 
-    it('renders only renamed prompts and preserves original index and numbering', async () => {
-      await setCustomTitleFn('msg-2', 'Renamed Step 2');
+  it('includes edit third but hides outline jumps until headings are expanded', () => {
+    const renderer = createTocListRenderer({
+      getMessages: () => mockMessages,
+      getActiveIndex: () => null,
+      onItemClick: vi.fn(),
+      onRenamePrompt: async () => undefined,
+      canRename: () => true,
+    });
+    renderer.render();
+    const row = listElement.children[0] as HTMLElement;
+    row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true }));
+    expect(promptContextMenuController.getSnapshot()?.items.map(({ id }) => id))
+      .toEqual(['copy-prompt', 'save-prompt', 'rename-toc']);
+    expect(promptContextMenuController.getSnapshot()?.items[2].label).toBe('编辑文字');
+    promptContextMenuController.close();
 
+    showOutline(row);
+    row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true }));
+    expect(promptContextMenuController.getSnapshot()?.items.map(({ id }) => id))
+      .toEqual(['collapse-outline', 'copy-prompt', 'save-prompt', 'rename-toc', 'return-to-top', 'return-to-bottom']);
+    expect(promptContextMenuController.getSnapshot()?.items[0].label).toBe('收起目录');
+    promptContextMenuController.close();
+    row.querySelector<HTMLElement>('.navigator-outline-list')!.hidden = true;
+    row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true }));
+    expect(promptContextMenuController.getSnapshot()?.items.map(({ id }) => id))
+      .toEqual(['copy-prompt', 'save-prompt', 'rename-toc']);
+  });
+
+  it('keeps edit unavailable for temporary conversations', () => {
+    const renderer = createTocListRenderer({
+      getMessages: () => mockMessages,
+      getActiveIndex: () => null,
+      onItemClick: vi.fn(),
+      onRenamePrompt: async () => undefined,
+      canRename: () => false,
+    });
+    renderer.render();
+    listElement.children[0].dispatchEvent(new MouseEvent('contextmenu', { bubbles: true }));
+    expect(promptContextMenuController.getSnapshot()?.items.map(({ id }) => id))
+      .toEqual(['copy-prompt', 'save-prompt']);
+  });
+
+  it('hides boundary actions when the expanded question and headings are fully visible', () => {
+    const topbar = document.createElement('div');
+    topbar.className = 'navigator-topbar';
+    listElement.before(topbar);
+    vi.spyOn(topbar, 'getBoundingClientRect').mockReturnValue({
+      top: 0, bottom: 180,
+    } as DOMRect);
+    vi.spyOn(listElement, 'getBoundingClientRect').mockReturnValue({
+      top: 100, bottom: 500,
+    } as DOMRect);
+    const renderer = createTocListRenderer({
+      getMessages: () => mockMessages,
+      getActiveIndex: () => null,
+      onItemClick: vi.fn(),
+    });
+    renderer.render();
+    const row = listElement.children[1] as HTMLElement;
+    showOutline(row);
+    const question = row.querySelector<HTMLElement>('.navigator-item-main')!;
+    const outline = row.querySelector<HTMLElement>('.navigator-outline-list')!;
+    const questionRect = vi.spyOn(question, 'getBoundingClientRect').mockReturnValue({
+      top: 200, bottom: 228,
+    } as DOMRect);
+    const outlineRect = vi.spyOn(outline, 'getBoundingClientRect').mockReturnValue({
+      top: 228, bottom: 480,
+    } as DOMRect);
+    const open = (): string[] => {
+      row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true }));
+      return promptContextMenuController.getSnapshot()?.items.map(({ id }) => id) ?? [];
+    };
+    expect(open()).toEqual(['collapse-outline', 'copy-prompt', 'save-prompt']);
+    promptContextMenuController.close();
+
+    // Partly under the frosted top bar.
+    questionRect.mockReturnValue({ top: 170, bottom: 200 } as DOMRect);
+    expect(open()).toEqual(['collapse-outline', 'copy-prompt', 'save-prompt', 'return-to-top', 'return-to-bottom']);
+    promptContextMenuController.close();
+
+    // The question is visible, but the last heading is clipped below the list.
+    questionRect.mockReturnValue({ top: 200, bottom: 228 } as DOMRect);
+    outlineRect.mockReturnValue({ top: 228, bottom: 510 } as DOMRect);
+    expect(open()).toEqual(['collapse-outline', 'copy-prompt', 'save-prompt', 'return-to-top', 'return-to-bottom']);
+    promptContextMenuController.close();
+
+    // Both return to view as the user scrolls the list.
+    outlineRect.mockReturnValue({ top: 228, bottom: 500 } as DOMRect);
+    expect(open()).toEqual(['collapse-outline', 'copy-prompt', 'save-prompt']);
+  });
+
+  it('ignores a stale boundary action once scrolling exposes the complete outline', () => {
+    const scrollTo = vi.fn();
+    listElement.scrollTo = scrollTo as unknown as HTMLElement['scrollTo'];
+    vi.spyOn(listElement, 'getBoundingClientRect').mockReturnValue({
+      top: 100, bottom: 500,
+    } as DOMRect);
+    const renderer = createTocListRenderer({
+      getMessages: () => mockMessages,
+      getActiveIndex: () => null,
+      onItemClick: vi.fn(),
+    });
+    renderer.render();
+    const row = listElement.children[1] as HTMLElement;
+    showOutline(row);
+    const question = row.querySelector<HTMLElement>('.navigator-item-main')!;
+    const outline = row.querySelector<HTMLElement>('.navigator-outline-list')!;
+    vi.spyOn(question, 'getBoundingClientRect').mockReturnValue({
+      top: 200, bottom: 228,
+    } as DOMRect);
+    const outlineRect = vi.spyOn(outline, 'getBoundingClientRect').mockReturnValue({
+      top: 230, bottom: 800,
+    } as DOMRect);
+    row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true }));
+    expect(promptContextMenuController.getSnapshot()?.items.map(({ id }) => id))
+      .toContain('return-to-bottom');
+    outlineRect.mockReturnValue({ top: 230, bottom: 450 } as DOMRect);
+    promptContextMenuController.select('return-to-bottom');
+    expect(scrollTo).not.toHaveBeenCalled();
+  });
+
+  it('aligns the full prompt row below the frosted topbar and shows the next prompt at bottom', () => {
+    const onItemClick = vi.fn();
+    const scrollTo = vi.fn();
+    listElement.scrollTo = scrollTo as unknown as HTMLElement['scrollTo'];
+    listElement.scrollTop = 400;
+    vi.spyOn(listElement, 'getBoundingClientRect').mockReturnValue({
+      top: 100, bottom: 500, height: 400,
+    } as DOMRect);
+    const topbar = document.createElement('div');
+    topbar.className = 'navigator-topbar';
+    listElement.before(topbar);
+    vi.spyOn(topbar, 'getBoundingClientRect').mockReturnValue({
+      top: 0, bottom: 180,
+    } as DOMRect);
+    const renderer = createTocListRenderer({
+      getMessages: () => mockMessages,
+      getActiveIndex: () => null,
+      onItemClick,
+    });
+    renderer.render();
+    const row = listElement.children[1] as HTMLElement;
+    const headings = showOutline(row);
+    vi.spyOn(row, 'getBoundingClientRect').mockReturnValue({
+      top: 220, bottom: 970,
+    } as DOMRect);
+    const nextRow = listElement.children[2] as HTMLElement;
+    vi.spyOn(nextRow, 'getBoundingClientRect').mockReturnValue({
+      top: 988, bottom: 1022,
+    } as DOMRect);
+    vi.spyOn(headings[0], 'getBoundingClientRect').mockReturnValue({
+      top: 220, bottom: 248,
+    } as DOMRect);
+    vi.spyOn(headings[2], 'getBoundingClientRect').mockReturnValue({
+      top: 897, bottom: 925,
+    } as DOMRect);
+    row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true }));
+    expect(promptContextMenuController.getSnapshot()?.items.map(({ id }) => id))
+      .toEqual(['collapse-outline', 'copy-prompt', 'save-prompt', 'return-to-top', 'return-to-bottom']);
+    promptContextMenuController.select('return-to-top');
+    // The entire question row, not just its first heading, sits below the overlay.
+    expect(scrollTo).toHaveBeenLastCalledWith({ top: 432, behavior: 'auto' });
+    row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true }));
+    promptContextMenuController.select('return-to-bottom');
+    // Reveal the *whole* next directory row rather than aligning the last heading.
+    expect(scrollTo).toHaveBeenLastCalledWith({ top: 930, behavior: 'auto' });
+    expect(scrollTo).toHaveBeenCalledTimes(2);
+    expect(onItemClick).not.toHaveBeenCalled();
+    expect(renderer.getSearchQuery()).toBe('');
+  });
+
+  it('places a prompt hidden above the frosted topbar first after collapsing its outline', () => {
+    const onItemClick = vi.fn();
+    const scrollTo = vi.fn();
+    listElement.scrollTo = scrollTo as unknown as HTMLElement['scrollTo'];
+    listElement.scrollTop = 520;
+    vi.spyOn(listElement, 'getBoundingClientRect').mockReturnValue({
+      top: 100, bottom: 500,
+    } as DOMRect);
+    const topbar = document.createElement('div');
+    topbar.className = 'navigator-topbar';
+    listElement.before(topbar);
+    vi.spyOn(topbar, 'getBoundingClientRect').mockReturnValue({
+      top: 0, bottom: 180,
+    } as DOMRect);
+    const renderer = createTocListRenderer({
+      getMessages: () => mockMessages,
+      getActiveIndex: () => null,
+      onItemClick,
+    });
+    renderer.render();
+    const row = listElement.children[1] as HTMLElement;
+    showOutline(row);
+    vi.spyOn(row.querySelector<HTMLElement>('.navigator-item-main')!, 'getBoundingClientRect')
+      .mockReturnValue({ top: 130, bottom: 158 } as DOMRect);
+    vi.spyOn(row, 'getBoundingClientRect').mockReturnValue({
+      top: 130, bottom: 730,
+    } as DOMRect);
+
+    row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true }));
+    promptContextMenuController.select('collapse-outline');
+
+    expect(scrollTo).toHaveBeenCalledOnce();
+    expect(scrollTo).toHaveBeenCalledWith({ top: 462, behavior: 'auto' });
+    expect(renderer.getNavigatorItems()[1]).toBe(row);
+    expect(onItemClick).not.toHaveBeenCalled();
+  });
+
+  it('does not move a visible prompt when collapsing headings clipped below', () => {
+    const scrollTo = vi.fn();
+    listElement.scrollTo = scrollTo as unknown as HTMLElement['scrollTo'];
+    vi.spyOn(listElement, 'getBoundingClientRect').mockReturnValue({
+      top: 100, bottom: 500,
+    } as DOMRect);
+    const renderer = createTocListRenderer({
+      getMessages: () => mockMessages,
+      getActiveIndex: () => null,
+      onItemClick: vi.fn(),
+    });
+    renderer.render();
+    const row = listElement.children[1] as HTMLElement;
+    showOutline(row);
+    vi.spyOn(row.querySelector<HTMLElement>('.navigator-item-main')!, 'getBoundingClientRect')
+      .mockReturnValue({ top: 200, bottom: 228 } as DOMRect);
+    vi.spyOn(row.querySelector<HTMLElement>('.navigator-outline-list')!, 'getBoundingClientRect')
+      .mockReturnValue({ top: 228, bottom: 720 } as DOMRect);
+
+    row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true }));
+    promptContextMenuController.select('collapse-outline');
+
+    expect(scrollTo).not.toHaveBeenCalled();
+  });
+
+  it('does not scroll after an expanded outline collapses while its menu is open', () => {
+    const scrollTo = vi.fn();
+    listElement.scrollTo = scrollTo as unknown as HTMLElement['scrollTo'];
+    const renderer = createTocListRenderer({
+      getMessages: () => mockMessages,
+      getActiveIndex: () => null,
+      onItemClick: vi.fn(),
+    });
+    renderer.render();
+    const row = listElement.children[1] as HTMLElement;
+    showOutline(row);
+    row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true }));
+    row.setAttribute('aria-expanded', 'false');
+    promptContextMenuController.select('return-to-bottom');
+    expect(scrollTo).not.toHaveBeenCalled();
+  });
+
+  it('scrolls expanded headings under the filtered directory original index', () => {
+    const scrollTo = vi.fn();
+    listElement.scrollTo = scrollTo as unknown as HTMLElement['scrollTo'];
+    vi.spyOn(listElement, 'getBoundingClientRect').mockReturnValue({
+      top: 100, bottom: 500,
+    } as DOMRect);
+    const renderer = createTocListRenderer({
+      getMessages: () => mockMessages,
+      getActiveIndex: () => null,
+      onItemClick: vi.fn(),
+    });
+    renderer.setSearchQuery('Third prompt');
+    const row = listElement.children[0] as HTMLElement;
+    const headings = showOutline(row);
+    vi.spyOn(headings[2], 'getBoundingClientRect').mockReturnValue({
+      top: 820, bottom: 860,
+    } as DOMRect);
+    row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true }));
+    promptContextMenuController.select('return-to-bottom');
+    expect(scrollTo).toHaveBeenCalledWith({ top: 368, behavior: 'auto' });
+    expect(renderer.getSearchQuery()).toBe('Third prompt');
+  });
+
+  it('aligns the last expanded heading at the bottom when no following directory exists', () => {
+    const scrollTo = vi.fn();
+    listElement.scrollTo = scrollTo as unknown as HTMLElement['scrollTo'];
+    listElement.scrollTop = 200;
+    vi.spyOn(listElement, 'getBoundingClientRect').mockReturnValue({
+      top: 110, bottom: 500,
+    } as DOMRect);
+    const renderer = createTocListRenderer({
+      getMessages: () => [mockMessages[0]],
+      getActiveIndex: () => null,
+      onItemClick: vi.fn(),
+    });
+    renderer.render();
+    const row = listElement.children[0] as HTMLElement;
+    const headings = showOutline(row);
+    vi.spyOn(headings[2], 'getBoundingClientRect').mockReturnValue({
+      top: 885, bottom: 920,
+    } as DOMRect);
+    row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true }));
+    promptContextMenuController.select('return-to-bottom');
+    expect(scrollTo).toHaveBeenCalledWith({ top: 628, behavior: 'auto' });
+  });
+
+  it('reveals the next visible prompt after a filtered-out middle row', () => {
+    const scrollTo = vi.fn();
+    listElement.scrollTo = scrollTo as unknown as HTMLElement['scrollTo'];
+    vi.spyOn(listElement, 'getBoundingClientRect').mockReturnValue({
+      top: 100, bottom: 500,
+    } as DOMRect);
+    const renderer = createTocListRenderer({
+      getMessages: () => mockMessages,
+      getActiveIndex: () => null,
+      onItemClick: vi.fn(),
+      getDisplayText: (message) => message.id === 'msg-2' ? message.text : 'shared marker',
+    });
+    renderer.setSearchQuery('shared marker');
+    const row = listElement.children[0] as HTMLElement;
+    const nextRow = listElement.children[1] as HTMLElement;
+    showOutline(row);
+    vi.spyOn(nextRow, 'getBoundingClientRect').mockReturnValue({
+      top: 720, bottom: 754,
+    } as DOMRect);
+    row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true }));
+    promptContextMenuController.select('return-to-bottom');
+    expect(scrollTo).toHaveBeenCalledWith({ top: 262, behavior: 'auto' });
+    expect(renderer.getSearchQuery()).toBe('shared marker');
+  });
+
+  it('keeps long prompt text intact for CSS truncation and opens actions only on right-click', () => {
+    const original = 'A very long user question about implementation details '.repeat(10);
+    const onItemClick = vi.fn();
+    const renderer = createTocListRenderer({
+      getMessages: () => [{ ...mockMessages[0], text: original }],
+      getActiveIndex: () => null,
+      onItemClick,
+    });
+    renderer.render();
+
+    const row = listElement.children[0] as HTMLElement;
+    const text = row.querySelector<HTMLElement>('.navigator-item-text')!;
+    expect(text.textContent).toBe(original);
+    expect(row.querySelector('button')).toBeNull();
+    expect(promptContextMenuController.getSnapshot()).toBeNull();
+
+    text.click();
+    expect(onItemClick).toHaveBeenCalledOnce();
+    expect(promptContextMenuController.getSnapshot()).toBeNull();
+
+    text.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+    expect(promptContextMenuController.getSnapshot()?.items.map(item => item.label))
+      .toEqual(['复制文字', '添加Tips']);
+    promptContextMenuController.close();
+  });
+
+  it('copies the original prompt via the context menu without changing navigation', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    const originalClipboard = navigator.clipboard;
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+    const onItemClick = vi.fn();
+    try {
       const renderer = createTocListRenderer({
         getMessages: () => mockMessages,
         getActiveIndex: () => null,
-        onItemClick: vi.fn(),
-        getFilterMode: () => 'renamed',
+        onItemClick,
       });
-
       renderer.render();
+      const item = listElement.children[0] as HTMLElement;
+      item.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true }));
+      promptContextMenuController.select('copy-prompt');
 
-      expect(listElement.children.length).toBe(1);
-      const row = listElement.children[0] as HTMLElement;
-      expect(row.dataset.messageId).toBe('msg-2');
-      expect(row.dataset.messageIndex).toBe('1');
-      expect(row.querySelector('.navigator-item-index')?.textContent).toBe('2.');
-      expect(row.querySelector('.navigator-item-text')?.textContent).toBe('Renamed Step 2');
-      expect(hintElement.hidden).toBe(true);
-
-      renderer.destroy?.();
-    });
-
-    it('renders only bookmarked prompts when filter mode is "bookmarked"', () => {
-      // Bookmark msg-1
-      const markButton = document.createElement('button');
-      const item = document.createElement('div');
-      item.dataset.messageId = 'msg-1';
-
-      // Toggle mark on msg-1
-      sessionStorage.setItem('chatToc:marks:test-convo', JSON.stringify(['msg-1']));
-      initPromptMarkFn({ conversationKey: 'test-convo' });
-
-      const renderer = createTocListRenderer({
-        getMessages: () => mockMessages,
-        getActiveIndex: () => null,
-        onItemClick: vi.fn(),
-        getFilterMode: () => 'bookmarked',
+      await vi.waitFor(() => {
+        expect(writeText).toHaveBeenCalledWith('First user prompt');
       });
-
-      renderer.render();
-
-      expect(listElement.children.length).toBe(1);
-      const row = listElement.children[0] as HTMLElement;
-      expect(row.dataset.messageId).toBe('msg-1');
-      expect(row.querySelector('.navigator-item-index')?.textContent).toBe('1.');
-      expect(hintElement.hidden).toBe(true);
-
-      renderer.destroy?.();
-    });
-
-    it('renders prompts matching renamed OR bookmarked (logical OR)', async () => {
-      await setCustomTitleFn('msg-2', 'Renamed Step 2');
-      sessionStorage.setItem('chatToc:marks:test-convo', JSON.stringify(['msg-1']));
-      initPromptMarkFn({ conversationKey: 'test-convo' });
-
-      const renderer = createTocListRenderer({
-        getMessages: () => mockMessages,
-        getActiveIndex: () => null,
-        onItemClick: vi.fn(),
-        getFilterMode: () => 'renamed_or_bookmarked',
+      expect(onItemClick).not.toHaveBeenCalled();
+      expect(promptContextMenuController.getSnapshot()).toBeNull();
+    } finally {
+      Object.defineProperty(navigator, 'clipboard', {
+        configurable: true, value: originalClipboard,
       });
-
-      renderer.render();
-
-      expect(listElement.children.length).toBe(2);
-      expect((listElement.children[0] as HTMLElement).dataset.messageId).toBe('msg-1');
-      expect((listElement.children[1] as HTMLElement).dataset.messageId).toBe('msg-2');
-
-      renderer.destroy?.();
-    });
-
-    it('combines TOC filter mode with search query', async () => {
-      await setCustomTitleFn('msg-1', 'Alpha prompt');
-      await setCustomTitleFn('msg-3', 'Coding prompt with custom title');
-
-      const renderer = createTocListRenderer({
-        getMessages: () => mockMessages,
-        getActiveIndex: () => null,
-        onItemClick: vi.fn(),
-        getFilterMode: () => 'renamed',
-      });
-
-      renderer.setSearchQuery('coding');
-
-      expect(listElement.children.length).toBe(1);
-      expect((listElement.children[0] as HTMLElement).dataset.messageId).toBe('msg-3');
-
-      renderer.destroy?.();
-    });
-
-    it('displays "No prompts match the active filter." when filter matches zero prompts', () => {
-      const renderer = createTocListRenderer({
-        getMessages: () => mockMessages,
-        getActiveIndex: () => null,
-        onItemClick: vi.fn(),
-        getFilterMode: () => 'renamed',
-      });
-
-      renderer.render();
-
-      expect(listElement.children.length).toBe(0);
-      expect(hintElement.hidden).toBe(false);
-      expect(hintElement.textContent).toBe('No prompts match the active filter.');
-
-      renderer.destroy?.();
-    });
-
-    it('dynamically re-renders the list when filter mode changes in the store', async () => {
-      await setCustomTitleFn('msg-2', 'Renamed Step 2');
-
-      const renderer = createTocListRenderer({
-        getMessages: () => mockMessages,
-        getActiveIndex: () => null,
-        onItemClick: vi.fn(),
-      });
-
-      renderer.render();
-      expect(listElement.children.length).toBe(3);
-
-      // Change store mode to renamed
-      setFilterMode('renamed');
-
-      expect(listElement.children.length).toBe(1);
-      expect((listElement.children[0] as HTMLElement).dataset.messageId).toBe('msg-2');
-
-      renderer.destroy?.();
-    });
+    }
   });
 
   describe('initial active TOC scroll-position synchronization', () => {
@@ -564,818 +923,6 @@ describe('tocListRenderer', () => {
       const items = renderer.getNavigatorItems();
       expect(items[2].classList.contains('navigator-item-active')).toBe(true);
       expect(items[1].classList.contains('navigator-item-active')).toBe(false);
-    });
-
-    it('preserves exact message ID, relative offset, and adjusts scrollTop when 128 older rows are prepended to a 380-row list', () => {
-      const ROW_HEIGHT = 40;
-      const CONTAINER_HEIGHT = 500;
-
-      const initialMessages: NavigatorMessage[] = Array.from({ length: 380 }, (_, i) => ({
-        id: `msg-${i}`,
-        text: `Prompt ${i + 1}`,
-        canMatchByText: true,
-        createTime: i * 1000,
-      }));
-
-      let activeIndex: number | null = 379;
-      let currentMessages = initialMessages;
-
-      const prevGetBCR = window.HTMLElement.prototype.getBoundingClientRect;
-      try {
-        window.HTMLElement.prototype.getBoundingClientRect = function () {
-          if (this === listElement) {
-            return { top: 0, bottom: CONTAINER_HEIGHT, height: CONTAINER_HEIGHT, left: 0, right: 200, width: 200 } as DOMRect;
-          }
-          const index = Number((this as HTMLElement).dataset?.messageIndex ?? 0);
-          const top = index * ROW_HEIGHT - listElement.scrollTop;
-          return { top, bottom: top + ROW_HEIGHT, height: ROW_HEIGHT, left: 0, right: 200, width: 200 } as DOMRect;
-        };
-
-        const renderer = createTocListRenderer({
-          getMessages: () => currentMessages,
-          getActiveIndex: () => activeIndex,
-          onItemClick: vi.fn(),
-          isFollowingMode: () => false,
-        });
-
-        // Render 380 items
-        renderer.render({ completed: true });
-        expect(scrollToMock).toHaveBeenCalledTimes(1);
-        scrollToMock.mockClear();
-
-        // User or viewport is at msg-200 with an exact 15px top offset
-        listElement.scrollTop = 200 * ROW_HEIGHT - 15;
-
-        // Prepend 128 older items (total 508 items)
-        const olderMessages: NavigatorMessage[] = Array.from({ length: 128 }, (_, i) => ({
-          id: `older-${i}`,
-          text: `Older Prompt ${i + 1}`,
-          canMatchByText: true,
-          createTime: i * 1000,
-        }));
-        currentMessages = [...olderMessages, ...initialMessages];
-        activeIndex = 507;
-
-        renderer.render();
-
-        // msg-200 is shifted by 128 * 40 = 5120px; scrollTop must increase by exactly 5120px
-        const expectedScrollTop = 200 * ROW_HEIGHT - 15 + 128 * ROW_HEIGHT;
-        expect(listElement.scrollTop).toBe(expectedScrollTop);
-
-        // The visible row matches dataset.messageId msg-200, not older-72
-        const items = renderer.getNavigatorItems();
-        expect(items.length).toBe(508);
-        expect(items[328].dataset.messageId).toBe('msg-200');
-        expect(scrollToMock).not.toHaveBeenCalled();
-      } finally {
-        window.HTMLElement.prototype.getBoundingClientRect = prevGetBCR;
-      }
-    });
-
-    it('performs initial active alignment once loading finishes on a partially rendered TOC with existing scroll anchor', () => {
-      mockLayout(600);
-      const partialMessages: NavigatorMessage[] = Array.from({ length: 50 }, (_, i) => ({
-        id: `partial-${i}`,
-        text: `Partial ${i + 1}`,
-        canMatchByText: true,
-        createTime: i * 1000,
-      }));
-
-      let activeIndex: number | null = 49;
-      let currentMessages = partialMessages;
-
-      const renderer = createTocListRenderer({
-        getMessages: () => currentMessages,
-        getActiveIndex: () => activeIndex,
-        onItemClick: vi.fn(),
-        isFollowingMode: () => false,
-      });
-
-      // 1. Partial render while loading: anchor exists, but loading suppresses active scroll
-      renderer.render();
-      expect(scrollToMock).not.toHaveBeenCalled();
-
-      // 2. Loading finishes: Priority 2 triggers initial active alignment despite existing anchor
-      renderer.render({ completed: true });
-      expect(scrollToMock).toHaveBeenCalledTimes(1);
-      expect(scrollToMock).toHaveBeenCalledWith({ top: expect.any(Number), behavior: 'auto' });
-      scrollToMock.mockClear();
-
-      // 3. Subsequent ordinary render: Priority 3 preserves anchor without force-scrolling
-      renderer.render();
-      expect(scrollToMock).not.toHaveBeenCalled();
-    });
-
-    it('preserves click prompt target navigation and prevents subsequent backfill prepends from force-scrolling away', () => {
-      mockLayout(600);
-      let activeIndex: number | null = 10;
-      let currentMessages: NavigatorMessage[] = Array.from({ length: 50 }, (_, i) => ({
-        id: `init-${i}`,
-        text: `Init ${i + 1}`,
-        canMatchByText: true,
-        createTime: i * 1000,
-      }));
-
-      const renderer = createTocListRenderer({
-        getMessages: () => currentMessages,
-        getActiveIndex: () => activeIndex,
-        onItemClick: vi.fn(),
-        isFollowingMode: () => false,
-      });
-
-      renderer.render();
-
-      // User clicks prompt #5 during loading
-      const items = renderer.getNavigatorItems();
-      items[5].dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      scrollToMock.mockClear();
-
-      // Next backfill chunk arrives and prepends 50 older messages
-      const olderMessages: NavigatorMessage[] = Array.from({ length: 50 }, (_, i) => ({
-        id: `old-${i}`,
-        text: `Old ${i + 1}`,
-        canMatchByText: true,
-        createTime: i * 1000,
-      }));
-      currentMessages = [...olderMessages, ...currentMessages];
-      activeIndex = 60; // target shifted
-
-      renderer.render();
-
-      // Target-lock must NOT be overridden by forced scroll to active bottom
-      expect(scrollToMock).not.toHaveBeenCalled();
-    });
-
-    it('captures fallback anchor to the last item and restores exact scrollTop when scrolled deep into bottom padding', () => {
-      const ROW_HEIGHT = 40;
-      const CONTAINER_HEIGHT = 500;
-      const BOTTOM_PADDING = 600;
-      const INITIAL_COUNT = 20;
-
-      const initialMessages: NavigatorMessage[] = Array.from({ length: INITIAL_COUNT }, (_, i) => ({
-        id: `msg-${i}`,
-        text: `Prompt ${i + 1}`,
-        canMatchByText: true,
-        createTime: i * 1000,
-      }));
-
-      let currentMessages = initialMessages;
-      let activeIndex: number | null = INITIAL_COUNT - 1;
-
-      let currentScrollTop = 0;
-      Object.defineProperty(listElement, 'scrollTop', {
-        get: () => currentScrollTop,
-        set: (val: number) => {
-          currentScrollTop = val;
-        },
-        configurable: true,
-      });
-
-      const prevGetBCR = window.HTMLElement.prototype.getBoundingClientRect;
-      try {
-        window.HTMLElement.prototype.getBoundingClientRect = function () {
-          if (this === listElement) {
-            return {
-              top: 0,
-              bottom: CONTAINER_HEIGHT,
-              height: CONTAINER_HEIGHT,
-              left: 0,
-              right: 200,
-              width: 200,
-              x: 0,
-              y: 0,
-              toJSON: () => {},
-            } as DOMRect;
-          }
-          if ((this as HTMLElement).classList?.contains('navigator-item')) {
-            const index = Number((this as HTMLElement).dataset?.messageIndex ?? 0);
-            const top = index * ROW_HEIGHT - currentScrollTop;
-            return {
-              top,
-              bottom: top + ROW_HEIGHT,
-              height: ROW_HEIGHT,
-              left: 0,
-              right: 200,
-              width: 200,
-              x: 0,
-              y: top,
-              toJSON: () => {},
-            } as DOMRect;
-          }
-          return { top: 0, bottom: 0, height: 0, left: 0, right: 0, width: 0, x: 0, y: 0, toJSON: () => {} } as DOMRect;
-        };
-
-        const renderer = createTocListRenderer({
-          getMessages: () => currentMessages,
-          getActiveIndex: () => activeIndex,
-          onItemClick: vi.fn(),
-          isFollowingMode: () => false,
-        });
-
-        renderer.render({ completed: true });
-        scrollToMock.mockClear();
-
-        // User is scrolled deep into bottom padding
-        currentScrollTop = 850;
-
-        const originalInnerHTMLSetter = Object.getOwnPropertyDescriptor(Element.prototype, 'innerHTML')!.set!;
-        Object.defineProperty(listElement, 'innerHTML', {
-          set(val: string) {
-            originalInnerHTMLSetter.call(this, val);
-            if (val === '') {
-              currentScrollTop = Math.min(currentScrollTop, BOTTOM_PADDING - CONTAINER_HEIGHT);
-            }
-          },
-          configurable: true,
-        });
-
-        currentMessages = [
-          ...initialMessages,
-          {
-            id: 'msg-20',
-            text: 'Prompt 21',
-            canMatchByText: true,
-            createTime: 20 * 1000,
-          },
-        ];
-        activeIndex = 20;
-
-        renderer.render();
-
-        expect(listElement.scrollTop).toBe(850);
-      } finally {
-        window.HTMLElement.prototype.getBoundingClientRect = prevGetBCR;
-        delete (listElement as any).scrollTop;
-        delete (listElement as any).innerHTML;
-      }
-    });
-
-    it('executes onRefreshObservers callback after scroll anchor restoration', () => {
-      const ROW_HEIGHT = 40;
-      const CONTAINER_HEIGHT = 500;
-
-      const initialMessages: NavigatorMessage[] = Array.from({ length: 20 }, (_, i) => ({
-        id: `msg-${i}`,
-        text: `Prompt ${i + 1}`,
-        canMatchByText: true,
-        createTime: i * 1000,
-      }));
-
-      let currentScrollTop = 0;
-      Object.defineProperty(listElement, 'scrollTop', {
-        get: () => currentScrollTop,
-        set: (val: number) => {
-          currentScrollTop = val;
-        },
-        configurable: true,
-      });
-
-      const prevGetBCR = window.HTMLElement.prototype.getBoundingClientRect;
-      try {
-        window.HTMLElement.prototype.getBoundingClientRect = function () {
-          if (this === listElement) {
-            return {
-              top: 0,
-              bottom: CONTAINER_HEIGHT,
-              height: CONTAINER_HEIGHT,
-              left: 0,
-              right: 200,
-              width: 200,
-              x: 0,
-              y: 0,
-              toJSON: () => {},
-            } as DOMRect;
-          }
-          if ((this as HTMLElement).classList?.contains('navigator-item')) {
-            const index = Number((this as HTMLElement).dataset?.messageIndex ?? 0);
-            const top = index * ROW_HEIGHT - currentScrollTop;
-            return {
-              top,
-              bottom: top + ROW_HEIGHT,
-              height: ROW_HEIGHT,
-              left: 0,
-              right: 200,
-              width: 200,
-              x: 0,
-              y: top,
-              toJSON: () => {},
-            } as DOMRect;
-          }
-          return { top: 0, bottom: 0, height: 0, left: 0, right: 0, width: 0, x: 0, y: 0, toJSON: () => {} } as DOMRect;
-        };
-
-        let observedScrollTopDuringRefresh: number | null = null;
-        const onRefreshObserversMock = vi.fn(() => {
-          observedScrollTopDuringRefresh = listElement.scrollTop;
-        });
-
-        const renderer = createTocListRenderer({
-          getMessages: () => initialMessages,
-          getActiveIndex: () => 19,
-          onItemClick: vi.fn(),
-          isFollowingMode: () => false,
-          onRefreshObservers: onRefreshObserversMock,
-        });
-
-        renderer.render({ completed: true });
-        onRefreshObserversMock.mockClear();
-
-        currentScrollTop = 200;
-
-        const originalInnerHTMLSetter = Object.getOwnPropertyDescriptor(Element.prototype, 'innerHTML')!.set!;
-        Object.defineProperty(listElement, 'innerHTML', {
-          set(val: string) {
-            originalInnerHTMLSetter.call(this, val);
-            if (val === '') {
-              currentScrollTop = 0;
-            }
-          },
-          configurable: true,
-        });
-
-        renderer.render({ refreshObservers: true });
-
-        expect(onRefreshObserversMock).toHaveBeenCalledTimes(1);
-        expect(observedScrollTopDuringRefresh).toBe(200);
-        expect(listElement.scrollTop).toBe(200);
-      } finally {
-        window.HTMLElement.prototype.getBoundingClientRect = prevGetBCR;
-        delete (listElement as any).scrollTop;
-        delete (listElement as any).innerHTML;
-      }
-    });
-
-    it('respects active Follow: bypasses scrollTo when item is in bounds, invokes smooth scrollTo when out of bounds', () => {
-      const messages: NavigatorMessage[] = Array.from({ length: 10 }, (_, i) => ({
-        id: `msg-${i}`,
-        text: `Prompt ${i + 1}`,
-        canMatchByText: true,
-        createTime: i * 1000,
-      }));
-
-      const renderer = createTocListRenderer({
-        getMessages: () => messages,
-        getActiveIndex: () => 9,
-        onItemClick: vi.fn(),
-        isFollowingMode: () => true,
-      });
-
-      renderer.render({ completed: true });
-      scrollToMock.mockClear();
-
-      const scrollContainer = document.getElementById('navigator-list')!;
-      scrollContainer.getBoundingClientRect = () => ({
-        top: 0,
-        bottom: 500,
-        height: 500,
-        left: 0,
-        right: 200,
-        width: 200,
-        x: 0,
-        y: 0,
-        toJSON: () => {},
-      });
-
-      const items = renderer.getNavigatorItems();
-      const lastItem = items[items.length - 1];
-
-      // Case A: Last item is within safe bounds [56, 420]
-      lastItem.getBoundingClientRect = () => ({
-        top: 200,
-        bottom: 240,
-        height: 40,
-        left: 0,
-        right: 200,
-        width: 200,
-        x: 0,
-        y: 200,
-        toJSON: () => {},
-      });
-
-      const handledInBounds = renderer.scrollNavigatorItemIntoView(lastItem);
-      expect(handledInBounds).toBe(true);
-      expect(scrollToMock).not.toHaveBeenCalled();
-
-      // Case B: Last item is out of bounds (below 420px)
-      lastItem.getBoundingClientRect = () => ({
-        top: 450,
-        bottom: 490,
-        height: 40,
-        left: 0,
-        right: 200,
-        width: 200,
-        x: 0,
-        y: 450,
-        toJSON: () => {},
-      });
-
-      const handledOutOfBounds = renderer.scrollNavigatorItemIntoView(lastItem);
-      expect(handledOutOfBounds).toBe(true);
-      expect(scrollToMock).toHaveBeenCalledTimes(1);
-      expect(scrollToMock).toHaveBeenCalledWith({
-        top: 70,
-        behavior: 'smooth',
-      });
-    });
-
-    it('preserves mid-list scroll anchor without shifting position when new message is appended', () => {
-      const ROW_HEIGHT = 40;
-      const CONTAINER_HEIGHT = 500;
-
-      const initialMessages: NavigatorMessage[] = Array.from({ length: 30 }, (_, i) => ({
-        id: `msg-${i}`,
-        text: `Prompt ${i + 1}`,
-        canMatchByText: true,
-        createTime: i * 1000,
-      }));
-
-      let currentMessages = initialMessages;
-      let currentScrollTop = 0;
-      Object.defineProperty(listElement, 'scrollTop', {
-        get: () => currentScrollTop,
-        set: (val: number) => {
-          currentScrollTop = val;
-        },
-        configurable: true,
-      });
-
-      const prevGetBCR = window.HTMLElement.prototype.getBoundingClientRect;
-      try {
-        window.HTMLElement.prototype.getBoundingClientRect = function () {
-          if (this === listElement) {
-            return {
-              top: 0,
-              bottom: CONTAINER_HEIGHT,
-              height: CONTAINER_HEIGHT,
-              left: 0,
-              right: 200,
-              width: 200,
-              x: 0,
-              y: 0,
-              toJSON: () => {},
-            } as DOMRect;
-          }
-          if ((this as HTMLElement).classList?.contains('navigator-item')) {
-            const index = Number((this as HTMLElement).dataset?.messageIndex ?? 0);
-            const top = index * ROW_HEIGHT - currentScrollTop;
-            return {
-              top,
-              bottom: top + ROW_HEIGHT,
-              height: ROW_HEIGHT,
-              left: 0,
-              right: 200,
-              width: 200,
-              x: 0,
-              y: top,
-              toJSON: () => {},
-            } as DOMRect;
-          }
-          return { top: 0, bottom: 0, height: 0, left: 0, right: 0, width: 0, x: 0, y: 0, toJSON: () => {} } as DOMRect;
-        };
-
-        const renderer = createTocListRenderer({
-          getMessages: () => currentMessages,
-          getActiveIndex: () => 10,
-          onItemClick: vi.fn(),
-          isFollowingMode: () => false,
-        });
-
-        renderer.render({ completed: true });
-        scrollToMock.mockClear();
-
-        currentScrollTop = 400;
-
-        currentMessages = [
-          ...initialMessages,
-          {
-            id: 'msg-30',
-            text: 'Prompt 31',
-            canMatchByText: true,
-            createTime: 30 * 1000,
-          },
-        ];
-
-        renderer.render();
-
-        expect(listElement.scrollTop).toBe(400);
-        expect(scrollToMock).not.toHaveBeenCalled();
-      } finally {
-        window.HTMLElement.prototype.getBoundingClientRect = prevGetBCR;
-        delete (listElement as any).scrollTop;
-      }
-    });
-
-    it('gracefully handles missing anchor when the anchored message is deleted, retaining layout without erratic scroll jump', () => {
-      const ROW_HEIGHT = 40;
-      const CONTAINER_HEIGHT = 500;
-
-      const initialMessages: NavigatorMessage[] = [
-        { id: 'msg-0', text: 'Prompt 1', canMatchByText: true, createTime: 1000 },
-        { id: 'msg-1', text: 'Prompt 2', canMatchByText: true, createTime: 2000 },
-        { id: 'msg-2', text: 'Prompt 3', canMatchByText: true, createTime: 3000 },
-      ];
-
-      let currentMessages = initialMessages;
-      let currentScrollTop = 40;
-      Object.defineProperty(listElement, 'scrollTop', {
-        get: () => currentScrollTop,
-        set: (val: number) => {
-          currentScrollTop = val;
-        },
-        configurable: true,
-      });
-
-      const prevGetBCR = window.HTMLElement.prototype.getBoundingClientRect;
-      try {
-        window.HTMLElement.prototype.getBoundingClientRect = function () {
-          if (this === listElement) {
-            return {
-              top: 0,
-              bottom: CONTAINER_HEIGHT,
-              height: CONTAINER_HEIGHT,
-              left: 0,
-              right: 200,
-              width: 200,
-              x: 0,
-              y: 0,
-              toJSON: () => {},
-            } as DOMRect;
-          }
-          if ((this as HTMLElement).classList?.contains('navigator-item')) {
-            const index = Number((this as HTMLElement).dataset?.messageIndex ?? 0);
-            const top = index * ROW_HEIGHT - currentScrollTop;
-            return {
-              top,
-              bottom: top + ROW_HEIGHT,
-              height: ROW_HEIGHT,
-              left: 0,
-              right: 200,
-              width: 200,
-              x: 0,
-              y: top,
-              toJSON: () => {},
-            } as DOMRect;
-          }
-          return { top: 0, bottom: 0, height: 0, left: 0, right: 0, width: 0, x: 0, y: 0, toJSON: () => {} } as DOMRect;
-        };
-
-        const renderer = createTocListRenderer({
-          getMessages: () => currentMessages,
-          getActiveIndex: () => 1,
-          onItemClick: vi.fn(),
-          isFollowingMode: () => false,
-        });
-
-        renderer.render({ completed: true });
-        scrollToMock.mockClear();
-
-        currentMessages = [
-          { id: 'msg-0', text: 'Prompt 1', canMatchByText: true, createTime: 1000 },
-          { id: 'msg-2', text: 'Prompt 3', canMatchByText: true, createTime: 3000 },
-        ];
-
-        expect(() => renderer.render()).not.toThrow();
-        expect(renderer.getNavigatorItems().length).toBe(2);
-      } finally {
-        window.HTMLElement.prototype.getBoundingClientRect = prevGetBCR;
-        delete (listElement as any).scrollTop;
-      }
-    });
-
-    it('preserves visual position without unnecessary long smooth scroll when latest item was already visible before message append', () => {
-      const ROW_HEIGHT = 40;
-      const CONTAINER_HEIGHT = 500;
-      const INITIAL_COUNT = 20;
-
-      const initialMessages: NavigatorMessage[] = Array.from({ length: INITIAL_COUNT }, (_, i) => ({
-        id: `msg-${i}`,
-        text: `Prompt ${i + 1}`,
-        canMatchByText: true,
-        createTime: i * 1000,
-      }));
-
-      let currentMessages = initialMessages;
-      let activeIndex: number | null = INITIAL_COUNT - 1;
-      let currentScrollTop = 350;
-
-      Object.defineProperty(listElement, 'scrollTop', {
-        get: () => currentScrollTop,
-        set: (val: number) => {
-          currentScrollTop = val;
-        },
-        configurable: true,
-      });
-
-      const prevGetBCR = window.HTMLElement.prototype.getBoundingClientRect;
-      try {
-        window.HTMLElement.prototype.getBoundingClientRect = function () {
-          if (this === listElement) {
-            return {
-              top: 0,
-              bottom: CONTAINER_HEIGHT,
-              height: CONTAINER_HEIGHT,
-              left: 0,
-              right: 200,
-              width: 200,
-              x: 0,
-              y: 0,
-              toJSON: () => {},
-            } as DOMRect;
-          }
-          if ((this as HTMLElement).classList?.contains('navigator-item')) {
-            const index = Number((this as HTMLElement).dataset?.messageIndex ?? 0);
-            const top = index * ROW_HEIGHT - currentScrollTop;
-            return {
-              top,
-              bottom: top + ROW_HEIGHT,
-              height: ROW_HEIGHT,
-              left: 0,
-              right: 200,
-              width: 200,
-              x: 0,
-              y: top,
-              toJSON: () => {},
-            } as DOMRect;
-          }
-          return { top: 0, bottom: 0, height: 0, left: 0, right: 0, width: 0, x: 0, y: 0, toJSON: () => {} } as DOMRect;
-        };
-
-        const renderer = createTocListRenderer({
-          getMessages: () => currentMessages,
-          getActiveIndex: () => activeIndex,
-          onItemClick: vi.fn(),
-          isFollowingMode: () => false,
-        });
-
-        renderer.render({ completed: true });
-        scrollToMock.mockClear();
-
-        currentMessages = [
-          ...initialMessages,
-          {
-            id: 'msg-20',
-            text: 'Prompt 21',
-            canMatchByText: true,
-            createTime: 20 * 1000,
-          },
-        ];
-        activeIndex = 20;
-
-        renderer.render();
-
-        expect(listElement.scrollTop).toBe(350);
-        expect(scrollToMock).not.toHaveBeenCalled();
-      } finally {
-        window.HTMLElement.prototype.getBoundingClientRect = prevGetBCR;
-        delete (listElement as any).scrollTop;
-      }
-    });
-  });
-
-  describe('scrollLastItemIntoView', () => {
-    it('returns false when no items exist', () => {
-      const renderer = createTocListRenderer({
-        getMessages: () => [],
-        getActiveIndex: () => null,
-        onItemClick: vi.fn(),
-      });
-      renderer.render();
-
-      expect(renderer.scrollLastItemIntoView()).toBe(false);
-    });
-
-    it('scrolls the last item into view when it is hidden below container', () => {
-      const renderer = createTocListRenderer({
-        getMessages: () => mockMessages,
-        getActiveIndex: () => null,
-        onItemClick: vi.fn(),
-      });
-      renderer.render();
-
-      const scrollContainer = document.getElementById('navigator-list')!;
-      const scrollToMock = vi.fn();
-      scrollContainer.scrollTo = scrollToMock;
-
-      scrollContainer.getBoundingClientRect = () => ({
-        top: 0,
-        bottom: 300,
-        height: 300,
-        left: 0,
-        right: 200,
-        width: 200,
-        x: 0,
-        y: 0,
-        toJSON: () => {},
-      });
-
-      const items = renderer.getNavigatorItems();
-      const lastItem = items[items.length - 1];
-      lastItem.getBoundingClientRect = () => ({
-        top: 500,
-        bottom: 540,
-        height: 40,
-        left: 0,
-        right: 200,
-        width: 200,
-        x: 0,
-        y: 500,
-        toJSON: () => {},
-      });
-
-      const result = renderer.scrollLastItemIntoView();
-      expect(result).toBe(true);
-      expect(scrollToMock).toHaveBeenCalledWith({
-        top: 320,
-        behavior: 'smooth',
-      });
-    });
-
-    it('does not scroll when the last item is already fully visible in viewport', () => {
-      const renderer = createTocListRenderer({
-        getMessages: () => mockMessages,
-        getActiveIndex: () => null,
-        onItemClick: vi.fn(),
-      });
-      renderer.render();
-
-      const scrollContainer = document.getElementById('navigator-list')!;
-      const scrollToMock = vi.fn();
-      scrollContainer.scrollTo = scrollToMock;
-
-      scrollContainer.getBoundingClientRect = () => ({
-        top: 0,
-        bottom: 400,
-        height: 400,
-        left: 0,
-        right: 200,
-        width: 200,
-        x: 0,
-        y: 0,
-        toJSON: () => {},
-      });
-
-      const items = renderer.getNavigatorItems();
-      const lastItem = items[items.length - 1];
-      lastItem.getBoundingClientRect = () => ({
-        top: 100,
-        bottom: 140,
-        height: 40,
-        left: 0,
-        right: 200,
-        width: 200,
-        x: 0,
-        y: 100,
-        toJSON: () => {},
-      });
-
-      const result = renderer.scrollLastItemIntoView();
-      expect(result).toBe(true);
-      expect(scrollToMock).not.toHaveBeenCalled();
-    });
-
-    it('handles a single-item TOC gracefully', () => {
-      const singleMessage: NavigatorMessage[] = [mockMessages[0]];
-      const renderer = createTocListRenderer({
-        getMessages: () => singleMessage,
-        getActiveIndex: () => null,
-        onItemClick: vi.fn(),
-      });
-      renderer.render();
-
-      const scrollContainer = document.getElementById('navigator-list')!;
-      const scrollToMock = vi.fn();
-      scrollContainer.scrollTo = scrollToMock;
-
-      scrollContainer.getBoundingClientRect = () => ({
-        top: 0,
-        bottom: 300,
-        height: 300,
-        left: 0,
-        right: 200,
-        width: 200,
-        x: 0,
-        y: 0,
-        toJSON: () => {},
-      });
-
-      const items = renderer.getNavigatorItems();
-      items[0].getBoundingClientRect = () => ({
-        top: 400,
-        bottom: 440,
-        height: 40,
-        left: 0,
-        right: 200,
-        width: 200,
-        x: 0,
-        y: 400,
-        toJSON: () => {},
-      });
-
-      expect(renderer.scrollLastItemIntoView()).toBe(true);
-      expect(scrollToMock).toHaveBeenCalledWith({
-        top: 220,
-        behavior: 'smooth',
-      });
     });
   });
 });

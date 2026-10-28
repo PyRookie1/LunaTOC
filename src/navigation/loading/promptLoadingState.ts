@@ -14,10 +14,8 @@
 import { APP_CONFIG } from '@/config/config';
 
 const MAX_SETTLE_RETRIES = 20;
-const MAX_BACKFILL_INACTIVITY_RETRIES = 60;
 
 let loading = true;
-let isBackfillInProgress = false;
 let settleTimer: ReturnType<typeof setTimeout> | null = null;
 let settleRetries = 0;
 let onSettleTimeout: (() => void) | null = null;
@@ -39,17 +37,6 @@ export function setLoading(value: boolean): void {
 }
 
 /**
- * Informs the loading manager whether a network history backfill is actively running.
- */
-export function setBackfillInProgress(inProgress: boolean): void {
-  isBackfillInProgress = inProgress;
-}
-
-export function isBackfillActive(): boolean {
-  return isBackfillInProgress;
-}
-
-/**
  * Injects the callback fired when the fallback settle timer exhausts its
  * retry budget. The controller passes `markLoadingComplete`.
  */
@@ -67,16 +54,6 @@ export function startSettleTimer(): void {
   settleTimer = window.setTimeout(() => {
     settleTimer = null;
     if (!loading) return;
-    if (isBackfillInProgress) {
-      settleRetries += 1;
-      if (settleRetries <= MAX_BACKFILL_INACTIVITY_RETRIES) {
-        startSettleTimer();
-        return;
-      }
-      isBackfillInProgress = false;
-      onSettleTimeout?.();
-      return;
-    }
     settleRetries += 1;
     if (settleRetries <= MAX_SETTLE_RETRIES) {
       startSettleTimer();
@@ -84,15 +61,6 @@ export function startSettleTimer(): void {
     }
     onSettleTimeout?.();
   }, APP_CONFIG.ui.sidebar.loadingSettleMs);
-}
-
-/**
- * Restarts the fallback settle timer and resets retries so active data
- * streaming is not prematurely terminated.
- */
-export function restartSettleTimer(): void {
-  settleRetries = 0;
-  startSettleTimer();
 }
 
 /**

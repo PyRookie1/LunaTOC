@@ -1,5 +1,5 @@
 /** Renders the complete extension popup and coordinates its theme state. */
-import { Info, Settings } from 'lucide-react';
+import { Info, Settings, TriangleAlert } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import {
   readResolvedChatGPTTheme,
@@ -12,13 +12,10 @@ import {
   type ResolvedTheme,
   type ThemeSettings as ThemeSettingsValue,
 } from '@/features/theme/themeSettings';
+import { resolveAccountSettingsOwner } from '@/features/storage/accountSettings';
 import { ThemeSettings } from './ThemeSettings';
-import coffeeImage from './black-button.png';
-import coffeeImageLight from './yellow-button.png';
-
-const WEB_STORE_URL =
-  'https://chromewebstore.google.com/detail/chatgpt-table-of-contents/ibfdglfgljonajofiiaonlimoiolkcpa';
-const COFFEE_URL = 'https://buymeacoffee.com/jinleo';
+import { parseToolbarWarning, toolbarWarningKey, type ToolbarCompatibilityWarning } from '@/features/contractAlert/toolbarWarning';
+const PROJECT_URL = 'https://github.com/PyRookie1/luna-toc-sc';
 
 const INITIAL_SETTINGS: ThemeSettingsValue = {
   followChatGPT: true,
@@ -28,36 +25,66 @@ const INITIAL_SETTINGS: ThemeSettingsValue = {
 /** Displays theme controls and the existing usage guidance. */
 export function PopupApp(): React.JSX.Element {
   const [settings, setSettings] = useState(INITIAL_SETTINGS);
+  const [settingsOwnerId, setSettingsOwnerId] = useState<string | null>(null);
+  const [settingsError, setSettingsError] = useState('');
   const [chatGPTTheme, setChatGPTTheme] = useState<ResolvedTheme>('dark');
-  const [isLoaded, setIsLoaded] = useState(false);
+  const [compatibilityWarning, setCompatibilityWarning] =
+    useState<ToolbarCompatibilityWarning | null>(null);
 
   useEffect(() => {
-    let isMounted = true;
-    void readThemeSettings()
-      .then((loadedSettings) => {
-        if (!isMounted) return;
-        setSettings(loadedSettings);
-        setIsLoaded(true);
-      })
-      .catch(() => {
-        if (!isMounted) return;
-        setIsLoaded(true);
-      });
-    void readResolvedChatGPTTheme().then((theme) => {
-      if (!isMounted) return;
-      setChatGPTTheme(theme);
-    });
-    const unsubscribeSettings = subscribeThemeSettings((newSettings) => {
-      if (!isMounted) return;
-      setSettings(newSettings);
-    });
-    const unsubscribeResolvedTheme =
-      subscribeResolvedChatGPTTheme((newTheme) => {
-        if (!isMounted) return;
-        setChatGPTTheme(newTheme);
-      });
+    let active = true;
+    let sessionKey: string | null = null;
+
+    const refresh = async (): Promise<void> => {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (tab?.id === undefined) return;
+      sessionKey = toolbarWarningKey(tab.id);
+      const values = await chrome.storage.session.get(sessionKey);
+      if (active) setCompatibilityWarning(parseToolbarWarning(values[sessionKey]));
+    };
+    const onStorageChange = (
+      changes: Record<string, chrome.storage.StorageChange>,
+      areaName: chrome.storage.AreaName
+    ): void => {
+      if (areaName === 'session' && sessionKey && sessionKey in changes) {
+        void refresh().catch(() => {});
+      }
+    };
+
+    void refresh().catch(() => {});
+    chrome.storage.onChanged.addListener(onStorageChange);
     return () => {
-      isMounted = false;
+      active = false;
+      chrome.storage.onChanged.removeListener(onStorageChange);
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    let unsubscribeSettings = () => {};
+    let unsubscribeResolvedTheme = () => {};
+    const initialize = async (): Promise<void> => {
+      const ownerId = await resolveAccountSettingsOwner();
+      if (!active) return;
+      setSettingsOwnerId(ownerId);
+      if (!ownerId) {
+        setSettingsError('请先打开并登录 ChatGPT；主题偏好按账号保存。');
+        return;
+      }
+      const [savedSettings, resolvedTheme] = await Promise.all([
+        readThemeSettings(ownerId), readResolvedChatGPTTheme(),
+      ]);
+      if (!active) return;
+      setSettings(savedSettings);
+      setChatGPTTheme(resolvedTheme);
+      unsubscribeSettings = subscribeThemeSettings(setSettings, ownerId);
+      unsubscribeResolvedTheme = subscribeResolvedChatGPTTheme(setChatGPTTheme);
+    };
+    void initialize().catch((error: unknown) => {
+      if (active) setSettingsError(error instanceof Error ? error.message : '无法读取主题设置。');
+    });
+    return () => {
+      active = false;
       unsubscribeSettings();
       unsubscribeResolvedTheme();
     };
@@ -73,93 +100,98 @@ export function PopupApp(): React.JSX.Element {
   }, [resolvedTheme]);
 
   const updateSettings = (nextSettings: ThemeSettingsValue): void => {
+    if (!settingsOwnerId) return;
     setSettings(nextSettings);
-    void writeThemeSettings(nextSettings);
+    setSettingsError('');
+    void writeThemeSettings(nextSettings, settingsOwnerId).catch((error: unknown) => {
+      setSettingsError(error instanceof Error ? error.message : '主题设置保存失败。');
+      void readThemeSettings(settingsOwnerId).then(setSettings).catch(() => undefined);
+    });
   };
 
   return (
-    <main className="rounded-xl border border-(--p-border-card) bg-(--p-bg-main) p-3 shadow-md">
+    <main className="rounded-lg bg-[var(--p-bg-main)] p-3">
+      {compatibilityWarning && (
+        <aside role="alert" className="mb-3 rounded-md border border-amber-500/70 bg-[var(--p-bg-note)] p-3">
+          <div className="flex items-center gap-2 text-sm font-semibold text-[var(--p-text-base)]">
+            <TriangleAlert className="size-4 shrink-0" aria-hidden="true" />
+            ChatGPT 兼容性异常
+          </div>
+          <p className="mt-2 mb-1 text-xs leading-relaxed">
+            检测到 ChatGPT 页面或接口变化，当前扩展可能无法正常工作。请升级 LunaTOC-SC 至最新版，并刷新 ChatGPT。
+          </p>
+          <p className="mt-1 mb-2 text-[11px] leading-relaxed opacity-80">
+            {compatibilityWarning.detail}
+          </p>
+          <a href={`${PROJECT_URL}/releases`} target="_blank" rel="noopener noreferrer"
+            className="text-xs font-semibold text-[var(--p-accent)] underline">
+            查看新版并升级
+          </a>
+        </aside>
+      )}
       <ThemeSettings
         settings={settings}
         resolvedTheme={resolvedTheme}
-        isLoaded={isLoaded}
         onChange={updateSettings}
+        disabled={!settingsOwnerId}
       />
+      {settingsError && <p role="status" className="mt-1 mb-2 text-xs text-(--p-text-base)">{settingsError}</p>}
 
       <section className="m-0" aria-labelledby="tips-heading">
         <h2
           id="tips-heading"
-          className="m-0 text-[13px] leading-[1.3] font-semibold text-(--p-text-heading)"
+          className="m-0 text-[13px] leading-[1.3] font-semibold text-[var(--p-text-h2)]"
         >
           Tips
         </h2>
-        <ul className="mt-1.5 mb-0 space-y-1 pl-4 text-xs leading-relaxed text-(--p-text-base)">
+        <ul className="mt-1 mb-0 pl-[18px] text-xs leading-[1.5] text-[var(--p-text-base)]">
           <li>
-            Type <PromptKey>#</PromptKey> or <PromptKey>//</PromptKey> to insert
-            a saved prompt. Add a space first when typing mid-message.
+            输入 <PromptKey>#</PromptKey> 或 <PromptKey>//</PromptKey> 可插入已保存的提示词。在消息中途输入时，请先输入一个空格。
           </li>
           <li>
-            <strong className="font-semibold text-(--p-text-strong)">
-              Right-click
+            <strong className="font-semibold text-[var(--p-text-strong)]">
+              右键点击
             </strong>{' '}
-            to rename or save to MyPrompts.
+            提示词即可将其保存到 Tips。
           </li>
         </ul>
 
-        <div
-          className="mt-2.5 flex items-start gap-1.5 text-xs leading-normal text-(--p-text-muted)"
-          aria-label="Navigation note"
+        <aside
+          className="mt-2.5 grid grid-cols-[14px_minmax(0,1fr)] gap-[7px] rounded-sm bg-[var(--p-bg-note)] p-2"
+          aria-label="目录使用说明"
         >
           <Info
-            className="mt-0.5 size-3.5 shrink-0 text-(--p-accent)"
+            className="mt-0.5 size-3.5 text-[var(--p-accent)]"
             aria-hidden="true"
             strokeWidth={1.75}
           />
-          <span>TOC missing items or out of sync? Refresh.</span>
-        </div>
+          <p className="m-0 text-xs leading-[1.5] text-[var(--p-text-base)]">
+            <strong className="font-semibold text-[var(--p-text-strong)]">
+              注意：
+            </strong>{' '}
+            如果目录与对话不同步，可先收起侧边栏再悬停展开，尝试同步当前对话；若仍未更新，请刷新 ChatGPT 页面。
+          </p>
+        </aside>
       </section>
 
-      <footer className="mt-2.5 flex items-center justify-between border-t border-(--p-border-divider) pt-2">
+      <footer className="mt-2.5 flex items-center justify-between border-t border-(--p-toggle-border) pt-2">
         <button
           type="button"
-          title="Open LunaTOC settings"
-          className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border-0 bg-transparent px-1.5 py-1 text-xs font-medium text-(--p-footer-text) outline-none transition duration-150 hover:bg-(--p-footer-hover-bg) hover:text-(--p-footer-hover-text) focus-visible:ring-2 focus-visible:ring-(--p-accent) active:scale-95"
+          title="打开 LunaTOC-SC 设置"
+          className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border-0 bg-transparent px-1.5 py-1 text-[10px] font-medium text-(--p-toggle-text) outline-none transition duration-150 hover:bg-(--p-toggle-bg) hover:text-(--p-accent) focus-visible:ring-2 focus-visible:ring-(--p-accent)"
           onClick={() => void chrome.runtime.openOptionsPage()}
         >
           <Settings className="size-3.5" aria-hidden="true" />
-          Settings
+          设置
         </button>
         <a
-          href={WEB_STORE_URL}
+          href={PROJECT_URL}
           target="_blank"
           rel="noopener noreferrer"
-          className="rate-link inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-xs font-medium text-(--p-footer-text) no-underline transition duration-150 hover:bg-(--p-footer-hover-bg) hover:text-(--p-rate-hover-color)"
+          className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[10px] font-medium text-(--p-toggle-text) no-underline hover:text-(--p-accent) focus-visible:ring-2 focus-visible:ring-(--p-accent)"
+          title="打开 LunaTOC-SC 的 GitHub 项目页面"
         >
-          <svg
-            aria-hidden="true"
-            viewBox="0 0 24 24"
-            className="size-3.5 fill-none stroke-current stroke-2"
-          >
-            <path d="m12 2 3.09 6.26L22 9.27l-5 4.87L18.18 22 12 18.74 5.82 22 7 14.14l-5-4.87 6.91-1.01L12 2Z" />
-          </svg>
-          Rate
-        </a>
-        <a
-          href={COFFEE_URL}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="coffee-link inline-flex items-center rounded-md px-1 py-0.5 transition duration-150 hover:bg-(--p-footer-hover-bg) hover:scale-105 active:scale-95"
-        >
-          <img
-            src={coffeeImage}
-            alt="Buy me a coffee"
-            className="coffee-img-dark h-6.5 w-auto"
-          />
-          <img
-            src={coffeeImageLight}
-            alt="Buy me a coffee"
-            className="coffee-img-light hidden h-6.5 w-auto"
-          />
+          项目源码
         </a>
       </footer>
     </main>
@@ -172,7 +204,7 @@ interface PromptKeyProps {
 
 function PromptKey({ children }: PromptKeyProps): React.JSX.Element {
   return (
-    <kbd className="inline-block rounded border border-(--p-border-kbd) bg-(--p-bg-kbd) px-1 py-px text-[11px] font-medium leading-tight text-(--p-text-kbd)">
+    <kbd className="rounded-[3px] border border-(--p-border-kbd) bg-(--p-bg-kbd) px-1 py-px font-[inherit] text-[11px] text-(--p-text-kbd)">
       {children}
     </kbd>
   );

@@ -1,192 +1,257 @@
-/** Renders LunaTOC's full-page extension settings. */
-import { useEffect, useState } from 'react';
+/** Renders LunaTOC preferences using ChatGPT-like settings groups. */
+import { useEffect, useRef, useState } from 'react';
+import { LocalBackupSettings } from './LocalBackupSettings';
+import { LocalAliasCleanupSettings } from './LocalAliasCleanupSettings';
 import {
-  FAVOURITE_COLOR_PRESETS,
-  RENAMED_COLOR_PRESETS,
-  readFavouriteColor,
-  readRenamedColor,
-  subscribeFavouriteColor,
-  subscribeRenamedColor,
-  writeFavouriteColor,
-  writeRenamedColor,
-  type FavouriteColorPreset,
-  type RenamedColorPreset,
-} from '@/features/theme/promptColorSettings';
+  loadPlatformRuntimeConfig,
+  savePlatformRuntimeConfig,
+  type ChatGptRuntimeConfig,
+} from '@/config/config';
+import {
+  ACCOUNT_EMAILS_KEY, ACCOUNT_SETTINGS_KEY, accountSettingsEmails, accountSettingsOwners,
+} from '@/features/storage/accountSettings';
+import {
+  DEFAULT_SIDEBAR_PREFERENCES,
+  SIDEBAR_COLORS,
+  readSidebarPreferences,
+  subscribeSidebarPreferences,
+  writeSidebarPreferences,
+  type SidebarPreferences,
+  type SidebarLayoutMode,
+} from '@/features/sidebar/sidebarPreferences';
 
-/** Displays prompt colour options for LunaTOC. */
+/** Displays layout, appearance and advanced compatibility settings. */
 export function OptionsApp(): React.JSX.Element {
-  const [favouriteColor, setFavouriteColor] =
-    useState<FavouriteColorPreset>('original');
-  const [renamedColor, setRenamedColor] =
-    useState<RenamedColorPreset>('original');
-
-  const [isDark, setIsDark] = useState<boolean>(() =>
-    typeof window !== 'undefined'
-      ? window.matchMedia('(prefers-color-scheme: dark)').matches
-      : false
+  const [runtimeConfig, setRuntimeConfig] = useState<ChatGptRuntimeConfig | null>(null);
+  const [accountIds, setAccountIds] = useState<string[]>([]);
+  const [accountEmails, setAccountEmails] = useState<Record<string, string>>({});
+  const [selectedAccountId, setSelectedAccountId] = useState('');
+  const [preferences, setPreferences] = useState<SidebarPreferences>(
+    DEFAULT_SIDEBAR_PREFERENCES
   );
+  const [saveError, setSaveError] = useState('');
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
+  const [savingSettings, setSavingSettings] = useState(false);
+  const pendingSidebarWrite = useRef(false);
 
   useEffect(() => {
-    const media = window.matchMedia('(prefers-color-scheme: dark)');
-    const listener = (event: MediaQueryListEvent): void => {
-      setIsDark(event.matches);
+    let cancelled = false;
+    const refreshRuntimeConfig = (): void => {
+      void loadPlatformRuntimeConfig('chatgpt').then((cfg) => {
+        if (!cancelled) setRuntimeConfig(cfg);
+      });
     };
-    media.addEventListener('change', listener);
-    return () => media.removeEventListener('change', listener);
-  }, []);
-
-  useEffect(() => {
-    let isMounted = true;
-    let hasLiveFavUpdate = false;
-    let hasLiveRenamedUpdate = false;
-
-    const unsubscribeFav = subscribeFavouriteColor((color) => {
-      hasLiveFavUpdate = true;
-      if (isMounted) setFavouriteColor(color);
+    const refreshAccounts = async (): Promise<void> => {
+      const values = await chrome.storage.local.get([ACCOUNT_SETTINGS_KEY, ACCOUNT_EMAILS_KEY]);
+      if (cancelled) return;
+      const next = accountSettingsOwners(values[ACCOUNT_SETTINGS_KEY]);
+      setAccountEmails(accountSettingsEmails(values[ACCOUNT_EMAILS_KEY]));
+      setAccountIds(next);
+      setSelectedAccountId((current) => next.includes(current) ? current : next[0] ?? '');
+    };
+    refreshRuntimeConfig();
+    void refreshAccounts().catch(() => {
+      if (!cancelled) setSaveError('无法读取账号设置列表，请检查扩展存储权限。');
     });
-    void readFavouriteColor().then((color) => {
-      if (isMounted && !hasLiveFavUpdate) setFavouriteColor(color);
-    });
-
-    const unsubscribeRenamed = subscribeRenamedColor((color) => {
-      hasLiveRenamedUpdate = true;
-      if (isMounted) setRenamedColor(color);
-    });
-    void readRenamedColor().then((color) => {
-      if (isMounted && !hasLiveRenamedUpdate) setRenamedColor(color);
-    });
-
+    const handleChange = (
+      changes: Record<string, chrome.storage.StorageChange>,
+      areaName: chrome.storage.AreaName
+    ): void => {
+      if (areaName !== 'local') return;
+      if ('luna:chatgpt:runtimeConfig' in changes) refreshRuntimeConfig();
+      if (ACCOUNT_SETTINGS_KEY in changes || ACCOUNT_EMAILS_KEY in changes) {
+        void refreshAccounts().catch(() => {
+          if (!cancelled) setSaveError('无法刷新账号设置列表。');
+        });
+      }
+    };
+    chrome.storage.onChanged.addListener(handleChange);
     return () => {
-      isMounted = false;
-      unsubscribeFav();
-      unsubscribeRenamed();
+      cancelled = true;
+      chrome.storage.onChanged.removeListener(handleChange);
     };
   }, []);
 
-  const selectFavouriteColor = (nextColor: FavouriteColorPreset): void => {
-    setFavouriteColor(nextColor);
-    void writeFavouriteColor(nextColor);
+  useEffect(() => {
+    let cancelled = false;
+    if (!selectedAccountId) {
+      setSettingsLoaded(false);
+      setPreferences({ ...DEFAULT_SIDEBAR_PREFERENCES });
+      return;
+    }
+    setSettingsLoaded(false);
+    void readSidebarPreferences(selectedAccountId).then((values) => {
+      if (!cancelled) {
+        setPreferences(values);
+        setSettingsLoaded(true);
+      }
+    }).catch(() => {
+      if (!cancelled) setSaveError('无法读取所选账号的设置，请检查扩展存储权限。');
+    });
+    const unsubscribe = subscribeSidebarPreferences((next) => {
+      if (!cancelled) setPreferences(next);
+    }, selectedAccountId);
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [selectedAccountId]);
+
+  /** Save changed fields while preventing duplicate UI submissions. */
+  const updatePreferences = (patch: Partial<SidebarPreferences>): void => {
+    // Prevent two fast clicks from triggering overlapping saves.
+    if (!selectedAccountId || !settingsLoaded || pendingSidebarWrite.current) return;
+    pendingSidebarWrite.current = true;
+    setSavingSettings(true);
+    setPreferences((previous) => ({ ...previous, ...patch }));
+    setSaveError('');
+    void writeSidebarPreferences(patch, selectedAccountId).catch(() => {
+      setSaveError('设置保存失败，当前操作未保存；请检查存储状态并重试。');
+    }).then(async () => {
+      try {
+        setPreferences(await readSidebarPreferences(selectedAccountId));
+      } catch {
+        setSaveError('无法读取最新设置，请重新打开设置页面后再修改。');
+      }
+    }).finally(() => {
+      pendingSidebarWrite.current = false;
+      setSavingSettings(false);
+    });
   };
 
-  const selectRenamedColor = (nextColor: RenamedColorPreset): void => {
-    setRenamedColor(nextColor);
-    void writeRenamedColor(nextColor);
+  const toggleCompatibilityAlert = (enabled: boolean): void => {
+    setRuntimeConfig((previous) => ({
+      useLocalConfig: previous?.useLocalConfig ?? false,
+      showCompatibilityAlert: enabled,
+    }));
+    void savePlatformRuntimeConfig('chatgpt', { showCompatibilityAlert: enabled });
   };
+
+  const modeOptions: Array<{ id: SidebarLayoutMode; name: string; detail: string }> = [
+    { id: 'side-by-side', name: '并列排布', detail: '对话区域与目录并排，默认固定展开' },
+    { id: 'overlay', name: '浮于上层', detail: '不改变对话区域，目录默认自动隐藏' },
+  ];
 
   return (
-    <main className="mx-auto w-full max-w-3xl px-5 py-10 sm:px-8">
-      <header className="mb-8">
-        <p className="m-0 text-xs font-semibold tracking-[0.12em] text-[var(--o-accent)] uppercase">
-          LunaTOC
-        </p>
-        <h1 className="mt-2 mb-0 text-3xl font-semibold text-[var(--o-text)]">
-          Settings
-        </h1>
+    <main className="settings-page">
+      <header className="settings-header">
+        <p className="settings-brand">LunaTOC-SC</p>
+        <h1>设置</h1>
+        <p className="settings-caption">偏好设置会自动同步到已打开的 ChatGPT 页面。</p>
       </header>
 
-      <section aria-labelledby="prompt-colours-heading">
-        <h2
-          id="prompt-colours-heading"
-          className="m-0 text-lg font-semibold text-[var(--o-text)]"
-        >
-          Prompt Colours
-        </h2>
-        <p className="mt-1 mb-4 text-sm text-[var(--o-muted)]">
-          Customise the colours used for favourite and renamed prompts in the sidebar.
-        </p>
-
-        <div className="grid gap-6">
-          <div className="rounded-xl border border-[var(--o-border)] bg-[var(--o-surface)] p-4">
-            <div className="mb-3">
-              <span className="block text-sm font-semibold text-[var(--o-text)]">
-                Favourite Colour
-              </span>
-              <span className="mt-0.5 block text-xs text-[var(--o-muted)]">
-                Controls the title text, background fill, and flag icon of starred prompts.
-              </span>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              {FAVOURITE_COLOR_PRESETS.map((preset) => {
-                const isSelected = favouriteColor === preset.id;
-                const themeTokens = isDark ? preset.dark : preset.light;
-                return (
-                  <button
-                    key={preset.id}
-                    type="button"
-                    onClick={() => selectFavouriteColor(preset.id)}
-                    className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium transition ${
-                      isSelected
-                        ? 'border-[var(--o-accent)] bg-[var(--o-accent-soft)] text-[var(--o-text)]'
-                        : 'border-[var(--o-border)] bg-[var(--o-surface)] text-[var(--o-muted)] hover:border-[var(--o-accent)] hover:text-[var(--o-text)]'
-                    }`}
-                  >
-                    <span
-                      className="inline-flex items-center gap-1.5 rounded px-2 py-0.5 text-xs font-medium"
-                      style={{
-                        backgroundColor: themeTokens.bgItemMarked,
-                        color: themeTokens.textItemMarked,
-                      }}
-                    >
-                      <svg
-                        className="size-3"
-                        viewBox="0 0 24 24"
-                        fill="currentColor"
-                        stroke="currentColor"
-                        strokeWidth="1.8"
-                        style={{ color: themeTokens.flagColor }}
-                        aria-hidden="true"
-                      >
-                        <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1zM4 22v-7" />
-                      </svg>
-                      {preset.label}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-[var(--o-border)] bg-[var(--o-surface)] p-4">
-            <div className="mb-3">
-              <span className="block text-sm font-semibold text-[var(--o-text)]">
-                Renamed Prompt Colour
-              </span>
-              <span className="mt-0.5 block text-xs text-[var(--o-muted)]">
-                Controls the title text colour of prompts with custom titles.
-              </span>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              {RENAMED_COLOR_PRESETS.map((preset) => {
-                const isSelected = renamedColor === preset.id;
-                const customColor = isDark
-                  ? preset.dark.textCustomTitle
-                  : preset.light.textCustomTitle;
-                return (
-                  <button
-                    key={preset.id}
-                    type="button"
-                    onClick={() => selectRenamedColor(preset.id)}
-                    className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium transition ${
-                      isSelected
-                        ? 'border-[var(--o-accent)] bg-[var(--o-accent-soft)] text-[var(--o-text)]'
-                        : 'border-[var(--o-border)] bg-[var(--o-surface)] text-[var(--o-muted)] hover:border-[var(--o-accent)] hover:text-[var(--o-text)]'
-                    }`}
-                  >
-                    <span
-                      className="text-xs font-semibold"
-                      style={{ color: customColor }}
-                    >
-                      {preset.label}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+      <section className="settings-section" aria-labelledby="account-settings-heading">
+        <div className="settings-section-heading">
+          <h2 id="account-settings-heading">账号偏好</h2>
+          <p>主题与侧边栏设置按 ChatGPT 账号保存，并在该账号的所有对话中共享。</p>
+        </div>
+        <div className="settings-card">
+          <label className="settings-choice settings-no-border">
+            <span className="settings-choice-info">
+              <strong>设置所属账号</strong>
+              <small>账号标识仅用于区分本地设置，不会上传。</small>
+            </span>
+            <select className="settings-account-select" aria-label="设置所属账号"
+              value={selectedAccountId}
+              disabled={accountIds.length === 0 || savingSettings}
+              onChange={(event) => setSelectedAccountId(event.currentTarget.value)}>
+              {accountIds.map((id) => (
+                <option key={id} value={id}>
+                  {accountEmails[id] ?? `账号 ${id.slice(0, 6)}…${id.slice(-4)}`}
+                </option>
+              ))}
+            </select>
+          </label>
+          {accountIds.length === 0 && (
+            <p className="settings-backup-status" role="status">
+              尚无已验证账号。请先打开并登录 ChatGPT，等待页面完成初始化后重新打开此设置页。
+            </p>
+          )}
         </div>
       </section>
+
+      <section className="settings-section" aria-labelledby="layout-heading">
+        <div className="settings-section-heading">
+          <h2 id="layout-heading">布局</h2>
+          <p>选择对话和目录的排列方式。</p>
+        </div>
+        <div className="settings-card settings-layout-choice">
+          {modeOptions.map((mode) => (
+            <label className="settings-choice" key={mode.id}>
+              <span className="settings-choice-info">
+                <strong>{mode.name}</strong>
+                <small>{mode.detail}</small>
+              </span>
+              <input type="radio" name="sidebar-layout" value={mode.id}
+                checked={preferences.layoutMode === mode.id}
+                disabled={!settingsLoaded || savingSettings}
+                onChange={() => updatePreferences({ layoutMode: mode.id })} />
+            </label>
+          ))}
+        </div>
+      </section>
+
+      <section className="settings-section" aria-labelledby="appearance-heading">
+        <div className="settings-section-heading">
+          <h2 id="appearance-heading">外观</h2>
+          <p>选择 LunaTOC 的背景配色，与 ChatGPT 浅色和深色主题协调。</p>
+        </div>
+        <div className="settings-card">
+          <div className="settings-setting-title">侧边栏背景颜色</div>
+          <div className="settings-palette" role="radiogroup" aria-label="侧边栏背景颜色">
+            {SIDEBAR_COLORS.map((color) => (
+              <label className="settings-swatch-label" key={color.id}
+                title={color.label} aria-label={color.label}>
+                <input type="radio" name="sidebar-color" value={color.id}
+                  checked={preferences.backgroundColor === color.id}
+                  disabled={!settingsLoaded || savingSettings}
+                  onChange={() => updatePreferences({ backgroundColor: color.id })} />
+                <span className="settings-swatch" style={{ backgroundColor: color.hex }}
+                  aria-hidden="true">
+                  {preferences.backgroundColor === color.id ? '✓' : ''}
+                </span>
+                <span className="settings-swatch-text">{color.label}</span>
+              </label>
+            ))}
+          </div>
+          <div className="settings-divider" />
+          <label className="settings-choice settings-no-border">
+            <span className="settings-choice-info">
+              <strong>为隐藏侧边栏的触发区显示颜色</strong>
+              <small>开启时与背景所选色系一致，使用半透明显示；关闭则完全透明。</small>
+            </span>
+            <input className="settings-switch-input" type="checkbox"
+              checked={preferences.revealTint}
+              disabled={!settingsLoaded || savingSettings}
+              onChange={(event) => updatePreferences({ revealTint: event.target.checked })} />
+            <span className="settings-switch-track" aria-hidden="true" />
+          </label>
+        </div>
+      </section>
+
+      <section className="settings-section" aria-labelledby="compat-heading">
+        <div className="settings-section-heading">
+          <h2 id="compat-heading">兼容性</h2>
+          <p>开发者诊断功能，默认关闭。</p>
+        </div>
+        <div className="settings-card">
+          <label className="settings-choice settings-no-border">
+            <span className="settings-choice-info">
+              <strong>ChatGPT 兼容性警告</strong>
+              <small>检查会话 API 和关键页面标记；开启后可能发送额外的同源诊断请求。</small>
+            </span>
+            <input className="settings-switch-input" type="checkbox"
+              checked={runtimeConfig?.showCompatibilityAlert ?? false}
+              onChange={(event) => toggleCompatibilityAlert(event.target.checked)} />
+            <span className="settings-switch-track" aria-hidden="true" />
+          </label>
+        </div>
+      </section>
+      <LocalBackupSettings />
+      <LocalAliasCleanupSettings />
+      {savingSettings && <p className="settings-backup-status" role="status">正在保存侧边栏设置…</p>}
+      {saveError && <p className="settings-error" role="alert">{saveError}</p>}
+      <p className="settings-footnote">设置保存在浏览器本地，不会上传到维护者服务器。</p>
     </main>
   );
 }

@@ -13,140 +13,12 @@ import type { NavigatorMessage } from '@/features/conversationPrompts/message';
 
 type ViewMode = 'toc' | 'myPrompts';
 
-export interface SidebarViewSnapshot {
-  viewMode: ViewMode;
-  searchQuery: string;
-}
-
-export interface SidebarHeaderSnapshot {
-  viewMode: ViewMode;
-  title: string;
-  searchQuery: string;
-  isSearchOpen: boolean;
-  isSearchDisabled: boolean;
-}
-
 export const sidebarController = (() => {
   let viewMode: ViewMode = 'toc';
   let searchQuery = '';
-  let isSearchOpen = false;
   let myPromptsRefreshQueued = false;
   let tocPromptCount = 0;
   let myPromptsCount = 0;
-  let tocScrollTop = 0;
-  let myPromptsScrollTop = 0;
-
-  let viewSnapshot: SidebarViewSnapshot = {
-    viewMode: 'toc',
-    searchQuery: '',
-  };
-  const viewListeners = new Set<() => void>();
-
-  let headerSnapshot: SidebarHeaderSnapshot = {
-    viewMode: 'toc',
-    title: 'ChatTOC',
-    searchQuery: '',
-    isSearchOpen: false,
-    isSearchDisabled: true,
-  };
-  const headerListeners = new Set<() => void>();
-
-  let isReady = false;
-  const readyListeners = new Set<() => void>();
-
-  function updateViewSnapshot(): void {
-    if (
-      viewSnapshot.viewMode === viewMode &&
-      viewSnapshot.searchQuery === searchQuery
-    ) {
-      return;
-    }
-    viewSnapshot = { viewMode, searchQuery };
-    viewListeners.forEach((listener) => {
-      try {
-        listener();
-      } catch (error) {
-        console.error('Error in sidebar view listener:', error);
-      }
-    });
-  }
-
-  function subscribeView(listener: () => void): () => void {
-    viewListeners.add(listener);
-    return () => {
-      viewListeners.delete(listener);
-    };
-  }
-
-  function getViewSnapshot(): SidebarViewSnapshot {
-    return viewSnapshot;
-  }
-
-  function updateHeaderSnapshot(): void {
-    const currentTitle =
-      viewMode === 'myPrompts' ? 'My Prompts' : getConversationTitle();
-    const currentDisabled =
-      viewMode === 'myPrompts' ? myPromptsCount === 0 : tocPromptCount === 0;
-
-    if (
-      headerSnapshot.viewMode === viewMode &&
-      headerSnapshot.title === currentTitle &&
-      headerSnapshot.searchQuery === searchQuery &&
-      headerSnapshot.isSearchOpen === isSearchOpen &&
-      headerSnapshot.isSearchDisabled === currentDisabled
-    ) {
-      return;
-    }
-
-    headerSnapshot = {
-      viewMode,
-      title: currentTitle,
-      searchQuery,
-      isSearchOpen,
-      isSearchDisabled: currentDisabled,
-    };
-
-    headerListeners.forEach((listener) => {
-      try {
-        listener();
-      } catch (error) {
-        console.error('Error in sidebar header listener:', error);
-      }
-    });
-  }
-
-  function subscribeHeader(listener: () => void): () => void {
-    headerListeners.add(listener);
-    return () => {
-      headerListeners.delete(listener);
-    };
-  }
-
-  function getHeaderSnapshot(): SidebarHeaderSnapshot {
-    return headerSnapshot;
-  }
-
-  /**
-   * Subscribes to sidebar DOM and controller readiness.
-   *
-   * @param {() => void} listener
-   * @returns {() => void} Unsubscribe callback.
-   */
-  function subscribeReady(listener: () => void): () => void {
-    readyListeners.add(listener);
-    return () => {
-      readyListeners.delete(listener);
-    };
-  }
-
-  /**
-   * Returns whether the sidebar DOM and controller are fully initialized.
-   *
-   * @returns {boolean}
-   */
-  function getReadySnapshot(): boolean {
-    return isReady;
-  }
 
   /**
    * Initializes the sidebar after the DOM is in place. Sets the initial
@@ -154,89 +26,55 @@ export const sidebarController = (() => {
    */
   function init(): void {
     setNavigatorTitle();
-    renderCurrentView();
-
-    if (!isReady) {
-      isReady = true;
-      readyListeners.forEach((listener) => {
-        try {
-          listener();
-        } catch (error) {
-          console.error('Error in sidebar ready listener:', error);
-        }
-      });
-    }
+    bindSidebarControls();
   }
 
   /**
    * Switches the sidebar view and synchronizes its controls with the rendered panel.
    */
   function setViewMode(nextViewMode: ViewMode): void {
-    const viewChanged = viewMode !== nextViewMode;
+    const button = document.getElementById(
+      'toggle-view-mode-btn'
+    ) as HTMLButtonElement | null;
+    if (!button) return;
 
     previewTooltip.hide();
     viewMode = nextViewMode;
     const isMyPrompts = viewMode === 'myPrompts';
 
+    button.classList.toggle('mode-myprompts-active', isMyPrompts);
+    button.setAttribute(
+      'aria-label',
+      isMyPrompts ? '切换到目录' : '切换到 Tips'
+    );
+    button.title = isMyPrompts
+      ? '切换到目录'
+      : '切换到 Tips';
+
     if (!isMyPrompts) {
+      const toolbar = document.getElementById('myprompts-toolbar-container');
+      if (toolbar) toolbar.innerHTML = '';
+      const list = document.getElementById('navigator-list');
+      if (list) list.oncontextmenu = null;
       promptContextMenuController.close();
     }
 
-    closeSearch(false);
+    clearSearch();
     setNavigatorTitle();
-    updateViewSnapshot();
-
-    if (viewChanged) {
-      renderCurrentView();
-    }
+    renderCurrentView();
   }
 
   function toggleViewMode(): void {
     setViewMode(viewMode === 'toc' ? 'myPrompts' : 'toc');
   }
 
-  function openSearch(): void {
-    const hasSearchableItems =
-      viewMode === 'myPrompts' ? myPromptsCount > 0 : tocPromptCount > 0;
-    if (!hasSearchableItems) return;
-
-    isSearchOpen = true;
-    updateHeaderSnapshot();
-  }
-
-  function toggleSearch(): void {
-    if (isSearchOpen) {
-      closeSearch(true);
-    } else {
-      openSearch();
-    }
-  }
-
-  function closeSearch(syncController = true): void {
-    isSearchOpen = false;
-    searchQuery = '';
-    updateViewSnapshot();
-    updateHeaderSnapshot();
-    if (syncController && viewMode === 'toc') {
-      navigatorController.setSearchQuery('');
-    }
-  }
-
   function clearSearch(syncController = true): void {
     searchQuery = '';
-    updateViewSnapshot();
-    updateHeaderSnapshot();
-    if (syncController && viewMode === 'toc') {
-      navigatorController.setSearchQuery('');
-    }
-  }
-
-  function setSearchQuery(query: string): void {
-    if (searchQuery === query) return;
-    searchQuery = query;
-    updateViewSnapshot();
-    updateHeaderSnapshot();
-    renderCurrentView();
+    const searchInput = document.getElementById(
+      'navigator-search'
+    ) as HTMLInputElement | null;
+    if (searchInput) searchInput.value = '';
+    if (syncController) navigatorController.setSearchQuery('');
   }
 
   function setPromptCount(count: number): void {
@@ -257,7 +95,7 @@ export const sidebarController = (() => {
     myPromptsRefreshQueued = true;
     queueMicrotask(() => {
       myPromptsRefreshQueued = false;
-      if (viewMode === 'myPrompts') updateViewSnapshot();
+      if (viewMode === 'myPrompts') renderCurrentView();
     });
   }
 
@@ -282,51 +120,33 @@ export const sidebarController = (() => {
   }
 
   function setNavigatorTitle(): void {
-    updateHeaderSnapshot();
+    const title = document.getElementById('navigator-title');
+    if (!title) return;
+    const titleText =
+      viewMode === 'myPrompts' ? 'Tips' : getConversationTitle();
+
+    title.textContent = titleText;
+    title.dataset.tooltip = titleText;
   }
 
   function renderCurrentView(): void {
     updateSearchAvailability();
 
-    const sidebar = document.getElementById('luna-toc-sidebar');
-    if (sidebar) {
-      sidebar.dataset.viewMode = viewMode;
-    }
-
-    const tocList = document.getElementById('navigator-list');
-    const myPromptsList = document.getElementById('myprompts-list');
-    const toolbarContainer = document.getElementById(
-      'myprompts-toolbar-container'
-    );
-
     if (viewMode === 'myPrompts') {
-      if (tocList) {
-        tocScrollTop = tocList.scrollTop;
-        tocList.style.display = 'none';
-      }
-      if (myPromptsList) {
-        myPromptsList.style.display = '';
-        myPromptsList.scrollTop = myPromptsScrollTop;
-      }
-      if (toolbarContainer) {
-        toolbarContainer.style.display = '';
-      }
+      renderMyPrompts();
       return;
     }
 
-    if (myPromptsList) {
-      myPromptsScrollTop = myPromptsList.scrollTop;
-      myPromptsList.style.display = 'none';
-    }
-    if (toolbarContainer) {
-      toolbarContainer.style.display = 'none';
-    }
-    if (tocList) {
-      tocList.style.display = '';
-      tocList.scrollTop = tocScrollTop;
-    }
-
     navigatorController.setSearchQuery(searchQuery);
+  }
+
+  function renderMyPrompts(): void {
+    const list = document.getElementById('navigator-list');
+    if (!list) return;
+
+    myPrompts.renderMyPrompts(list, searchQuery, () => {
+      renderCurrentView();
+    });
   }
 
   function handleTitleClick(): void {
@@ -337,6 +157,41 @@ export const sidebarController = (() => {
 
     clearSearch(false);
     navigatorController.resetView();
+  }
+
+  /**
+   * Registers controls that switch views or delegate navigation behavior.
+   */
+  function bindSidebarControls(): void {
+    const searchInput = getRequiredElement<HTMLInputElement>('navigator-search');
+
+    getRequiredElement<HTMLButtonElement>('search-toggle-btn').addEventListener(
+      'click',
+      () => {
+        const isHidden =
+          window.getComputedStyle(searchInput).display === 'none';
+        searchInput.style.display = isHidden ? 'block' : 'none';
+
+        if (isHidden) {
+          searchInput.focus();
+          return;
+        }
+
+        clearSearch();
+        renderCurrentView();
+      }
+    );
+    getRequiredElement<HTMLButtonElement>('navigator-title').addEventListener(
+      'click',
+      handleTitleClick
+    );
+    getRequiredElement<HTMLButtonElement>(
+      'toggle-view-mode-btn'
+    ).addEventListener('click', toggleViewMode);
+    searchInput.addEventListener('input', (event) => {
+      searchQuery = (event.currentTarget as HTMLInputElement).value;
+      renderCurrentView();
+    });
   }
 
   function getConversationTitle(): string {
@@ -355,48 +210,52 @@ export const sidebarController = (() => {
       document.title
         .replace(/\s*[-–]\s*ChatGPT$/i, '')
         .replace(/^ChatGPT\s*[-–]\s*/i, '')
-        .trim() || 'ChatTOC'
+        .trim() || 'LunaTOC'
     );
   }
 
   function updateSearchAvailability(): void {
+    const searchButton =
+      document.getElementById('search-toggle-btn') as HTMLButtonElement | null;
+    const searchInput =
+      document.getElementById('navigator-search') as HTMLInputElement | null;
+    if (!searchButton || !searchInput) return;
+
     const hasSearchableItems =
       viewMode === 'myPrompts' ? myPromptsCount > 0 : tocPromptCount > 0;
+    searchButton.disabled = !hasSearchableItems;
+    searchButton.setAttribute('aria-disabled', String(!hasSearchableItems));
 
-    if (!hasSearchableItems && isSearchOpen) {
-      closeSearch(viewMode === 'toc');
+    if (hasSearchableItems) return;
+
+    const shouldResetTocQuery = viewMode === 'toc' && searchQuery.length > 0;
+    searchQuery = '';
+    searchInput.value = '';
+    searchInput.style.display = 'none';
+
+    if (shouldResetTocQuery) {
+      queueMicrotask(() => navigatorController.setSearchQuery(''));
     }
+  }
 
-    updateHeaderSnapshot();
+  function getRequiredElement<T extends HTMLElement>(id: string): T {
+    const element = document.getElementById(id);
+    if (!(element instanceof HTMLElement)) {
+      throw new Error(`Required application element not found: #${id}`);
+    }
+    return element as T;
   }
 
   return {
     init,
     setViewMode,
     toggleViewMode,
-    openSearch,
-    closeSearch,
     clearSearch,
-    toggleSearch,
-    setSearchQuery,
-    isSearchOpen: () => isSearchOpen,
     setPromptCount,
     setMyPromptsCount,
     refreshMyPromptsIfActive,
     handleSavePrompt,
-    handleTitleClick,
     isMyPromptsView: () => viewMode === 'myPrompts',
     setNavigatorTitle,
-    subscribeView,
-    getViewSnapshot,
-    subscribeHeader,
-    getHeaderSnapshot,
-    subscribeReady,
-    getReadySnapshot,
-    resetReadyForTesting: () => {
-      isReady = false;
-    },
-    getViewMode: () => viewMode,
-    getSearchQuery: () => searchQuery,
   };
 })();

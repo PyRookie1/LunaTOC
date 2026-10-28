@@ -1,7 +1,6 @@
 /**
  * Injected page-context hook. Captures ChatGPT conversation fetch payloads,
- * streams newly submitted user prompts, and spoofs width media queries while
- * the ChatTOC sidebar is visible.
+ * streams newly submitted user prompts without altering host media queries.
  *
  * This entry is a thin per-platform orchestrator: the heavy lifting lives
  * in the focused modules under `src/pageHook/` (platform-agnostic) and the
@@ -13,9 +12,16 @@
  * every imported submodule into a single IIFE chunk; the source-level
  * split exists for humans, the bundle for Chrome.
  */
-import { APP_CONFIG } from '@/config/config';
 import { getActivePlatform } from '@/platforms';
-import { CHATGPT_CONFIG_UPDATE_MESSAGE_TYPE } from '@/features/contractAlert/pageHookBridge';
+import {
+  checkConversationPathAgainstContract,
+  installContractAlerts,
+  reportContractMismatch,
+  reportContractRecovered,
+  resetContractMismatchCounters,
+  setContractProbesEnabled,
+  setEffectiveContractValues,
+} from './contractAlerts';
 import {
   extractOutgoingMessage,
   getRequestHeaders,
@@ -24,10 +30,13 @@ import {
   inspectStream,
   postConversationData,
 } from './conversationCapture';
-import { installConversationBackfill } from './conversationBackfill';
+import { cancelBackfillsExcept, installConversationBackfill } from './conversationBackfill';
+import { installConversationRefresh } from './conversationRefresh';
+import { TOC_EDIT_SUBMISSION } from '@/navigation/refresh/refreshProtocol';
+import { installConversationLifecycle } from './conversationLifecycle';
 import { installHistoryHook } from './historyHook';
 import { installTitleObserver } from './titleObserver';
-import { installVirtualLayoutBridge } from './virtualLayoutBridge';
+import { PAGE_HOOK_HEALTH_PING, PAGE_HOOK_HEALTH_PONG } from '@/features/contractAlert/toolbarWarning';
 
 (() => {
   const platform = getActivePlatform();
@@ -44,73 +53,61 @@ import { installVirtualLayoutBridge } from './virtualLayoutBridge';
 
   installConversationCapture({ originalFetch });
   installConversationBackfill({ originalFetch, platform });
-  platform.pageHook.installMatchMediaSpoof();
-  platform.pageHook.installMatchMediaToggleListener();
+  installContractAlerts({ originalFetch });
+  const observeRefreshHeaders = installConversationRefresh(originalFetch, platform);
+  installConversationLifecycle(originalFetch);
   installHistoryHook(platform.pageHook.messages.routeChanged);
+  // Back/forward navigation bypasses history.pushState/replaceState wrappers.
+  window.addEventListener('popstate', () => {
+    cancelBackfillsExcept(platform.routing.getCurrentRouteKey());
+  });
   installTitleObserver(platform.pageHook.messages.titleChanged);
-  if (platform.id === 'chatgpt') {
-    installVirtualLayoutBridge();
-  }
 
   window.addEventListener('message', (event: MessageEvent): void => {
-    const data = event.data as
-      | {
-          type?: string;
-          contractValues?: Record<string, unknown>;
-        }
-      | null;
+    if (event.source !== window || event.origin !== location.origin) return;
+    const data = event.data as {
+      type?: string;
+      showCompatibilityAlert?: unknown;
+      contractValues?: Record<string, unknown>;
+    } | null;
+    if (data?.type === platform.pageHook.messages.routeChanged) {
+      cancelBackfillsExcept(platform.routing.getCurrentRouteKey());
+      resetContractMismatchCounters();
+      return;
+    }
+    if (data?.type === PAGE_HOOK_HEALTH_PING) {
+      window.postMessage({ type: PAGE_HOOK_HEALTH_PONG }, location.origin);
+      return;
+    }
     if (!data || data.type !== platform.pageHook.messages.configUpdate) return;
     if (data.contractValues && typeof data.contractValues === 'object') {
-      // Contract-values are pushed into the platform's contract table by the
-      // content script. Page-hook consumes them via the platform's contract
-      // resolver rather than directly (re)writing a map.
-      void data.contractValues;
+      setEffectiveContractValues(data.contractValues);
     }
+    setContractProbesEnabled(data.showCompatibilityAlert === true);
   });
 
   window.fetch = async function (...args) {
     const requestMeta = inspectFetchRequest(args, platform);
-
     try {
-      const requestUrl = platform.pageHook.fetch.getFetchUrl(args[0]);
-      const requestPath = new URL(requestUrl, window.location.origin).pathname;
-      if (
-        requestMeta?.isConversationGet &&
-        requestPath.includes('/backend-api/conversations/')
-      ) {
-        // ChatGPT-specific path check kept inline until the routing adapter
-        // exposes a richer API. The check is intentionally narrow so other
-        // platforms with `/api/conversations/` style URLs are unaffected.
-        const contractIds = platform.config.contract.ids as readonly string[];
-        const initialId = contractIds.find((id) =>
-          id.startsWith('api.conversation.path')
-        );
-        const messagesId = contractIds.find((id) =>
-          id.startsWith('api.conversation.messages-path')
-        );
+      if (requestMeta?.isConversationGet) {
+        const requestUrl = platform.pageHook.fetch.getFetchUrl(args[0]);
+        const requestPath = new URL(requestUrl, window.location.origin).pathname;
         const contractId = requestMeta.isInitialConversationLoad
-          ? initialId
-          : messagesId;
-        if (contractId) {
-          const expected = platform.config.contract.resolve(
-            contractId,
-            platform.config.useLocalConfig
-          );
-          if (
-            expected &&
-            !buildPathRegexFromTemplate(expected).test(requestPath)
-          ) {
-            // Forward to the platform-agnostic contract-mismatch reporter
-            // (populated in step 7).
-            void contractId;
-          }
+          ? 'api.conversation.path'
+          : 'api.conversation.messages-path';
+        const matches = checkConversationPathAgainstContract(contractId, requestPath);
+        if (matches === false) {
+          reportContractMismatch(contractId, requestPath);
+        } else if (matches === true) {
+          reportContractRecovered(contractId);
         }
       }
     } catch {}
 
+    let outgoingMessageMeta: ReturnType<typeof extractOutgoingMessage> = null;
     try {
       if (requestMeta?.isSendMessage) {
-        extractOutgoingMessage(
+        outgoingMessageMeta = extractOutgoingMessage(
           args,
           requestMeta.routeKey,
           platform.pageHook.messages.newUserMessage
@@ -123,46 +120,59 @@ import { installVirtualLayoutBridge } from './virtualLayoutBridge';
       initialLoadNumTurns:
         platform.config.interceptFetchNumTurns.initialLoad,
     });
+    const requestStartedAt = Date.now();
     const response = await originalFetch(...fetchArgs);
-
     try {
       if (requestMeta?.isConversationGet) {
-        const authHeaders = requestMeta.isInitialConversationLoad
-          ? getRequestHeaders(args[0], args[1])
-          : null;
+        // Both full and paginated conversation requests can carry auth headers.
+        const requestHeaders = getRequestHeaders(args[0], args[1]);
+        if (Object.keys(requestHeaders).length > 0) {
+          observeRefreshHeaders(requestMeta.routeKey, requestHeaders);
+        }
 
         postConversationData(
           response,
           requestMeta.routeKey,
           requestMeta.isInitialConversationLoad,
-          authHeaders
+          requestMeta.isInitialConversationLoad ? requestHeaders : null,
+          requestStartedAt
         );
       }
 
       if (requestMeta?.isSendMessage) {
-        inspectStream(
+        if (response.ok && outgoingMessageMeta?.parentMessageId) {
+          window.postMessage({
+            type: TOC_EDIT_SUBMISSION,
+            stage: 'accepted',
+            routeKey: requestMeta.routeKey,
+            messageId: outgoingMessageMeta.messageId,
+            parentMessageId: outgoingMessageMeta.parentMessageId,
+          }, location.origin);
+        }
+
+        const streamInspection = inspectStream(
           response,
           requestMeta.routeKey,
           platform.pageHook.messages.newUserMessage
-        ).catch(() => {});
+        );
+        if (outgoingMessageMeta?.parentMessageId) {
+          const notifyStreamFinished = () => {
+            window.postMessage({
+              type: TOC_EDIT_SUBMISSION,
+              stage: 'finished',
+              routeKey: requestMeta.routeKey,
+              messageId: outgoingMessageMeta!.messageId,
+              parentMessageId: outgoingMessageMeta!.parentMessageId,
+            }, location.origin);
+          };
+          void streamInspection.then(notifyStreamFinished, notifyStreamFinished).catch(() => {});
+        } else {
+          streamInspection.catch(() => {});
+        }
       }
     } catch {}
 
     return response;
   };
 
-  /**
-   * Builds a RegExp from a contract path template by escaping every regex
-   * special character and substituting the `{id}` placeholder with a path
-   * segment matcher. Duplicated here from `contractAlerts` to keep the
-   * page-hook entry self-contained; the contractAlerts module exposes a
-   * `checkConversationPathAgainstContract` helper in step 7 that the entry
-   * will switch to once `effectiveContractValues` flows through.
-   */
-  function buildPathRegexFromTemplate(template: string): RegExp {
-    const parts = template.split('{id}').map((part) =>
-      part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    );
-    return new RegExp('^' + parts.join('([^/]+)') + '/?$');
-  }
 })();

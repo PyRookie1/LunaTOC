@@ -1,275 +1,81 @@
-/** @vitest-environment jsdom */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  getChatGPTTheme,
-  observeChatGPTTheme,
-} from '@/features/theme/chatGptTheme';
-import {
-  applyTheme,
-  readThemeSettings,
-  subscribeThemeSettings,
-  writeThemeSettings,
-  type ThemeSettings,
+  readThemeSettings, writeThemeSettings, subscribeThemeSettings,
 } from '@/features/theme/themeSettings';
+import { ACCOUNT_SETTINGS_KEY } from '@/features/storage/accountSettings';
+import { setActiveConversationOwner } from '@/navigation/lifecycle/conversationOwner';
 
-const storageMap = new Map<string, unknown>();
-type StorageChangeHandler = (
-  changes: Record<string, chrome.storage.StorageChange>,
-  areaName: string
-) => void;
-const storageListeners = new Set<StorageChangeHandler>();
+const defaultTheme = { followChatGPT: true, manualTheme: 'dark' as const };
+const defaultSidebar = { layoutMode: 'overlay' as const, backgroundColor: 'default' as const, revealTint: false };
+const values: Record<string, unknown> = {};
+const listeners = new Set<(changes: Record<string, { newValue?: unknown }>, area: string) => void>();
+const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+const get = vi.fn(async (key?: string | string[] | null) => {
+  if (key === undefined || key === null) return clone(values);
+  const keys = typeof key === 'string' ? [key] : key;
+  return clone(Object.fromEntries(keys.filter((item) => Object.hasOwn(values, item))
+    .map((item) => [item, values[item]])));
+});
+const sendMessage = vi.fn((
+  message: { action: string; ownerId?: string; settings?: unknown },
+  callback: (response: { ok: boolean; error?: string }) => void
+) => {
+  if (message.action !== 'theme' || !message.ownerId || !message.settings) {
+    callback({ ok: false, error: 'unexpected message' }); return;
+  }
+  const map = clone(values[ACCOUNT_SETTINGS_KEY] as Record<string, { theme: unknown; sidebar: unknown }>);
+  if (!Object.hasOwn(map, message.ownerId)) {
+    callback({ ok: false, error: 'unknown owner' }); return;
+  }
+  map[message.ownerId] = { ...map[message.ownerId], theme: message.settings };
+  values[ACCOUNT_SETTINGS_KEY] = map;
+  listeners.forEach((listener) => listener({ [ACCOUNT_SETTINGS_KEY]: { newValue: clone(map) } }, 'local'));
+  callback({ ok: true });
+});
 
 beforeEach(() => {
-  storageMap.clear();
-  storageListeners.clear();
-  document.documentElement.className = '';
-  delete document.documentElement.dataset.theme;
-  delete document.documentElement.dataset.lunatocTheme;
-
+  for (const key of Object.keys(values)) delete values[key];
+  values[ACCOUNT_SETTINGS_KEY] = {
+    'account-1': { theme: defaultTheme, sidebar: defaultSidebar },
+    'account-2': { theme: { followChatGPT: false, manualTheme: 'light' }, sidebar: defaultSidebar },
+  };
+  listeners.clear();
+  get.mockClear();
+  sendMessage.mockClear();
   vi.stubGlobal('chrome', {
+    runtime: { id: 'test-extension', lastError: null, sendMessage },
     storage: {
-      local: {
-        get: vi.fn(async (keys: string | string[]) => {
-          if (typeof keys === 'string') {
-            return { [keys]: storageMap.get(keys) };
-          }
-          const result: Record<string, unknown> = {};
-          for (const key of keys) {
-            if (storageMap.has(key)) {
-              result[key] = storageMap.get(key);
-            }
-          }
-          return result;
-        }),
-        set: vi.fn(async (items: Record<string, unknown>) => {
-          const changes: Record<string, chrome.storage.StorageChange> = {};
-          for (const [key, value] of Object.entries(items)) {
-            const oldValue = storageMap.get(key);
-            storageMap.set(key, value);
-            changes[key] = { oldValue, newValue: value };
-          }
-          for (const listener of storageListeners) {
-            listener(changes, 'local');
-          }
-        }),
-      },
+      local: { get },
       onChanged: {
-        addListener: vi.fn((listener: StorageChangeHandler) => {
-          storageListeners.add(listener);
-        }),
-        removeListener: vi.fn((listener: StorageChangeHandler) => {
-          storageListeners.delete(listener);
-        }),
+        addListener: (listener: (changes: Record<string, { newValue?: unknown }>, area: string) => void) => listeners.add(listener),
+        removeListener: (listener: (changes: Record<string, { newValue?: unknown }>, area: string) => void) => listeners.delete(listener),
       },
     },
   });
+  setActiveConversationOwner(null);
 });
+afterEach(() => { vi.unstubAllGlobals(); setActiveConversationOwner(null); });
 
-describe('Theme attribute isolation', () => {
-  it('ChatGPT Light + Follow OFF + LunaTOC Dark preserves host class and host data-theme', () => {
-    // Initial ChatGPT Light state
-    document.documentElement.className = 'light';
-    document.documentElement.dataset.theme = 'light';
-
-    // Switch LunaTOC to dark
-    applyTheme('dark');
-
-    // Host attributes must remain untouched
-    expect(document.documentElement.className).toBe('light');
-    expect(document.documentElement.dataset.theme).toBe('light');
-    // LunaTOC theme must be set to dark via namespaced attribute
-    expect(document.documentElement.dataset.lunatocTheme).toBe('dark');
+describe('account-scoped theme settings', () => {
+  it('reads the selected account rather than a global theme', async () => {
+    expect(await readThemeSettings('account-1')).toEqual(defaultTheme);
+    expect(await readThemeSettings('account-2')).toEqual({ followChatGPT: false, manualTheme: 'light' });
   });
 
-  it('ChatGPT Dark + Follow OFF + LunaTOC Light preserves host class and host data-theme', () => {
-    // Initial ChatGPT Dark state
-    document.documentElement.className = 'dark';
-    document.documentElement.dataset.theme = 'dark';
-
-    // Switch LunaTOC to light
-    applyTheme('light');
-
-    // Host attributes must remain untouched
-    expect(document.documentElement.className).toBe('dark');
-    expect(document.documentElement.dataset.theme).toBe('dark');
-    // LunaTOC theme must be set to light via namespaced attribute
-    expect(document.documentElement.dataset.lunatocTheme).toBe('light');
-  });
-
-  it('Switching LunaTOC Light -> Dark -> Light mutates only data-lunatoc-theme', () => {
-    document.documentElement.className = 'light';
-    document.documentElement.dataset.theme = 'light';
-
-    applyTheme('light');
-    expect(document.documentElement.dataset.lunatocTheme).toBe('light');
-    expect(document.documentElement.className).toBe('light');
-    expect(document.documentElement.dataset.theme).toBe('light');
-
-    applyTheme('dark');
-    expect(document.documentElement.dataset.lunatocTheme).toBe('dark');
-    expect(document.documentElement.className).toBe('light');
-    expect(document.documentElement.dataset.theme).toBe('light');
-
-    applyTheme('light');
-    expect(document.documentElement.dataset.lunatocTheme).toBe('light');
-    expect(document.documentElement.className).toBe('light');
-    expect(document.documentElement.dataset.theme).toBe('light');
-  });
-});
-
-describe('Theme settings persistence', () => {
-  it('reads default settings when storage is empty', async () => {
-    const settings = await readThemeSettings();
-    expect(settings).toEqual({
-      followChatGPT: true,
-      manualTheme: 'dark',
-    });
-  });
-
-  it('saves and reads custom theme settings', async () => {
-    const custom: ThemeSettings = {
-      followChatGPT: false,
-      manualTheme: 'light',
-    };
-    await writeThemeSettings(custom);
-
-    const loaded = await readThemeSettings();
-    expect(loaded).toEqual(custom);
-  });
-
-  it('notifies subscribers when theme settings change', async () => {
-    const listener = vi.fn();
-    const unsubscribe = subscribeThemeSettings(listener);
-
-    await writeThemeSettings({
-      followChatGPT: false,
-      manualTheme: 'dark',
-    });
-
-    expect(listener).toHaveBeenCalledWith({
-      followChatGPT: false,
-      manualTheme: 'dark',
-    });
-
+  it('writes only the selected account and publishes the matching preference', async () => {
+    const changed = vi.fn();
+    const unsubscribe = subscribeThemeSettings(changed, 'account-1');
+    const next = { followChatGPT: false, manualTheme: 'light' as const };
+    await writeThemeSettings(next, 'account-1');
+    expect((values[ACCOUNT_SETTINGS_KEY] as Record<string, { theme: unknown }>)['account-1'].theme).toEqual(next);
+    expect((values[ACCOUNT_SETTINGS_KEY] as Record<string, { theme: unknown }>)['account-2'].theme)
+      .toEqual({ followChatGPT: false, manualTheme: 'light' });
+    expect(changed).toHaveBeenCalledWith(next);
     unsubscribe();
   });
-});
 
-describe('ChatGPT theme detection and observation', () => {
-  it('detects light theme from html[data-theme="light"]', () => {
-    document.documentElement.setAttribute('data-theme', 'light');
-    expect(getChatGPTTheme()).toBe('light');
-  });
-
-  it('detects dark theme from html[data-theme="dark"]', () => {
-    document.documentElement.setAttribute('data-theme', 'dark');
-    expect(getChatGPTTheme()).toBe('dark');
-  });
-
-  it('prioritises data-theme over conflicting system preference and legacy class', () => {
-    window.matchMedia = vi.fn().mockImplementation((query: string) => ({
-      matches: query.includes('dark'),
-      media: query,
-      onchange: null,
-      addListener: vi.fn(),
-      removeListener: vi.fn(),
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-      dispatchEvent: vi.fn(),
-    }));
-
-    // data-theme light with dark class and dark system preference
-    document.documentElement.className = 'dark';
-    document.documentElement.setAttribute('data-theme', 'light');
-    expect(getChatGPTTheme()).toBe('light');
-
-    // data-theme dark with light class and light system preference
-    window.matchMedia = vi.fn().mockImplementation((query: string) => ({
-      matches: false,
-      media: query,
-      onchange: null,
-      addListener: vi.fn(),
-      removeListener: vi.fn(),
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-      dispatchEvent: vi.fn(),
-    }));
-    document.documentElement.className = 'light';
-    document.documentElement.setAttribute('data-theme', 'dark');
-    expect(getChatGPTTheme()).toBe('dark');
-  });
-
-  it('falls back to dark CSS class when data-theme is missing or unrecognized', () => {
-    document.documentElement.removeAttribute('data-theme');
-    document.documentElement.className = 'dark';
-    expect(getChatGPTTheme()).toBe('dark');
-
-    document.documentElement.className = 'light';
-    expect(getChatGPTTheme()).toBe('light');
-
-    document.documentElement.setAttribute('data-theme', 'auto');
-    document.documentElement.className = 'dark';
-    expect(getChatGPTTheme()).toBe('dark');
-  });
-
-  it('triggers observer when data-theme changes from light to dark', async () => {
-    document.documentElement.setAttribute('data-theme', 'light');
-    const listener = vi.fn();
-    const cleanup = observeChatGPTTheme(listener);
-
-    expect(listener).toHaveBeenCalledTimes(1);
-    expect(listener).toHaveBeenLastCalledWith('light');
-
-    document.documentElement.setAttribute('data-theme', 'dark');
-    await Promise.resolve();
-
-    expect(listener).toHaveBeenCalledTimes(2);
-    expect(listener).toHaveBeenLastCalledWith('dark');
-
-    cleanup();
-  });
-
-  it('triggers observer when data-theme changes from dark to light', async () => {
-    document.documentElement.setAttribute('data-theme', 'dark');
-    const listener = vi.fn();
-    const cleanup = observeChatGPTTheme(listener);
-
-    expect(listener).toHaveBeenCalledTimes(1);
-    expect(listener).toHaveBeenLastCalledWith('dark');
-
-    document.documentElement.setAttribute('data-theme', 'light');
-    await Promise.resolve();
-
-    expect(listener).toHaveBeenCalledTimes(2);
-    expect(listener).toHaveBeenLastCalledWith('light');
-
-    cleanup();
-  });
-
-  it('disconnects observer on cleanup', async () => {
-    document.documentElement.setAttribute('data-theme', 'light');
-    const listener = vi.fn();
-    const cleanup = observeChatGPTTheme(listener);
-
-    expect(listener).toHaveBeenCalledTimes(1);
-    cleanup();
-
-    document.documentElement.setAttribute('data-theme', 'dark');
-    await Promise.resolve();
-
-    expect(listener).toHaveBeenCalledTimes(1);
-  });
-
-  it('preserves manual theme mode independently of ChatGPT theme changes', () => {
-    // User selected manual dark theme with followChatGPT OFF
-    applyTheme('dark');
-    expect(document.documentElement.dataset.lunatocTheme).toBe('dark');
-
-    // ChatGPT changes between light and dark
-    document.documentElement.setAttribute('data-theme', 'light');
-    expect(document.documentElement.dataset.lunatocTheme).toBe('dark');
-
-    document.documentElement.setAttribute('data-theme', 'dark');
-    expect(document.documentElement.dataset.lunatocTheme).toBe('dark');
+  it('refuses to write without a verified account', async () => {
+    await expect(writeThemeSettings(defaultTheme)).rejects.toThrow('无法确认当前 ChatGPT 账号');
+    expect(sendMessage).not.toHaveBeenCalled();
   });
 });

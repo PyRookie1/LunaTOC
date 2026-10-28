@@ -16,6 +16,7 @@ import type { NavigatorMessage } from '@/features/conversationPrompts/message';
 function createHeadingEntry(text: string, isConnected = true): OutlineEntry {
   const element = document.createElement('h2');
   element.textContent = text;
+  element.dataset.sectionId = 'sec-0';
   if (isConnected) {
     document.body.appendChild(element);
   }
@@ -89,6 +90,16 @@ describe('outlineCache', () => {
 
     const invalidated = setPromptMessages([createMessage('msg-updated')]);
 
+    expect(invalidated).toEqual([0]);
+    expect(getCachedEntries(0)).toEqual([]);
+  });
+
+  it('invalidates connected headings when assistant answer changes', () => {
+    setPromptMessages([{ ...createMessage('prompt-1'), answerId: 'answer-1' }]);
+    cachePromptOutline(0, [createHeadingEntry('Old answer')]);
+    const invalidated = setPromptMessages([
+      { ...createMessage('prompt-1'), answerId: 'answer-2' },
+    ]);
     expect(invalidated).toEqual([0]);
     expect(getCachedEntries(0)).toEqual([]);
   });

@@ -9,23 +9,12 @@ export type ResolvedTheme = 'light' | 'dark';
 
 const RESOLVED_THEME_KEY = 'chatToc:resolvedChatGPTTheme';
 
-/**
- * Returns the resolved ChatGPT theme.
- * Checks the root element's `data-theme` attribute first ('light' | 'dark'),
- * falling back to the legacy 'dark' class on `document.documentElement`.
- */
+/** Returns the theme represented by ChatGPT's root class. */
 export function getResolvedTheme(): ResolvedTheme {
-  const dataTheme = document.documentElement.getAttribute('data-theme');
-  if (dataTheme === 'light' || dataTheme === 'dark') {
-    return dataTheme;
-  }
   return document.documentElement.classList.contains('dark') ? 'dark' : 'light';
 }
 
-/**
- * Watches ChatGPT's root `data-theme` attribute and `class` list,
- * invoking listener whenever the resolved theme changes.
- */
+/** Watches ChatGPT's root class and reports resolved theme changes. */
 export function observeTheme(
   listener: (theme: ResolvedTheme) => void
 ): () => void {
@@ -41,7 +30,7 @@ export function observeTheme(
 
   observer.observe(document.documentElement, {
     attributes: true,
-    attributeFilter: ['data-theme', 'class'],
+    attributeFilter: ['class'],
   });
   return () => observer.disconnect();
 }
