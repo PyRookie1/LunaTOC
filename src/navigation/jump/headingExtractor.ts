@@ -212,9 +212,16 @@ function isAccessibilityHeading(heading: HTMLElement): boolean {
   if (heading.closest('.sr-only, [hidden], [aria-hidden="true"], [inert], pre, code')) {
     return true;
   }
-  const style = window.getComputedStyle(heading);
-  return style.display === 'none' || style.visibility === 'hidden' ||
-    style.visibility === 'collapse';
+  // CSS-hidden ancestors make a heading invisible even if its own display
+  // remains block. Ignore these headings when selecting outline levels.
+  let element: HTMLElement | null = heading;
+  while (element) {
+    const style = window.getComputedStyle(element);
+    if (style.display === 'none' || style.visibility === 'hidden' ||
+      style.visibility === 'collapse') return true;
+    element = element.parentElement;
+  }
+  return false;
 }
 
 /**

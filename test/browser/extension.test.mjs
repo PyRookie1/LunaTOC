@@ -134,7 +134,7 @@ test('Chromium MV3: TOC, search, layout, SPA and failure paths',{timeout:150000}
         markdown.className='markdown';
         const paragraph=document.createElement('p');
         const tick=String.fromCharCode(96);
-        paragraph.textContent='动态 **粗体内容**，代码 '+tick+'**行内代码**'+tick;
+        paragraph.textContent='动态 **粗体内容**，代码 '+tick+'**行内代码**'+tick+'，公式 $**数学文本**$ 与 $$**块公式**$$';
         const code=document.createElement('code');
         code.textContent='**代码元素**';
         const pre=document.createElement('pre');
@@ -149,7 +149,7 @@ test('Chromium MV3: TOC, search, layout, SPA and failure paths',{timeout:150000}
       const answer=page.locator('[data-chatgpt-search-unit-key="dynamic-answer:assistant"]');
       await page.waitForFunction(()=>document.querySelector('[data-chatgpt-search-unit-key="dynamic-answer:assistant"] strong[data-luna-toc-markdown-bold="true"]')?.textContent==='粗体内容');
       assert.equal(await answer.locator('strong[data-luna-toc-markdown-bold="true"]').count(),1);
-      assert.equal(await answer.locator('p').textContent(),'动态 粗体内容，代码 '+String.fromCharCode(96)+'**行内代码**'+String.fromCharCode(96));
+      assert.equal(await answer.locator('p').textContent(),'动态 粗体内容，代码 '+String.fromCharCode(96)+'**行内代码**'+String.fromCharCode(96)+'，公式 $**数学文本**$ 与 $$**块公式**$$');
       assert.equal(await answer.locator('code').textContent(),'**代码元素**');
       assert.equal(await answer.locator('pre').textContent(),'**代码块**');
       assert.equal(await answer.locator('.katex strong').count(),0);
