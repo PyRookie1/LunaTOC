@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createCloudController, CLOUD_MESSAGE_TYPE } from '@/features/cloud/cloudController';
+import { createCloudController, CLOUD_MESSAGE_TYPE, CLOUD_AUTO_SYNC_KEY } from '@/features/cloud/cloudController';
 import { createSerialWriteQueue } from '@/features/storage/serialWriteQueue';
 import { PROMPT_STORAGE_KEY } from '@/features/myPrompts/promptWriteCoordinator';
 import { ACCOUNT_SETTINGS_KEY } from '@/features/storage/accountSettings';
@@ -31,7 +31,7 @@ function firebaseHarness() {
   let writes = 0;
   const fetcher = vi.fn(async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
     const url = String(input);
-    if (url.includes('accounts:signInWithPassword')) return Response.json({
+    if (url.includes('accounts:signInWithIdp')) return Response.json({
       idToken: 'id-token', refreshToken: 'refresh-token', localId: 'firebase-user', expiresIn: '3600',
     });
     if (url.includes('firestore.googleapis.com')) {
@@ -68,9 +68,7 @@ async function ready(local: ReturnType<typeof storage>, cloud: ReturnType<typeof
     verified, cloud.fetcher as unknown as typeof fetch,
     { apiKey: 'AIzaSy-Test-api-key-public', projectId: 'lunatoc-demo' });
   expect(await service.execute(request('status'))).toMatchObject({ ok: true, configured: true });
-  const login = await service.execute(request('sign-in', {
-    email: 'test@example.com', password: 'sixcharacters',
-  }));
+  const login = await service.execute(request('google-sign-in', { accessToken: 'google-access-token-for-test' }));
   expect(login).toMatchObject({ ok: true, uid: 'firebase-user' });
   return { service, sessions };
 }
@@ -86,9 +84,7 @@ describe('Firebase REST account sync', () => {
     expect(await service.execute(request('configure', {
       config: { projectId: 'attacker-project', apiKey: 'AIzaSy-Attacker-public-key' },
     }))).toMatchObject({ ok: false, error: expect.stringContaining('禁止') });
-    expect(await service.execute(request('sign-in', {
-      email: 'user@example.com', password: 'sixcharacters',
-    }))).toMatchObject({ ok: false, error: expect.stringContaining('尚未配置') });
+    expect(await service.execute(request('google-sign-in', { accessToken: 'google-access-token-for-test' }))).toMatchObject({ ok: false, error: expect.stringContaining('尚未配置') });
     expect(remote.fetcher).not.toHaveBeenCalled();
   });
   it('never persists managed Firebase project identifiers to local storage', async () => {
@@ -99,7 +95,7 @@ describe('Firebase REST account sync', () => {
     expect(JSON.stringify(local.state)).not.toContain('AIzaSy-Test-api-key-public');
   });
 
-  it('uploads only allowed account snapshot on explicit sync, never usage or auth secrets', async () => {
+  it('uploads only allowed account snapshot after opt-in, never usage or auth secrets', async () => {
     const local = storage(initialLocal()), remote = firebaseHarness();
     const { service } = await ready(local, remote);
     expect(remote.writes()).toBe(0);
@@ -127,6 +123,21 @@ describe('Firebase REST account sync', () => {
     expect(next.state[PROMPT_STORAGE_KEY]).toEqual([unrelated, item]);
     expect(next.state[ACCOUNT_SETTINGS_KEY]).toEqual({ 'account-2': settings, [owner]: settings });
   });
+
+  it('enables and disables automatic sync without deleting local data', async () => {
+    const local = storage(initialLocal()), remote = firebaseHarness();
+    const { service } = await ready(local, remote);
+    expect(await service.execute(request('set-auto-sync', { enabled: true })))
+      .toMatchObject({ ok: true, autoSyncEnabled: true });
+    expect(local.state[CLOUD_AUTO_SYNC_KEY]).toBe(true);
+    expect(await service.execute(request('set-auto-sync', { enabled: false })))
+      .toMatchObject({ ok: true, autoSyncEnabled: false });
+    expect(local.state[CLOUD_AUTO_SYNC_KEY]).toBe(false);
+    expect(local.state[PROMPT_STORAGE_KEY]).toEqual([item]);
+    expect(await service.execute(request('status')))
+      .toMatchObject({ ok: true, configured: true, autoSyncEnabled: false });
+  });
+
   it('refuses unverified account syncing even if Firebase is already logged in', async () => {
     const local = storage(initialLocal()), cloud = firebaseHarness();
     const { service } = await ready(local, cloud, async () => false);
