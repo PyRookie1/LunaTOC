@@ -71,13 +71,38 @@ describe('background single-tab prompt writer', () => {
     expect(box.current()).toEqual([other, make('updated')]);
   });
 
-  it('protects malformed legacy storage from replacement', async () => {
+  it('protects malformed stored records from replacement', async () => {
     const get = vi.fn(async () => ({ [PROMPT_STORAGE_KEY]: 'unexpected' }));
     const set = vi.fn();
     const writer = createPromptWriteCoordinator({ get, set } as unknown as chrome.storage.StorageArea);
     expect(await writer.commit(request([make('fresh')])))
       .toEqual({ ok: false, error: 'Prompt storage contains invalid data; refusing to overwrite it' });
     expect(set).not.toHaveBeenCalled();
+  });
+
+  it('rejects malformed and ownerless stored data without rewriting it', async () => {
+    const invalid = [{ id: 'unowned', title: 'Unowned', content: 'Private', createdAt: 1, updatedAt: 1 }];
+    const get = vi.fn(async () => ({ [PROMPT_STORAGE_KEY]: invalid }));
+    const set = vi.fn();
+    const writer = createPromptWriteCoordinator({ get, set } as unknown as chrome.storage.StorageArea);
+    expect(await writer.commit(request([make('saved')]))).toEqual({
+      ok: false, error: 'Prompt storage contains invalid data; refusing to overwrite it',
+    });
+    expect(set).not.toHaveBeenCalled();
+    expect(await writer.commit({ type: PROMPT_COMMIT_TYPE, action: 'cleanup-unowned' }))
+      .toEqual({ ok: false, error: 'Invalid prompt update request' });
+  });
+
+  it('rejects unsafe account owners before writing data', async () => {
+    const box = backing([make('original')]);
+    const writer = createPromptWriteCoordinator(box.storage);
+    for (const ownerId of ['__proto__', 'constructor', 'prototype', ' ', '']) {
+      expect(await writer.commit({
+        type: PROMPT_COMMIT_TYPE, action: 'clear-account', ownerId,
+      })).toEqual({ ok: false, error: 'Invalid prompt update request' });
+    }
+    expect(box.current()).toEqual([make('original')]);
+    expect(box.set).not.toHaveBeenCalled();
   });
 
   it('recovers from a failed storage write', async () => {

@@ -1,6 +1,7 @@
 /** Validates and persists account-bound TOC alias updates in the MV3 worker. */
 import { isPermanentConversationId } from '@/navigation/lifecycle/protocol';
 import { createSerialWriteQueue, type SerialWriteQueue } from '@/features/storage/serialWriteQueue';
+import { isValidAccountOwnerId } from '@/features/storage/accountSettings';
 
 export const TOC_ALIAS_PREFIX = 'chatToc:aliases:v1:';
 export const TOC_ALIAS_DELETED_PREFIX = 'chatToc:aliases:deleted:v1:';
@@ -20,13 +21,11 @@ export type TocAliasCommitRequest =
     ownerId: string;
   }
   | { type: typeof TOC_ALIAS_COMMIT_TYPE; action: 'delete-conversation'; routeKey: string; ownerId: string }
-  | { type: typeof TOC_ALIAS_COMMIT_TYPE; action: 'cleanup-conversation'; routeKey: string; expected: TocAliasRecord }
-  | { type: typeof TOC_ALIAS_COMMIT_TYPE; action: 'cleanup-unowned' };
+  | { type: typeof TOC_ALIAS_COMMIT_TYPE; action: 'cleanup-conversation'; routeKey: string; expected: TocAliasRecord };
 
 export type TocAliasCommitResponse =
   | { ok: true; record: TocAliasRecord | null }
   | { ok: true; deleted: true }
-  | { ok: true; cleaned: number }
   | { ok: false; conflict: true }
   | { ok: false; error: string };
 
@@ -37,20 +36,12 @@ export const isValidTocMessageId = (value: unknown): value is string =>
   value !== '__proto__' && value !== 'constructor' && value !== 'prototype';
 const validLabel = (value: unknown): value is string | null =>
   value === null || (typeof value === 'string' && !!value.trim() && value.length <= 240);
-const validOwner = (value: unknown): value is string =>
-  typeof value === 'string' && !!value && value.length <= 256;
-
-function isUnownedRecord(value: unknown): boolean {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-  const record = value as Record<string, unknown>;
-  return !validOwner(record.ownerId);
-}
+const validOwner = isValidAccountOwnerId;
 
 export function isTocAliasCommitRequest(value: unknown): value is TocAliasCommitRequest {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const input = value as Record<string, unknown>;
   if (input.type !== TOC_ALIAS_COMMIT_TYPE) return false;
-  if (input.action === 'cleanup-unowned') return true;
   if (!isPermanentConversationId(input.routeKey)) return false;
   if (input.action === 'delete-conversation') return validOwner(input.ownerId);
   if (input.action === 'cleanup-conversation') {
@@ -99,15 +90,6 @@ export function createTocAliasWriteCoordinator(
           return { ok: false, error: 'Invalid TOC alias request' };
         }
         try {
-          if (request.action === 'cleanup-unowned') {
-            const all = await storage.get(null) as Record<string, unknown>;
-            const staleKeys = Object.entries(all)
-              .filter(([key, value]) => key.startsWith(TOC_ALIAS_PREFIX) && isUnownedRecord(value))
-              .map(([key]) => key);
-            if (staleKeys.length) await storage.remove(staleKeys);
-            return { ok: true, cleaned: staleKeys.length };
-          }
-
           const key = TOC_ALIAS_PREFIX + request.routeKey;
           const deletionKey = TOC_ALIAS_DELETED_PREFIX + request.routeKey;
           const state = await storage.get([key, deletionKey]);

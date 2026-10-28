@@ -3,9 +3,10 @@
  * Mutations are committed by the extension background to prevent lost updates
  * when multiple ChatGPT tabs record usage at the same time.
  */
+import { getActiveConversationOwner } from '@/navigation/lifecycle/conversationOwner';
+import { isPromptList, PROMPT_STORAGE_KEY } from './promptWriteCoordinator';
 import {
   PROMPT_USAGE_COMMIT_TYPE,
-  type PromptUsageCommitAction,
   type PromptUsageCommitResponse,
 } from './promptUsageWriteCoordinator';
 
@@ -41,14 +42,21 @@ export function createPromptUsageStore(): PromptUsageStore {
     writeQueue = task.catch(() => undefined);
     return task;
   };
-  const commit = (request: PromptUsageCommitAction): Promise<PromptUsageMap> => {
+  const commit = (request: { action: 'record-use' | 'remove'; promptId: string } |
+    { action: 'clear' } | { action: 'reconcile'; validPromptIds: string[] }): Promise<PromptUsageMap> => {
     if (!isContextValid()) return Promise.reject(new Error('Invalid extension context: usage not saved'));
+    const ownerId = getActiveConversationOwner();
+    if (!ownerId) return Promise.reject(new Error('ChatGPT account not verified; usage not saved'));
     return new Promise((resolve, reject) => {
-      chrome.runtime.sendMessage({ type: PROMPT_USAGE_COMMIT_TYPE, ...request },
+      chrome.runtime.sendMessage({ type: PROMPT_USAGE_COMMIT_TYPE, ...request, ownerId },
         (response: PromptUsageCommitResponse | undefined) => {
           if (chrome.runtime.lastError) {
             reject(new Error(chrome.runtime.lastError.message ?? 'Prompt usage writer unavailable'));
           } else if (response?.ok === true) {
+            if (getActiveConversationOwner() !== ownerId) {
+              reject(new Error('ChatGPT account changed; usage response ignored'));
+              return;
+            }
             resolve(normalizeUsageMap(response.usage));
           } else {
             reject(new Error(response && 'error' in response ? response.error : 'Prompt usage writer did not confirm the save'));
@@ -64,7 +72,20 @@ export function createPromptUsageStore(): PromptUsageStore {
   });
 
   return {
-    getAll: async () => ({ ...(await hydrate()) }),
+    getAll: async () => {
+      const ownerId = getActiveConversationOwner();
+      if (!ownerId || !isContextValid()) return {};
+      const usage = await hydrate();
+      const stored = await chrome.storage.local.get(PROMPT_STORAGE_KEY);
+      const raw: unknown = stored[PROMPT_STORAGE_KEY];
+      if (raw !== undefined && !isPromptList(raw)) {
+        throw new Error('Prompt storage contains invalid data; usage cannot be displayed');
+      }
+      if (getActiveConversationOwner() !== ownerId) return {};
+      const ids = (raw ?? [] as { id: string; ownerId: string }[])
+        .filter((prompt) => prompt.ownerId === ownerId).map((prompt) => prompt.id);
+      return filterUsageForPrompts(usage, ids);
+    },
     recordUse: (promptId) => enqueue(async () => { await hydrate(); publish(await commit({ action: 'record-use', promptId })); }),
     remove: (promptId) => enqueue(async () => { await hydrate(); publish(await commit({ action: 'remove', promptId })); }),
     clear: () => enqueue(async () => { await hydrate(); publish(await commit({ action: 'clear' })); }),

@@ -1,24 +1,22 @@
 /** Validates account-scoped prompt writes in the Manifest V3 background service worker. */
 import type { SavedPrompt } from './promptStore';
 import { createSerialWriteQueue, type SerialWriteQueue } from '@/features/storage/serialWriteQueue';
+import { isValidAccountOwnerId } from '@/features/storage/accountSettings';
 
-export const PROMPT_STORAGE_KEY = 'lumaToc:myPromptsV1'; // Existing installs keep this key.
+export const PROMPT_STORAGE_KEY = 'lumaToc:myPromptsV1';
 export const PROMPT_COMMIT_TYPE = 'LUNA_TOC_PROMPTS_COMMIT_V1';
 const MAX_RECORDS = 20_000;
 const USAGE_STORAGE_KEY = 'lunaToc:promptUsageV1';
 
 export type PromptCommitRequest =
   | { type: typeof PROMPT_COMMIT_TYPE; action: 'replace-account'; ownerId: string; next: SavedPrompt[] }
-  | { type: typeof PROMPT_COMMIT_TYPE; action: 'clear-account'; ownerId: string }
-  | { type: typeof PROMPT_COMMIT_TYPE; action: 'cleanup-unowned' };
+  | { type: typeof PROMPT_COMMIT_TYPE; action: 'clear-account'; ownerId: string };
 export type PromptCommitResponse = { ok: true } | { ok: false; error: string };
 
 type PromptStorage = Pick<chrome.storage.StorageArea, 'get' | 'set'> &
   Partial<Pick<chrome.storage.StorageArea, 'remove'>>;
 
-function validOwner(value: unknown): value is string {
-  return typeof value === 'string' && !!value.trim() && value.length <= 256;
-}
+const validOwner = isValidAccountOwnerId;
 
 function isValidPrompt(value: unknown): value is SavedPrompt {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
@@ -41,30 +39,12 @@ export function isPromptList(value: unknown): value is SavedPrompt[] {
   return true;
 }
 
-function readPersistedPrompts(value: unknown): { prompts: SavedPrompt[]; hadUnowned: boolean } {
-  if (value === undefined) return { prompts: [], hadUnowned: false };
-  if (!Array.isArray(value) || value.length > MAX_RECORDS) {
+function readPersistedPrompts(value: unknown): SavedPrompt[] {
+  if (value === undefined) return [];
+  if (!isPromptList(value)) {
     throw new Error('Prompt storage contains invalid data; refusing to overwrite it');
   }
-  const prompts: SavedPrompt[] = [];
-  const ids = new Set<string>();
-  let hadUnowned = false;
-  for (const item of value) {
-    if (!item || typeof item !== 'object' || Array.isArray(item)) {
-      throw new Error('Prompt storage contains invalid data; refusing to overwrite it');
-    }
-    const raw = item as Record<string, unknown>;
-    if (!validOwner(raw.ownerId)) {
-      hadUnowned = true;
-      continue;
-    }
-    if (!isValidPrompt(item) || ids.has(item.id)) {
-      throw new Error('Prompt storage contains invalid data; refusing to overwrite it');
-    }
-    ids.add(item.id);
-    prompts.push(item);
-  }
-  return { prompts, hadUnowned };
+  return value;
 }
 
 function readUsageMap(value: unknown): Record<string, { usageCount: number; lastUsedAt: number }> {
@@ -133,7 +113,6 @@ export function isPromptCommitRequest(value: unknown): value is PromptCommitRequ
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const item = value as Record<string, unknown>;
   if (item.type !== PROMPT_COMMIT_TYPE) return false;
-  if (item.action === 'cleanup-unowned') return true;
   if (item.action === 'clear-account') return validOwner(item.ownerId);
   return item.action === 'replace-account' && validOwner(item.ownerId) &&
     isPromptList(item.next) &&
@@ -201,29 +180,9 @@ export function createPromptWriteCoordinator(
         try {
           const keys = [PROMPT_STORAGE_KEY, USAGE_STORAGE_KEY];
           const result = await storage.get(keys);
-          const persisted = readPersistedPrompts(result[PROMPT_STORAGE_KEY]);
+          const current = readPersistedPrompts(result[PROMPT_STORAGE_KEY]);
           const usage = readUsageMap(result[USAGE_STORAGE_KEY]);
-          const current = persisted.prompts;
           const cleanedUsage = pruneUsage(usage, current);
-
-          if (request.action === 'cleanup-unowned') {
-            const values: Record<string, unknown> = {};
-            if (persisted.hadUnowned) values[PROMPT_STORAGE_KEY] = current;
-            if (Object.hasOwn(result, USAGE_STORAGE_KEY) &&
-                !storageValuesEqual(result[USAGE_STORAGE_KEY], cleanedUsage)) {
-              values[USAGE_STORAGE_KEY] = cleanedUsage;
-            }
-            if (Object.keys(values).length) {
-              await storage.set(values);
-              const actual = await storage.get(keys);
-              for (const key of Object.keys(values)) {
-                if (!storageValuesEqual(values[key], actual[key])) {
-                  return { ok: false, error: '清理未绑定账号的数据后核验失败。' };
-                }
-              }
-            }
-            return { ok: true };
-          }
 
           const ownerId = request.ownerId;
           const otherAccounts = current.filter((prompt) => prompt.ownerId !== ownerId);
@@ -241,7 +200,7 @@ export function createPromptWriteCoordinator(
           const nextUsage = pruneUsage(cleanedUsage, nextPrompts);
           const values: Record<string, unknown> = {};
           const shouldWritePrompts = Object.hasOwn(result, PROMPT_STORAGE_KEY) ||
-            persisted.hadUnowned || nextPrompts.length > 0;
+            nextPrompts.length > 0;
           if (shouldWritePrompts &&
               !storageValuesEqual(result[PROMPT_STORAGE_KEY], nextPrompts)) {
             values[PROMPT_STORAGE_KEY] = nextPrompts;

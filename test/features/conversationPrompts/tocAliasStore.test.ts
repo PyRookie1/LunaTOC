@@ -146,7 +146,7 @@ describe('TOC alias storage', () => {
       .toEqual({ ownerId: 'account-1', aliases: { msg: 'saved later' } });
   });
 
-  it('hides owner-bound and legacy-unowned aliases when identity is unknown or different', async () => {
+  it('hides aliases when identity is unknown or different', async () => {
     const store = createTocAliasStore();
     await store.update(route, 'msg', 'Private name', 'account-1');
     expect(store.get(route, 'msg')).toBe('Private name');
@@ -160,15 +160,16 @@ describe('TOC alias storage', () => {
     await vi.waitFor(() => expect(store.get(route, 'msg')).toBe('Private name'));
   });
 
-  it('removes unowned legacy aliases instead of attributing them to the active account', async () => {
-    const legacy = { ownerId: null, aliases: { 'old-message': 'Saved under an unknown account' } };
-    await chrome.storage.local.set({ [key]: legacy });
+  it('does not expose or automatically rewrite malformed unowned aliases', async () => {
+    const malformed = { ownerId: null, aliases: { 'old-message': 'Private text' } };
+    await chrome.storage.local.set({ [key]: malformed });
     const store = createTocAliasStore();
-    await vi.waitFor(() => expect(saved[key]).toBeUndefined());
     await store.load(route);
     expect(store.get(route, 'old-message')).toBeNull();
-    await store.update(route, 'new-message', 'Title', 'account-1');
-    expect(saved[key]).toEqual({ ownerId: 'account-1', aliases: { 'new-message': 'Title' } });
+    expect(saved[key]).toEqual(malformed);
+    await expect(store.update(route, 'new-message', 'Title', 'account-1'))
+      .rejects.toThrow('Invalid saved TOC aliases');
+    expect(saved[key]).toEqual(malformed);
   });
 
   it('does not claim a successful save without a background acknowledgement', async () => {

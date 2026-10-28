@@ -253,9 +253,6 @@ export function createTocAliasStore(onChanged: (routeKey: string) => void = () =
     });
   });
 
-  // Unowned legacy aliases are explicitly unsupported and removed by the serialized writer.
-  void sendCommit({ type: TOC_ALIAS_COMMIT_TYPE, action: 'cleanup-unowned' }).catch(() => undefined);
-
   return {
     load, get, update, removeConversation, references, owner,
     subscribe(fn: (routeKey: string) => void): () => void {

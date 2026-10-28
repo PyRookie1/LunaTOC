@@ -130,7 +130,7 @@ describe('background TOC alias coordinator', () => {
     expect(box.data[key]).toEqual({ ownerId: 'account-A', aliases: { msg: 'original' } });
   });
 
-  it('requires a non-null verified account even when old scripts submit a write', async () => {
+  it('requires a verified account owner for every write', async () => {
     const box = backing({ [key]: { ownerId: 'account-A', aliases: { msg: 'Keep' } } });
     const writer = createTocAliasWriteCoordinator(box.storage);
     expect(await writer.commit(update('msg', 'Keep', 'Changed', null)))
@@ -138,26 +138,27 @@ describe('background TOC alias coordinator', () => {
     expect(box.data[key]).toEqual({ ownerId: 'account-A', aliases: { msg: 'Keep' } });
   });
 
-  it('deletes unowned legacy aliases and never attributes them to the active account', async () => {
-    const legacy = { ownerId: null, aliases: { 'private-old': 'Previous account title' } };
-    const invalidOwnerKey = TOC_ALIAS_PREFIX + 'conversation-456';
-    const invalidOwner = { ownerId: 123, aliases: { message: 'Unbound too' } };
-    const box = backing({ [key]: legacy, [invalidOwnerKey]: invalidOwner });
+  it('does not accept unowned saved aliases or silently assign them to a new account', async () => {
+    const invalid = { ownerId: null, aliases: { message: 'private data' } };
+    const box = backing({ [key]: invalid });
     const writer = createTocAliasWriteCoordinator(box.storage);
+    expect(await writer.commit(update('new-message', null, 'new label', 'account-B')))
+      .toEqual({ ok: false, error: 'Invalid saved TOC aliases' });
+    expect(box.data[key]).toEqual(invalid);
     expect(await writer.commit({ type: TOC_ALIAS_COMMIT_TYPE, action: 'cleanup-unowned' }))
-      .toEqual({ ok: true, cleaned: 2 });
-    expect(box.data[key]).toBeUndefined();
-    expect(box.data[invalidOwnerKey]).toBeUndefined();
-    expect((await writer.commit(update('new-message', null, 'new label', 'account-B'))).ok).toBe(true);
-    expect(box.data[key]).toEqual({ ownerId: 'account-B', aliases: { 'new-message': 'new label' } });
+      .toEqual({ ok: false, error: 'Invalid TOC alias request' });
+    expect(box.data[key]).toEqual(invalid);
   });
 
-  it('does not delete aliases that already have a verified owner', async () => {
-    const box = backing({ [key]: { ownerId: 'account-1', aliases: { msg: 'Keep' } } });
-    expect(await createTocAliasWriteCoordinator(box.storage).commit({
-      type: TOC_ALIAS_COMMIT_TYPE, action: 'cleanup-unowned',
-    })).toEqual({ ok: true, cleaned: 0 });
-    expect(box.data[key]).toEqual({ ownerId: 'account-1', aliases: { msg: 'Keep' } });
+  it('rejects forbidden owner identifiers without modifying other accounts', async () => {
+    const original = { ownerId: 'account-1', aliases: { msg: 'Keep' } };
+    const box = backing({ [key]: original });
+    const writer = createTocAliasWriteCoordinator(box.storage);
+    for (const ownerId of ['__proto__', 'constructor', 'prototype', ' ', '']) {
+      expect(await writer.commit(update('msg', 'Keep', 'Changed', ownerId)))
+        .toEqual({ ok: false, error: 'Invalid TOC alias request' });
+    }
+    expect(box.data[key]).toEqual(original);
   });
 
   it('reports storage errors and keeps the queue usable', async () => {
