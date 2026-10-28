@@ -21,7 +21,7 @@ import {
 } from '@/features/contractAlert/toolbarWarning';
 import { createToolbarWarningController } from '@/features/contractAlert/toolbarBackground';
 import { installRemoteDeletionObserver } from '@/background/remoteDeletionObserver';
-import { createCloudController, CLOUD_MESSAGE_TYPE, CLOUD_AUTO_SYNC_KEY } from '@/features/cloud/cloudController';
+import { createCloudController, CLOUD_MESSAGE_TYPE, CLOUD_AUTO_SYNC_KEY, CLOUD_AUTO_SYNC_STATUS_KEY } from '@/features/cloud/cloudController';
 import { ACCOUNT_SETTINGS_KEY, GET_ACTIVE_ACCOUNT_OWNER_MESSAGE } from '@/features/storage/accountSettings';
 
 // Observe only actual successful ChatGPT delete/visibility-removal mutations in the browser network layer.
@@ -245,9 +245,15 @@ async function runAutomaticSync(): Promise<void> {
         const result = await cloudController.execute({
           type: CLOUD_MESSAGE_TYPE, action: 'sync', ownerId,
         });
+        await chrome.storage.local.set({
+          [CLOUD_AUTO_SYNC_STATUS_KEY]: {
+            state: result.ok ? 'success' : 'error',
+            message: result.ok ? result.message : result.error,
+            updatedAt: Date.now(),
+          },
+        });
         if (!result.ok) {
-          // Keep local work intact. The settings page remains the place to
-          // inspect a manual retry; automatic failures never erase local data.
+          // Keep local work intact. Automatic failures never erase local data.
           console.warn('LunaTOC automatic cloud sync skipped:', result.error);
         }
       }
