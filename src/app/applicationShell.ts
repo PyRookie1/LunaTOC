@@ -211,7 +211,7 @@ function initTheme(): void {
 }
 
 /**
- * Publishes semantic global layers as CSS variables shared by legacy and
+ * Publishes semantic global layers as CSS variables shared by DOM and
  * Shadow DOM interfaces.
  */
 function applyStackingConfig(): void {

@@ -85,7 +85,7 @@ function storageHarness(initial: Record<string, unknown> = {}) {
 
 beforeEach(() => vi.restoreAllMocks());
 
-describe('versioned local backup', () => {
+describe('LunaTOC local backup', () => {
   it('exports precisely the allowlisted local user data and supports round trip', async () => {
     const source = sample();
     const box = storageHarness({
@@ -175,33 +175,10 @@ describe('versioned local backup', () => {
     expect(box.state).toEqual(original);
   });
 
-  it('imports v2 global preferences only when the backup identifies account owners', () => {
-    const current = sample();
-    const legacy = {
-      ...current,
-      version: 2,
-      data: {
-        prompts: current.data.prompts,
-        promptUsage: current.data.promptUsage,
-        aliases: current.data.aliases,
-        theme: { followChatGPT: false, manualTheme: 'light' },
-        sidebar: { layoutMode: 'side-by-side', backgroundColor: 'blue', revealTint: true },
-      },
-    };
-    const parsed = parseLocalBackup(JSON.stringify(legacy));
-    expect(parsed.version).toBe(BACKUP_VERSION);
-    expect(parsed.data.settings['account-1']).toEqual({
-      theme: { followChatGPT: false, manualTheme: 'light' },
-      sidebar: { layoutMode: 'side-by-side', backgroundColor: 'blue', revealTint: true },
-    });
-    const unbound = { ...legacy, data: { ...legacy.data, prompts: [], promptUsage: {}, aliases: {} } };
-    expect(() => parseLocalBackup(JSON.stringify(unbound))).toThrow('没有账号归属');
-  });
-
   it('rejects unknown versions, invalid JSON, unknown fields and oversized input', () => {
     const saved = sample();
     expect(() => parseLocalBackup('not json')).toThrow('JSON');
-    expect(() => parseLocalBackup(JSON.stringify({ ...saved, version: 1 }))).toThrow('格式或版本');
+    expect(() => parseLocalBackup(JSON.stringify({ ...saved, version: 2 }))).toThrow('格式或版本');
     expect(() => parseLocalBackup(JSON.stringify({ ...saved, token: 'secret' }))).toThrow('不支持');
     expect(() => parseLocalBackup(' '.repeat(MAX_BACKUP_BYTES + 1))).toThrow('12 MiB');
   });
@@ -261,7 +238,7 @@ describe('versioned local backup', () => {
       [PROMPTS]: [prompt('saved', 'older'), prompt('keep')],
       [USAGE]: { saved: { usageCount: 1, lastUsedAt: 1 } },
       [ALIAS]: { ownerId: 'account-1', aliases: { 'message-1': 'old', 'message-2': 'keep' } },
-      [EXTRA_ALIAS]: { ownerId: null, aliases: { 'message-3': 'unowned old alias' } },
+      [EXTRA_ALIAS]: { ownerId: 'account-1', aliases: { 'message-3': 'outdated alias' } },
       [SETTINGS]: {
         'account-1': {
           theme: { followChatGPT: true, manualTheme: 'dark' },
@@ -276,8 +253,8 @@ describe('versioned local backup', () => {
     expect(box.state[ALIAS]).toEqual({
       ownerId: 'account-1', aliases: { 'message-1': '自定义目录', 'message-2': 'keep' },
     });
-    expect(box.state[EXTRA_ALIAS]).toBeUndefined();
-    expect(box.remove).toHaveBeenCalledWith([EXTRA_ALIAS]);
+    expect(box.state[EXTRA_ALIAS]).toEqual({ ownerId: 'account-1', aliases: { 'message-3': 'outdated alias' } });
+    expect(box.remove).not.toHaveBeenCalled();
     expect(box.state[SETTINGS]).toEqual(imported.data.settings);
     expect(box.state['other-key']).toBe('untouched');
   });

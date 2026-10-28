@@ -10,7 +10,7 @@ import {join,resolve} from 'node:path';
 import {chromium} from 'playwright';
 
 const dist=resolve('dist');
-const conversationId='luna-stage-9-e2e';
+const conversationId='lunatoc-e2e';
 const url='https://chatgpt.com/c/'+conversationId;
 function createHtml(messageCount=2){
  const messages=Array.from({length:messageCount},(_,index)=>{const n=index+1;const question=n===1?'第一条测试问题':n===2?'第二条测试问题':`第${n}条测试问题`;return `<article data-turn="user" data-testid="conversation-turn-${n}" data-message-id="user-${n}" data-chatgpt-search-unit-key="turn-${n}:user" data-chatgpt-search-message-ids="user-${n}"><div data-message-author-role="user">${question}</div></article><article data-turn="assistant" data-message-id="answer-${n}" data-chatgpt-search-unit-key="turn-${n}:assistant" data-chatgpt-search-message-ids="answer-${n}"><h2>回答${n}</h2></article>`;}).join('');
@@ -61,10 +61,10 @@ async function installFixture(context){
     const p=new URL(route.request().url()).pathname;
     if(route.request().isNavigationRequest()){
       const path=new URL(route.request().url()).pathname;
-       await route.fulfill({status:200,contentType:'text/html; charset=utf-8',body:path.includes('luna-stage-10-large-e2e')?largeHtml:path.includes('luna-stage-10-virtual-e2e')?virtualHtml:html});
+       await route.fulfill({status:200,contentType:'text/html; charset=utf-8',body:path.includes('lunatoc-large-e2e')?largeHtml:path.includes('lunatoc-virtual-e2e')?virtualHtml:html});
     }else if(/^\/backend-api\/conversations\/[^/]+$/.test(p)){
       const id=p.split('/').pop();
-       await route.fulfill({status:200,contentType:'application/json',body:id.startsWith('luna-stage-10-')?largePayload:payload});
+       await route.fulfill({status:200,contentType:'application/json',body:(id.startsWith('lunatoc-large-')||id.startsWith('lunatoc-virtual-'))?largePayload:payload});
     }else if(p==='/api/auth/session'){
       await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({user:{id:fixtureOwner}})});
     }else if(p==='/backend-api/me'||p==='/backend-api/accounts/check'){
@@ -250,8 +250,8 @@ test('Chromium MV3: TOC, search, layout, SPA and failure paths',{timeout:150000}
       await page.waitForFunction(()=>document.querySelector('#navigator-list')?.textContent?.includes('账号 A 私有标题'));
     });
 
-    await t.test('B026: forged page messages are ignored but Chrome-observed successful deletion cleans aliases',{timeout:20000},async()=>{
-      const routeKey='luna-stage-9-e2e';
+    await t.test('Page-originated deletion messages are ignored; confirmed browser deletion cleans aliases',{timeout:20000},async()=>{
+      const routeKey='lunatoc-e2e';
       const aliasKey='chatToc:aliases:v1:'+routeKey;
       const fenceKey='chatToc:aliases:deleted:v1:'+routeKey;
       const record={ownerId:'fixture-account-a',aliases:{'user-1':'请保留此目录别名'}};
@@ -286,9 +286,9 @@ test('Chromium MV3: TOC, search, layout, SPA and failure paths',{timeout:150000}
 
     await t.test('500-message fully mounted fixture builds a TOC and supports a far jump',{timeout:60000},async()=>{
       const started=Date.now();
-      await page.goto('https://chatgpt.com/c/luna-stage-10-large-e2e',{waitUntil:'domcontentloaded'});
+      await page.goto('https://chatgpt.com/c/lunatoc-large-e2e',{waitUntil:'domcontentloaded'});
       await page.locator('#luna-toc-sidebar.luna-toc-navigator-ready').waitFor({state:'attached',timeout:20000});
-      await page.evaluate(async()=>fetch('/backend-api/conversations/luna-stage-10-large-e2e?num_turns=500'));
+      await page.evaluate(async()=>fetch('/backend-api/conversations/lunatoc-large-e2e?num_turns=500'));
       await page.waitForFunction(()=>document.querySelectorAll('.navigator-item').length===500,undefined,{timeout:20000});
       const tocBuildMs=Date.now()-started,jumpStarted=Date.now();
       const sidebar=page.locator('#luna-toc-sidebar');
@@ -304,9 +304,9 @@ test('Chromium MV3: TOC, search, layout, SPA and failure paths',{timeout:150000}
     });
 
     await t.test('500-message virtualized fixture mounts and jumps to an offscreen target',{timeout:60000},async()=>{
-      await page.goto('https://chatgpt.com/c/luna-stage-10-virtual-e2e',{waitUntil:'domcontentloaded'});
+      await page.goto('https://chatgpt.com/c/lunatoc-virtual-e2e',{waitUntil:'domcontentloaded'});
       await page.locator('#luna-toc-sidebar.luna-toc-navigator-ready').waitFor({state:'attached',timeout:20000});
-      await page.evaluate(async()=>fetch('/backend-api/conversations/luna-stage-10-virtual-e2e?num_turns=500'));
+      await page.evaluate(async()=>fetch('/backend-api/conversations/lunatoc-virtual-e2e?num_turns=500'));
       await page.waitForFunction(()=>document.querySelectorAll('.navigator-item').length===500,undefined,{timeout:20000});
       const mountedBefore=await page.locator('[data-chatgpt-search-unit-key$=":user"]').count();
       assert.ok(mountedBefore<500,'fixture must not pre-mount the jump target');

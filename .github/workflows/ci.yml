@@ -1,12 +1,15 @@
-name: LunaTOC-SC CI
+name: LunaTOC CI
 
 on:
   push:
     branches:
       - main
+      - 'rebuild/**'
+      - 'phase/**'
   pull_request:
     branches:
       - main
+      - 'rebuild/**'
 
 permissions:
   contents: read
@@ -35,6 +38,28 @@ jobs:
 
       - name: Install locked dependencies
         run: npm ci
+
+      - name: Verify LunaTOC identity and version consistency
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+          const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
+          const lock = JSON.parse(readFileSync('package-lock.json', 'utf8'));
+          const manifest = JSON.parse(readFileSync('manifest.json', 'utf8'));
+          if (pkg.name !== 'lunatoc' || lock.name !== pkg.name || lock.packages?.['']?.name !== pkg.name) {
+            throw new Error('Project package name must be lunatoc in package.json and package-lock.json');
+          }
+          if (manifest.name !== 'LunaTOC' || manifest.short_name !== 'LunaTOC') {
+            throw new Error('Extension name must be LunaTOC');
+          }
+          if (!/^\d+\.\d+\.\d+$/.test(pkg.version) ||
+              lock.version !== pkg.version ||
+              lock.packages?.['']?.version !== pkg.version ||
+              manifest.version !== pkg.version) {
+            throw new Error('package.json, package-lock.json and manifest.json versions must match');
+          }
+          console.log(`LunaTOC ${pkg.version}: project identity and versions match`);
+          NODE
 
       - name: Type-check
         run: npm run typecheck
@@ -97,11 +122,11 @@ jobs:
 
       - name: Package and verify extension ZIP
         run: |
-          (cd dist && zip -q -r ../luna-toc-sc-chrome.zip .)
-          unzip -tq luna-toc-sc-chrome.zip
-          unzip -Z1 luna-toc-sc-chrome.zip | grep -Fxq manifest.json
-          sha256sum luna-toc-sc-chrome.zip > luna-toc-sc-chrome.zip.sha256
-          sha256sum -c luna-toc-sc-chrome.zip.sha256
+          (cd dist && zip -q -r ../lunatoc-chrome.zip .)
+          unzip -tq lunatoc-chrome.zip
+          unzip -Z1 lunatoc-chrome.zip | grep -Fxq manifest.json
+          sha256sum lunatoc-chrome.zip > lunatoc-chrome.zip.sha256
+          sha256sum -c lunatoc-chrome.zip.sha256
 
       - name: Install isolated Chromium test runner
         run: npm run test:browser:setup
@@ -115,9 +140,9 @@ jobs:
       - name: Upload verified extension package
         uses: actions/upload-artifact@v7
         with:
-          name: luna-toc-sc-chrome
+          name: lunatoc-chrome
           path: |
-            luna-toc-sc-chrome.zip
-            luna-toc-sc-chrome.zip.sha256
+            lunatoc-chrome.zip
+            lunatoc-chrome.zip.sha256
           if-no-files-found: error
           retention-days: 14

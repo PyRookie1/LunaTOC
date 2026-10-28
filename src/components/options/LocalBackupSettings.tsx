@@ -33,7 +33,7 @@ export function LocalBackupSettings(): React.JSX.Element {
       ));
       const link = document.createElement('a');
       link.href = url;
-      link.download = `luna-toc-backup-${backup.exportedAt.slice(0, 10)}.json`;
+      link.download = `lunatoc-backup-${backup.exportedAt.slice(0, 10)}.json`;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -73,7 +73,7 @@ export function LocalBackupSettings(): React.JSX.Element {
   const restore = async (): Promise<void> => {
     if (!preview || busy) return;
     const action = mode === 'replace' ? '覆盖本地提示词、设置和别名' : '合并提示词与别名，并采用备份中的设置';
-    if (!window.confirm(`确认${action}？新版扩展会协调本地写入；恢复前请刷新其他 ChatGPT 标签页，避免旧版本脚本继续写入。`)) return;
+    if (!window.confirm(`确认${action}？LunaTOC 会协调本地写入；恢复前请刷新其他已打开的 ChatGPT 标签页，避免旧页面缓存覆盖恢复结果。`)) return;
     setBusy(true);
     show('');
     try {

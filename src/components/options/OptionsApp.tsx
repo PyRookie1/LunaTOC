@@ -135,7 +135,7 @@ export function OptionsApp(): React.JSX.Element {
   return (
     <main className="settings-page">
       <header className="settings-header">
-        <p className="settings-brand">LunaTOC-SC</p>
+        <p className="settings-brand">LunaTOC</p>
         <h1>设置</h1>
         <p className="settings-caption">偏好设置会自动同步到已打开的 ChatGPT 页面。</p>
       </header>
