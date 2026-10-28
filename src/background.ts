@@ -219,6 +219,27 @@ async function runAutomaticSync(): Promise<void> {
       autoSyncPending = false;
       const enabled = await chrome.storage.local.get(CLOUD_AUTO_SYNC_KEY);
       if (enabled[CLOUD_AUTO_SYNC_KEY] !== true) break;
+      // Browser session storage is cleared on restart. Reuse an already
+      // authorized Chrome Google token silently; never open an unexpected login window.
+      const authStatus = await cloudController.execute({ type: CLOUD_MESSAGE_TYPE, action: 'status' });
+      if (!authStatus.ok || authStatus.configured !== true) break;
+      if (!authStatus.uid) {
+        try {
+          const auth = await chrome.identity.getAuthToken({ interactive: false });
+          const accessToken = typeof auth === 'string' ? auth : auth?.token;
+          if (!accessToken) break;
+          const login = await cloudController.execute({
+            type: CLOUD_MESSAGE_TYPE, action: 'google-sign-in', accessToken,
+          });
+          if (!login.ok) {
+            console.warn('LunaTOC automatic cloud re-authentication failed:', login.error);
+            break;
+          }
+        } catch {
+          // The user may need to enable sync again if Chrome has no cached consent.
+          break;
+        }
+      }
       const owners = await findVerifiedChatGptOwners();
       for (const ownerId of owners) {
         const result = await cloudController.execute({
@@ -255,6 +276,8 @@ chrome.tabs.onUpdated.addListener((_tabId, changeInfo, tab) => {
     void runAutomaticSync();
   }
 });
+chrome.runtime.onStartup.addListener(() => { void runAutomaticSync(); });
+chrome.runtime.onInstalled.addListener(() => { void runAutomaticSync(); });
 
 chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
   if (!message || typeof message !== 'object' ||
