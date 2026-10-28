@@ -1,0 +1,11 @@
+{
+  "name": "lunatoc-firebase-rules-tests",
+  "private": true,
+  "type": "module",
+  "description": "Isolated CI-only Firebase Emulator and deployed-rule tests",
+  "dependencies": {
+    "firebase": "12.6.0",
+    "@firebase/rules-unit-testing": "5.0.2",
+    "firebase-tools": "15.30.2"
+  }
+}
