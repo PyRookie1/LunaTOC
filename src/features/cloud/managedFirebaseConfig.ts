@@ -7,6 +7,6 @@ export function bundledFirebaseConfig(): ManagedFirebaseConfig | null {
   const projectId = import.meta.env.VITE_LUNATOC_FIREBASE_PROJECT_ID?.trim() ?? '';
   const apiKey = import.meta.env.VITE_LUNATOC_FIREBASE_WEB_API_KEY?.trim() ?? '';
   const googleOAuthClientId = import.meta.env.VITE_LUNATOC_GOOGLE_OAUTH_CLIENT_ID?.trim() ?? '';
-  const validOAuthClient = /^[0-9]+-[a-z0-9-]+\\.apps\\.googleusercontent\\.com$/.test(googleOAuthClientId);
+  const validOAuthClient = /^[0-9]+-[a-z0-9-]+\.apps\.googleusercontent\.com$/.test(googleOAuthClientId);
   return projectId && apiKey && validOAuthClient ? { projectId, apiKey, googleOAuthClientId } : null;
 }
