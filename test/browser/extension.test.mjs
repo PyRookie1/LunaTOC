@@ -296,12 +296,17 @@ test('Chromium MV3: TOC, search, layout, SPA and failure paths',{timeout:150000}
       const aliasKey='lunatoc:aliases:v1:'+routeKey;
       const ownerId='fixture-account-not-logged-in';
       const before=await worker.evaluate(async key=>(await chrome.storage.local.get(key))[key],aliasKey);
-      const result=await worker.evaluate(async({routeKey,ownerId})=>
-        chrome.runtime.sendMessage({
-          type:'LUNA_TOC_ALIAS_COMMIT_V1',action:'update',routeKey,
-          messageId:'probe',label:'unauthorized',ownerId
-        }),{routeKey,ownerId});
-      assert.equal(result.ok,false,'unverified account must not be allowed to write aliases');
+      const settings=await context.newPage();
+      try{
+        const optionsPage=await worker.evaluate(()=>chrome.runtime.getManifest().options_ui.page);
+        await settings.goto('chrome-extension://'+extensionId+'/'+optionsPage);
+        const result=await settings.evaluate(async({routeKey,ownerId})=>
+          chrome.runtime.sendMessage({
+            type:'LUNA_TOC_ALIAS_COMMIT_V1',action:'update',routeKey,
+            messageId:'probe',label:'unauthorized',ownerId
+          }),{routeKey,ownerId});
+        assert.equal(result.ok,false,'unverified account must not be allowed to write aliases');
+      }finally{await settings.close();}
       const after=await worker.evaluate(async key=>(await chrome.storage.local.get(key))[key],aliasKey);
       assert.deepEqual(after,before,'denied mutation must not create local records');
     });
