@@ -1,42 +1,32 @@
 # LunaTOC 1.0.0 发布验收清单
 
-> CI 通过只证明构建、模拟页面和测试替身下的功能正常。要合并到 main 并正式发布，还须完成下列真实环境验收。
+> 模拟器和 CI 的成功只验证开发环境；生产 Firebase 和真实浏览器仍是独立阻断条件。
 
 ## 自动化门槛
 
-- [ ] 依赖锁定安装成功（Node.js 22，npm ci）
-- [ ] 版本一致（package.json、package-lock.json、manifest.json 均为 1.0.0）
-- [ ] TypeScript 类型检查、全部 Vitest 测试通过
-- [ ] 扩展打包、Manifest V3 引用文件检查通过
-- [ ] Chromium 本地模拟 ChatGPT 功能测试通过
-- [ ] npm audit --audit-level=high 无阻断问题
-- [ ] Firebase 模拟器加载实际 firestore.rules，验证 A/B/匿名用户隔离与写入格式
-- [ ] 发布门禁检查 Firebase Project ID、Web API Key 和 Google OAuth Client ID 均已配置
-- [ ] 集成分支合并后，目标分支 CI 再次通过
+- [ ] Node.js 22 锁定依赖安装、类型检查、完整 Vitest 测试通过。
+- [ ] Manifest MV3、版本号、扩展 ZIP 完整性、Chromium E2E、依赖安全审计通过。
+- [ ] Firebase Emulator 实际加载仓库的 firestore.rules，并验证双 UID、匿名访问、越权、异常文档。
+- [ ] 邮件链接发送/兑换、无效链接、错误项目域名、过期验证码、开关和失败保护的自动测试通过。
+- [ ] main 发布门禁核对 Project ID、Web API Key 和 Firebase Hosting authDomain 三项公开 GitHub Variables。
+- [ ] 集成分支、main 的相应 CI 全部通过。
 
-## 真实 ChatGPT 账号与浏览器
+## 真实 Firebase（阻断发布）
 
-- [ ] 在实际 Chrome 中加载扩展，验证目录、回答标题、跳转、搜索和 Markdown 粗体修复。
-- [ ] 至少测试两个不同的 ChatGPT 测试账号：Tips、目录别名、主题与布局互相隔离；切换账号时不显示或写入错误账号的数据。
-- [ ] 验证本地备份导出、合并恢复、覆盖恢复、失败回滚。
+- [ ] 维护者 Firebase 项目启用 Email/Password **以及** Email link (passwordless)；Google OAuth 客户端不是必要条件。
+- [ ] 已注册 Firebase Web App，使用其真实 `authDomain`，确认在 Authentication 授权域名中。
+- [ ] 已在生产默认 Firestore 发布仓库的 firestore.rules；用户 A、B、匿名隔离校验通过。
+- [ ] 用真实邮件验证“一次性登录链接复制 → 设置页粘贴 → Firebase Auth 成功 → Firestore 首次上传”。
+- [ ] 两台 Chrome 配置文件使用**相同验证邮箱**和**相同 ChatGPT 账号**，验证自动上传/下载；不同 ChatGPT 账号互不覆盖。
+- [ ] 验证浏览器重启后自动同步、关闭后停止上传并清除本地凭据。
+- [ ] 验证过期、重放、无效链接、离线、权限拒绝、远端文档缺失、冲突和配额问题时不会静默删除本地数据。
+- [ ] 核对 Firestore 用量、文档大小、Firebase 计费与隐私说明。
 
-## 真实 Firebase 项目（阻断发布）
+## 真实 ChatGPT 与发布
 
-- [ ] 在维护者拥有的 Firebase 项目中启用 Google Authentication 和默认 Cloud Firestore，并部署仓库的 firestore.rules。
-- [ ] Google OAuth Client ID 与待发布的 Chrome 扩展 ID 匹配；扩展通过 Chrome Identity 成功获取 Google 访问令牌。
-- [ ] 两个不同 Firebase UID 之间无法读取、修改或列出对方的文档；匿名访问和非法路径被拒绝。
-- [ ] 在两台设备或隔离的 Chrome 配置文件上使用同一 Google 账号并开启同步：新增 Tips、修改目录别名和偏好后，另一台设备能自动取得变更。
-- [ ] 在同一 Google 身份下测试两个 ChatGPT 账号，确认数据互不读取或覆盖。
-- [ ] 验证关闭云同步后停止上传且保留本地数据；验证断网、规则拒绝、并发冲突、远端文档意外缺失和配额异常时不会静默丢失本地数据。
-- [ ] 检查 Firebase 用量、文档大小限制与项目权限，确认没有意外账单或开放规则。
+- [ ] 真实 Chrome 下的目录、搜索、跳转、回答标题、Markdown 粗体修复与账号隔离正常。
+- [ ] 本地备份导出、合并、覆盖与失败回滚正常。
+- [ ] 核对 README、PRIVACY、CHANGELOG、LICENSE 和第三方许可。
+- [ ] 仅在所有真实环境验收通过后，合并 PR 至 main，重新验证 main CI 并发布 1.0.0。
 
-## 发布
-
-- [ ] 核对 README、PRIVACY、CHANGELOG、LICENSE、第三方许可和云同步说明。
-- [ ] 项目拥有者确认真实环境验收结果后，才提交集成分支 → main 的正式合并 PR。
-- [ ] main 分支 CI 全绿，从 main 构建 1.0.0 ZIP；核对版本、权限和发布产物后再发布。
-- [ ] 不得忽略失败测试，也不得凭 CI 通过宣称真实 Firebase 权限已经验证。
-
-## 当前未完成的外部前提
-
-正式上线前仍需维护者启用 Google Authentication、创建并绑定 OAuth Client ID、部署 Firestore 规则、配置三个 GitHub Actions Variables，并完成真实双设备测试。模拟器和格式门禁不能替代这些真实环境检查。参见 [Firebase 同步操作说明](FIREBASE_SYNC.md)。
+目前仍缺外部真实 Firebase 邮件链接与双设备验证，不能把 CI 模拟结果当作生产验证。
