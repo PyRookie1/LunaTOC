@@ -42,7 +42,7 @@ const isJumpVizDebugEnabled = (
  * Prints the currently-mounted and currently-visible user messages to the
  * console, tagged with the given label so callers can distinguish which
  * phase emitted the dump (e.g. `'fast-path'`, `'pre-search'`,
- * `'post-search'`). Active only when the `chatTocDebugJumpViz` toggle is
+ * `'post-search'`). Active only when the `lunatoc:debugJumpViz:v1` toggle is
  * `1` in `localStorage`; default off.
  *
  * @param label Phase identifier prepended to the dump.

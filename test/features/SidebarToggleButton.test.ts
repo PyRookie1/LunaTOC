@@ -1,13 +1,12 @@
 /**
  * @vitest-environment jsdom
- * Checks the fixed, empty right-edge handle independently from old saved positions.
+ * Checks the fixed, empty right-edge handle without persisted placement.
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import { createSidebarToggleButton } from '@/features/SidebarToggleButton';
 
 afterEach(() => {
   document.body.textContent = '';
-  sessionStorage.removeItem('chatTocToggleButtonPosition');
 });
 
 describe('fixed sidebar reveal handle', () => {
@@ -24,10 +23,7 @@ describe('fixed sidebar reveal handle', () => {
     expect(trigger.querySelector('svg')).toBeNull();
   });
 
-  it('ignores saved drag offsets and remains CSS-centered on resize', () => {
-    sessionStorage.setItem('chatTocToggleButtonPosition', JSON.stringify({
-      left: 45, top: 160, topRatio: 1,
-    }));
+  it('remains CSS-centered on resize without writing a saved position', () => {
     const dock = createSidebarToggleButton().parentElement!;
     expect(dock.getAttribute('style')).toBeNull();
     window.dispatchEvent(new Event('resize'));
