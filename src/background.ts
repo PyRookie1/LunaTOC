@@ -161,7 +161,7 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
 });
 
 
-/** Only an extension options document may submit Firebase credentials or sync commands. */
+/** Only an extension options document may submit email verification or sync commands. */
 async function hasVerifiedChatGptOwner(ownerId: string): Promise<boolean> {
   if (!ownerId) return false;
   let tabs: chrome.tabs.Tab[];
@@ -183,7 +183,7 @@ async function hasVerifiedChatGptOwner(ownerId: string): Promise<boolean> {
 }
 
 const cloudController = createCloudController(
-  chrome.storage.local, chrome.storage.session, storageWriteQueue, hasVerifiedChatGptOwner
+  chrome.storage.local, chrome.storage.local, storageWriteQueue, hasVerifiedChatGptOwner
 );
 
 // Automatic sync is opt-in. Local changes are uploaded only after a Google
@@ -219,34 +219,14 @@ async function runAutomaticSync(): Promise<void> {
       autoSyncPending = false;
       const enabled = await chrome.storage.local.get(CLOUD_AUTO_SYNC_KEY);
       if (enabled[CLOUD_AUTO_SYNC_KEY] !== true) break;
-      // Browser session storage is cleared on restart. Reuse an already
-      // authorized Chrome Google token silently; never open an unexpected login window.
+      // Firebase email-link identity is persisted in extension local storage;
+      // refresh tokens are rotated by cloudController without browser popups.
       const authStatus = await cloudController.execute({ type: CLOUD_MESSAGE_TYPE, action: 'status' });
-      if (!authStatus.ok || authStatus.configured !== true) break;
-      if (!authStatus.uid) {
-        try {
-          const auth = await chrome.identity.getAuthToken({ interactive: false });
-          const accessToken = typeof auth === 'string' ? auth : auth?.token;
-          if (!accessToken) {
-            await chrome.storage.local.set({ [CLOUD_AUTO_SYNC_STATUS_KEY]: {
-              state: 'error', message: '自动同步无法恢复 Google 授权，请重新开启云同步', updatedAt: Date.now(),
-            } });
-            break;
-          }
-          const login = await cloudController.execute({
-            type: CLOUD_MESSAGE_TYPE, action: 'google-sign-in', accessToken,
-          });
-          if (!login.ok) {
-            console.warn('LunaTOC automatic cloud re-authentication failed:', login.error);
-            break;
-          }
-        } catch {
-          // The user may need to enable sync again if Chrome has no cached consent.
-          await chrome.storage.local.set({ [CLOUD_AUTO_SYNC_STATUS_KEY]: {
-            state: 'error', message: '自动同步无法恢复 Google 授权，请重新开启云同步', updatedAt: Date.now(),
-          } });
-          break;
-        }
+      if (!authStatus.ok || authStatus.configured !== true || !authStatus.uid) {
+        await chrome.storage.local.set({ [CLOUD_AUTO_SYNC_STATUS_KEY]: {
+          state: 'error', message: '邮箱验证会话已失效，请在设置页重新验证邮箱', updatedAt: Date.now(),
+        } });
+        break;
       }
       const owners = await findVerifiedChatGptOwners();
       for (const ownerId of owners) {
@@ -297,7 +277,7 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
   if (!message || typeof message !== 'object' ||
       (message as { type?: unknown }).type !== CLOUD_MESSAGE_TYPE) return;
   // A content script is an extension sender too: only the actual options page
-  // is authorized to pass credentials or trigger cross-device transfers.
+  // is authorized to pass one-time email codes or trigger cross-device transfers.
   const optionsUrl = chrome.runtime.getURL('src/options/options.html');
   if (sender.id !== chrome.runtime.id || sender.url !== optionsUrl) {
     sendResponse({ ok: false, error: 'Firebase 操作只允许从扩展设置页执行' });
