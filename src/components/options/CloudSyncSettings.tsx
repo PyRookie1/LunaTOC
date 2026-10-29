@@ -107,6 +107,10 @@ export function CloudSyncSettings({ accountId }: { accountId: string }): React.J
       if (!(await chrome.permissions.request({ origins: firebaseOrigins }))) {
         throw new Error('未授权 Firebase 网络访问；云同步保持关闭，本地功能不受影响');
       }
+      if (uid && emailVerified) {
+        await initialSync();
+        return;
+      }
       setRequesting(true);
       setMessage('请使用 LunaTOC 邮箱与密码登录；首次注册需先通过邮件验证地址。');
     });
