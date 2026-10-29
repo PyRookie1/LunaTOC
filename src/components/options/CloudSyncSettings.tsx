@@ -197,6 +197,14 @@ export function CloudSyncSettings({ accountId }: { accountId: string }): React.J
                   onClick={() => { setRegistering(!registering); setPassword(''); }}>
                   {registering ? '已有账号？返回登录' : '没有账号？注册 LunaTOC'}
                 </button>
+                {!registering && (
+                  <button type="button" className="settings-backup-button"
+                    disabled={busy || !email}
+                    onClick={() => void run(async () => {
+                      const result = await command({ action: 'reset-password', email });
+                      setMessage(result.message);
+                    })}>忘记密码？发送重置邮件</button>
+                )}
               </>
             )}
             {uid && (
