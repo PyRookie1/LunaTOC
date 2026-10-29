@@ -1,4 +1,4 @@
-/** Opt-in automatic sync authenticated with a Firebase passwordless email link. */
+/** Opt-in automatic sync authenticated with verified LunaTOC email/password accounts. */
 import { useEffect, useState } from 'react';
 import {
   CLOUD_AUTO_SYNC_STATUS_KEY, CLOUD_MESSAGE_TYPE,
@@ -25,7 +25,9 @@ export function CloudSyncSettings({ accountId }: { accountId: string }): React.J
   const [enabled, setEnabled] = useState(false);
   const [requesting, setRequesting] = useState(false);
   const [email, setEmail] = useState('');
-  const [link, setLink] = useState('');
+  const [password, setPassword] = useState('');
+  const [registering, setRegistering] = useState(false);
+  const [emailVerified, setEmailVerified] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -39,8 +41,8 @@ export function CloudSyncSettings({ accountId }: { accountId: string }): React.J
       setUid(status.uid ?? '');
       setEnabled(status.autoSyncEnabled === true);
       setLastSyncStatus(status.autoSyncStatus ?? null);
-      if (status.pendingEmail) {
-        setEmail(status.pendingEmail);
+      setEmailVerified(status.emailVerified === true);
+      if (status.uid && status.emailVerified !== true && status.autoSyncEnabled !== true) {
         setRequesting(true);
       }
       setStatusLoaded(true);
@@ -84,6 +86,7 @@ export function CloudSyncSettings({ accountId }: { accountId: string }): React.J
     const result = await command({ action: 'set-auto-sync', enabled: true });
     setEnabled(true);
     setRequesting(false);
+    setEmailVerified(true);
     setMessage(result.message + '；当前 ChatGPT 账号已完成首次同步');
   }
 
@@ -95,7 +98,8 @@ export function CloudSyncSettings({ accountId }: { accountId: string }): React.J
         setEnabled(false);
         setRequesting(false);
         setUid('');
-        setLink('');
+        setPassword('');
+        setEmailVerified(false);
         setMessage(result.message);
         return;
       }
@@ -103,8 +107,12 @@ export function CloudSyncSettings({ accountId }: { accountId: string }): React.J
       if (!(await chrome.permissions.request({ origins: firebaseOrigins }))) {
         throw new Error('未授权 Firebase 网络访问；云同步保持关闭，本地功能不受影响');
       }
+      if (uid && emailVerified) {
+        await initialSync();
+        return;
+      }
       setRequesting(true);
-      setMessage('请输入邮箱以接收一次性验证链接；验证成功之前不会上传数据。');
+      setMessage('请使用 LunaTOC 邮箱与密码登录；首次注册需先通过邮件验证地址。');
     });
   }
 
@@ -112,7 +120,7 @@ export function CloudSyncSettings({ accountId }: { accountId: string }): React.J
     <section className="settings-section" aria-labelledby="cloud-sync-heading">
       <div className="settings-section-heading">
         <h2 id="cloud-sync-heading">LunaTOC 云同步（可选）</h2>
-        <p>默认关闭。开启时只需通过邮件链接验证一次邮箱，无需注册账号或设置密码。之后会自动同步已验证 ChatGPT 账号的数据。</p>
+        <p>默认关闭。首次需注册 LunaTOC 邮箱＋密码账号并验证邮箱，之后凭密码登录并同步已验证 ChatGPT 账号的数据。</p>
       </div>
       <div className="settings-card">
         {!statusLoaded && <p role="status" className="settings-backup-description">正在检查官方云同步配置…</p>}
@@ -128,7 +136,7 @@ export function CloudSyncSettings({ accountId }: { accountId: string }): React.J
         <label className="settings-choice settings-no-border">
           <span className="settings-choice-info">
             <strong>自动云同步</strong>
-            <small>开启前需邮件验证；关闭后停止上传，不删除本地或已有云端副本。</small>
+            <small>开启前需完成 LunaTOC 邮箱＋密码登录和邮箱验证；关闭后停止上传，不删除本地或已有云端副本。</small>
           </span>
           <input
             aria-label="开启自动云同步" className="settings-switch-input" type="checkbox"
@@ -139,42 +147,82 @@ export function CloudSyncSettings({ accountId }: { accountId: string }): React.J
         </label>
         {requesting && !enabled && (
           <div className="settings-backup-block">
-            <p className="settings-backup-description">
-              第一步：填写邮箱并发送验证邮件。第二步：在邮件中复制完整的登录链接（不要分享），
-              返回此页面粘贴。不要直接点击邮件链接，以免浏览器中的网页处理该一次性验证码。
-            </p>
-            <label>验证邮箱
-              <input className="settings-account-select" type="email" autoComplete="email"
-                value={email} disabled={busy}
-                onChange={(event) => setEmail(event.currentTarget.value.trim())} />
-            </label>
-            <button type="button" className="settings-backup-button"
-              disabled={busy || !email}
-              onClick={() => void run(async () => {
-                const result = await command({ action: 'send-email-link', email });
-                setMessage(result.message);
-              })}>发送验证邮件</button>
-            <label>邮件中的完整验证链接
-              <input className="settings-account-select" type="url" autoComplete="off"
-                value={link} disabled={busy} placeholder="https://…firebaseapp.com/…"
-                onChange={(event) => setLink(event.currentTarget.value)} />
-            </label>
-            <button type="button" className="settings-backup-button"
-              disabled={busy || !email || !link}
-              onClick={() => void run(async () => {
-                const result = await command({ action: 'complete-email-link', email, link });
-                setUid(result.uid ?? '');
-                setLink('');
-                await initialSync();
-              })}>验证链接并开启同步</button>
+            {uid && !emailVerified ? (
+              <>
+                <p className="settings-backup-description">
+                  LunaTOC 账号已登录，但邮箱尚未验证。请打开注册验证邮件，点击确认链接，然后回到这里检查。
+                </p>
+                <button type="button" className="settings-backup-button" disabled={busy}
+                  onClick={() => void run(async () => {
+                    const result = await command({ action: 'check-verification' });
+                    setEmailVerified(result.emailVerified === true);
+                    if (result.emailVerified) await initialSync();
+                    else setMessage(result.message);
+                  })}>我已完成邮箱验证，检查并开启同步</button>
+                <button type="button" className="settings-backup-button" disabled={busy}
+                  onClick={() => void run(async () => {
+                    const result = await command({ action: 'resend-verification' });
+                    setMessage(result.message);
+                  })}>重新发送验证邮件</button>
+              </>
+            ) : (
+              <>
+                <p className="settings-backup-description">
+                  {registering ? '注册 LunaTOC 云账号（首次需要确认邮箱）。' : '使用已有 LunaTOC 云账号登录。'}
+                  密码仅发送给 Firebase Authentication 进行验证，不保存在扩展设置中。
+                </p>
+                <label>LunaTOC 账号邮箱
+                  <input className="settings-account-select" type="email" autoComplete="email"
+                    value={email} disabled={busy}
+                    onChange={(event) => setEmail(event.currentTarget.value.trim())} />
+                </label>
+                <label>密码（至少 12 位）
+                  <input className="settings-account-select" type="password"
+                    autoComplete={registering ? 'new-password' : 'current-password'}
+                    value={password} disabled={busy}
+                    onChange={(event) => setPassword(event.currentTarget.value)} />
+                </label>
+                <button type="button" className="settings-backup-button"
+                  disabled={busy || !email || password.length < 12}
+                  onClick={() => void run(async () => {
+                    const action = registering ? 'register' : 'login';
+                    const result = await command({ action, email, password });
+                    setPassword('');
+                    setUid(result.uid ?? '');
+                    setEmailVerified(result.emailVerified === true);
+                    if (result.emailVerified) await initialSync();
+                    else setMessage(result.message);
+                  })}>{registering ? '注册 LunaTOC 账号' : '登录并开启云同步'}</button>
+                <button type="button" className="settings-backup-button" disabled={busy}
+                  onClick={() => { setRegistering(!registering); setPassword(''); }}>
+                  {registering ? '已有账号？返回登录' : '没有账号？注册 LunaTOC'}
+                </button>
+                {!registering && (
+                  <button type="button" className="settings-backup-button"
+                    disabled={busy || !email}
+                    onClick={() => void run(async () => {
+                      const result = await command({ action: 'reset-password', email });
+                      setMessage(result.message);
+                    })}>忘记密码？发送重置邮件</button>
+                )}
+              </>
+            )}
+            {uid && emailVerified && (
+              <button type="button" className="settings-backup-button" disabled={busy}
+                onClick={() => void run(initialSync)}>重试首次云同步</button>
+            )}
             {uid && (
               <button type="button" className="settings-backup-button" disabled={busy}
-                onClick={() => void run(initialSync)}>重试首次同步</button>
+                onClick={() => void run(async () => {
+                  const result = await command({ action: 'sign-out' });
+                  setUid(''); setEmailVerified(false); setRequesting(false); setPassword('');
+                  setMessage(result.message);
+                })}>退出当前 LunaTOC 云账号</button>
             )}
           </div>
         )}
         <p className="settings-backup-description">
-          状态：{busy ? '正在处理…' : enabled ? '自动同步已开启' : requesting ? '等待邮箱验证' : '云同步已关闭'}
+          状态：{busy ? '正在处理…' : enabled ? '自动同步已开启' : requesting ? (uid && !emailVerified ? '等待邮箱验证' : '等待 LunaTOC 登录') : '云同步已关闭'}
         </p>
         {message && <p role="status" className="settings-backup-status">{message}</p>}
         {lastSyncStatus && enabled && (

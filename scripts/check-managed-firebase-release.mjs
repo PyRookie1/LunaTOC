@@ -9,8 +9,8 @@ if (!/^[a-z][a-z0-9-]{4,62}$/.test(projectId) ||
     apiKey.includes('placeholder')) {
   console.error('LunaTOC 1.0.0 release BLOCKED: maintainer-owned Firebase project is not configured.');
   console.error('Set repository variables LUNATOC_FIREBASE_PROJECT_ID, LUNATOC_FIREBASE_WEB_API_KEY and LUNATOC_FIREBASE_AUTH_DOMAIN.');
-  console.error('Deploy firestore.rules, enable Email/Password and Email link sign-in, authorize the Hosting domain, and run live smoke tests.');
+  console.error('Deploy firestore.rules, enable Email/Password sign-in, disable passwordless Email link, require email verification, authorize the Hosting domain, and run live smoke tests.');
   process.exitCode = 1;
 } else {
-  console.log('LunaTOC Firebase email-link configuration is present. Live smoke test is still required.');
+  console.log('LunaTOC Firebase email/password configuration is present. Live signup, verification and sync smoke tests are still required.');
 }
