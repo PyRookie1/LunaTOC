@@ -177,7 +177,7 @@ test('Chromium MV3: TOC, search, layout, SPA and failure paths',{timeout:150000}
     });
 
     await t.test('right-clicking a saved Tips item offers clear-all',async()=>{
-      const promptKey='lumaToc:myPromptsV1';
+      const promptKey='lunatoc:prompts:v1';
       await worker.evaluate(async key=>{
         const current=(await chrome.storage.local.get(key))[key]??[];
         await chrome.storage.local.set({[key]:[...current,{
@@ -215,7 +215,7 @@ test('Chromium MV3: TOC, search, layout, SPA and failure paths',{timeout:150000}
       }finally{await settings.close();}
     });
 
-    await t.test('opt-in cloud UI follows bundled config and ignores legacy backend settings',async()=>{
+    await t.test('opt-in cloud UI follows bundled config and ignores untrusted backend settings',async()=>{
       const settings=await context.newPage();
       try{
         const optionsPage=await worker.evaluate(()=>chrome.runtime.getManifest().options_ui.page);
@@ -232,7 +232,7 @@ test('Chromium MV3: TOC, search, layout, SPA and failure paths',{timeout:150000}
           const unavailable=await cloud.getByText('官方云同步尚未完成配置',{exact:false}).count()>0;
           return !unavailable;
         };
-        const configuredBeforeLegacySetting=await waitForManagedConfigState();
+        const configuredBeforeUntrustedSetting=await waitForManagedConfigState();
         assert.equal(await cloud.locator('input[type="email"]').count(),0);
         assert.equal(await cloud.locator('input[type="password"]').count(),0);
         assert.equal(await cloud.getByRole('button',{name:'登录',exact:true}).count(),0);
@@ -246,9 +246,9 @@ test('Chromium MV3: TOC, search, layout, SPA and failure paths',{timeout:150000}
           }
         }));
         await settings.reload();
-        const configuredAfterLegacySetting=await waitForManagedConfigState();
-        assert.equal(configuredAfterLegacySetting,configuredBeforeLegacySetting,
-          'legacy storage must not override the maintainer-bundled Firebase config');
+        const configuredAfterUntrustedSetting=await waitForManagedConfigState();
+        assert.equal(configuredAfterUntrustedSetting,configuredBeforeUntrustedSetting,
+          'untrusted storage must not override the maintainer-bundled Firebase config');
         assert.equal(await cloud.getByText('Firebase 项目 ID').count(),0);
         assert.equal(await cloud.getByText('Firebase Web API Key').count(),0);
         assert.equal(await cloud.locator('input[type="email"]').count(),0);
@@ -268,7 +268,7 @@ test('Chromium MV3: TOC, search, layout, SPA and failure paths',{timeout:150000}
 
 
     await t.test('account-bound aliases ignore forged identity and hide across account changes',{timeout:25000},async()=>{
-      const aliasKey='chatToc:aliases:v1:'+conversationId;
+      const aliasKey='lunatoc:aliases:v1:'+conversationId;
       await worker.evaluate(async key=>chrome.storage.local.set({
         [key]:{ownerId:'fixture-account-a',aliases:{'user-1':'账号 A 私有标题'}}
       }),aliasKey);
@@ -293,8 +293,8 @@ test('Chromium MV3: TOC, search, layout, SPA and failure paths',{timeout:150000}
 
     await t.test('Page-originated deletion messages are ignored; confirmed browser deletion cleans aliases',{timeout:20000},async()=>{
       const routeKey='lunatoc-e2e';
-      const aliasKey='chatToc:aliases:v1:'+routeKey;
-      const fenceKey='chatToc:aliases:deleted:v1:'+routeKey;
+      const aliasKey='lunatoc:aliases:v1:'+routeKey;
+      const fenceKey='lunatoc:aliases:deleted:v1:'+routeKey;
       const record={ownerId:'fixture-account-a',aliases:{'user-1':'请保留此目录别名'}};
       await worker.evaluate(async({aliasKey,fenceKey,record})=>{
         await chrome.storage.local.remove(fenceKey);
@@ -375,9 +375,9 @@ test('Chromium MV3: TOC, search, layout, SPA and failure paths',{timeout:150000}
         const optionsPage=await worker.evaluate(()=>chrome.runtime.getManifest().options_ui.page);
         await settings.goto('chrome-extension://'+extensionId+'/'+optionsPage);
         await worker.evaluate(async()=>chrome.storage.local.set({
-          'lumaToc:myPromptsV1':[{id:'e2e-prompt',ownerId:'fixture-account-a',title:'恢复测试',content:'private test prompt',createdAt:1,updatedAt:2}],
-          'lunaToc:promptUsageV1':{'e2e-prompt':{usageCount:2,lastUsedAt:3}},
-          'chatToc:accountSettings:v1':{
+          'lunatoc:prompts:v1':[{id:'e2e-prompt',ownerId:'fixture-account-a',title:'恢复测试',content:'private test prompt',createdAt:1,updatedAt:2}],
+          'lunatoc:promptUsage:v1':{'e2e-prompt':{usageCount:2,lastUsedAt:3}},
+          'lunatoc:accountSettings:v1':{
             'fixture-account-a':{
               theme:{followChatGPT:false,manualTheme:'light'},
               sidebar:{layoutMode:'overlay',backgroundColor:'default',revealTint:false}
@@ -391,7 +391,7 @@ test('Chromium MV3: TOC, search, layout, SPA and failure paths',{timeout:150000}
         const backup=JSON.parse(readFileSync(filePath,'utf8'));
         assert.equal(backup.data.prompts[0].id,'e2e-prompt');
         assert.equal(backup.data.promptUsage['e2e-prompt'].usageCount,2);
-        await worker.evaluate(async()=>chrome.storage.local.set({'lumaToc:myPromptsV1':[{id:'temporary',ownerId:'fixture-account-a',title:'temporary',content:'temporary',createdAt:1,updatedAt:2}], 'lunaToc:promptUsageV1':{temporary:{usageCount:1,lastUsedAt:3}}}));
+        await worker.evaluate(async()=>chrome.storage.local.set({'lunatoc:prompts:v1':[{id:'temporary',ownerId:'fixture-account-a',title:'temporary',content:'temporary',createdAt:1,updatedAt:2}], 'lunatoc:promptUsage:v1':{temporary:{usageCount:1,lastUsedAt:3}}}));
         await settings.locator('input[type="file"]').setInputFiles({name:'luna-toc-e2e-backup.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(backup))});
         await settings.locator('.settings-backup-preview').waitFor({state:'visible'});
         settings.on('dialog',dialog=>dialog.accept());
@@ -400,17 +400,17 @@ test('Chromium MV3: TOC, search, layout, SPA and failure paths',{timeout:150000}
         const statusAppeared=await status.waitFor({state:'visible',timeout:15000}).then(()=>true).catch(()=>false);
         if(!statusAppeared){
           const bodyText=await settings.locator('body').innerText();
-          const currentPrompts=await worker.evaluate(async()=>chrome.storage.local.get('lumaToc:myPromptsV1'));
+          const currentPrompts=await worker.evaluate(async()=>chrome.storage.local.get('lunatoc:prompts:v1'));
           throw new Error('backup restore status missing; page='+bodyText.slice(-500)+'; storedPrompts='+JSON.stringify(currentPrompts));
         }
         const statusText=await status.innerText();
         assert.match(statusText,/恢复成功/, 'backup restore reported an error: '+statusText);
-        const restored=await worker.evaluate(async()=>chrome.storage.local.get(['lumaToc:myPromptsV1','lunaToc:promptUsageV1','chatToc:accountSettings:v1']));
-        assert.deepEqual(restored['lumaToc:myPromptsV1'].map(prompt=>prompt.id).sort(),['e2e-prompt','temporary']);
-        assert.equal(restored['lunaToc:promptUsageV1'].temporary.usageCount,1);
-        assert.equal(restored['lunaToc:promptUsageV1']['e2e-prompt'].usageCount,2);
-        assert.deepEqual(restored['chatToc:accountSettings:v1']['fixture-account-a'].theme,backup.data.settings['fixture-account-a'].theme);
-        assert.deepEqual(restored['chatToc:accountSettings:v1']['fixture-account-a'].sidebar,backup.data.settings['fixture-account-a'].sidebar);
+        const restored=await worker.evaluate(async()=>chrome.storage.local.get(['lunatoc:prompts:v1','lunatoc:promptUsage:v1','lunatoc:accountSettings:v1']));
+        assert.deepEqual(restored['lunatoc:prompts:v1'].map(prompt=>prompt.id).sort(),['e2e-prompt','temporary']);
+        assert.equal(restored['lunatoc:promptUsage:v1'].temporary.usageCount,1);
+        assert.equal(restored['lunatoc:promptUsage:v1']['e2e-prompt'].usageCount,2);
+        assert.deepEqual(restored['lunatoc:accountSettings:v1']['fixture-account-a'].theme,backup.data.settings['fixture-account-a'].theme);
+        assert.deepEqual(restored['lunatoc:accountSettings:v1']['fixture-account-a'].sidebar,backup.data.settings['fixture-account-a'].sidebar);
       }finally{await settings.close();}
     });
   }catch(error){

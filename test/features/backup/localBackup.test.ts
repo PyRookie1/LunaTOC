@@ -10,11 +10,11 @@ import { createPromptWriteCoordinator, PROMPT_COMMIT_TYPE } from '@/features/myP
 import { createSerialWriteQueue } from '@/features/storage/serialWriteQueue';
 import { ACCOUNT_EMAILS_KEY } from '@/features/storage/accountSettings';
 
-const PROMPTS = 'lumaToc:myPromptsV1';
-const USAGE = 'lunaToc:promptUsageV1';
-const SETTINGS = 'chatToc:accountSettings:v1';
-const ALIAS = 'chatToc:aliases:v1:conversation-123';
-const EXTRA_ALIAS = 'chatToc:aliases:v1:conversation-456';
+const PROMPTS = 'lunatoc:prompts:v1';
+const USAGE = 'lunatoc:promptUsage:v1';
+const SETTINGS = 'lunatoc:accountSettings:v1';
+const ALIAS = 'lunatoc:aliases:v1:conversation-123';
+const EXTRA_ALIAS = 'lunatoc:aliases:v1:conversation-456';
 const prompt = (id: string, title = id, ownerId = 'account-1') => ({
   id, ownerId, title, content: 'important prompt', createdAt: 1, updatedAt: 2,
 });
@@ -328,7 +328,7 @@ describe('LunaTOC local backup', () => {
     ]]);
     const box = storageHarness({ [PROMPTS]: [prompt('saved')] });
     await restoreLocalBackup(incoming, 'merge', box.storage);
-    expect(box.state['chatToc:aliases:v1:__proto__']).toEqual({
+    expect(box.state['lunatoc:aliases:v1:__proto__']).toEqual({
       ownerId: 'account-1', aliases: { 'message-1': 'safe value' },
     });
     expect(Object.getPrototypeOf({})).toBe(Object.prototype);
@@ -350,8 +350,8 @@ describe('LunaTOC local backup', () => {
     expect(box.set).not.toHaveBeenCalled();
   });
   it('revives only explicitly restored conversation aliases and removes deletion fence', async () => {
-    const tombstone = 'chatToc:aliases:deleted:v1:conversation-123';
-    const unrelated = 'chatToc:aliases:deleted:v1:conversation-999';
+    const tombstone = 'lunatoc:aliases:deleted:v1:conversation-123';
+    const unrelated = 'lunatoc:aliases:deleted:v1:conversation-999';
     const box = storageHarness({ [tombstone]: true, [unrelated]: true });
     await restoreLocalBackup(sample(), 'replace', box.storage);
     expect(box.state[ALIAS]).toEqual(sample().data.aliases['conversation-123']);
@@ -360,7 +360,7 @@ describe('LunaTOC local backup', () => {
   });
 
   it('restores a deletion fence when explicit revival fails midway', async () => {
-    const tombstone = 'chatToc:aliases:deleted:v1:conversation-123';
+    const tombstone = 'lunatoc:aliases:deleted:v1:conversation-123';
     const box = storageHarness({ [tombstone]: true });
     const original = clone(box.state);
     box.failRemove();
