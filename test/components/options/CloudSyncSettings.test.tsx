@@ -16,10 +16,10 @@ beforeEach(() => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
   mocks.sendMessage.mockReset().mockImplementation(async (message: { action: string }) => {
     if (message.action === 'status') return { ok: true, configured: true, autoSyncEnabled: false };
-    if (message.action === 'send-email-link') return {
-      ok: true, message: '验证邮件已发送', pendingEmail: 'user@example.com',
-    };
-    if (message.action === 'complete-email-link') return { ok: true, uid: 'firebase-user', message: '邮箱验证成功' };
+    if (message.action === 'register') return { ok: true, uid: 'firebase-user', emailVerified: false, message: '请验证邮箱' };
+    if (message.action === 'login') return { ok: true, uid: 'firebase-user', emailVerified: true, message: '登录成功' };
+    if (message.action === 'check-verification') return { ok: true, uid: 'firebase-user', emailVerified: true, message: '邮箱已验证' };
+    if (message.action === 'resend-verification') return { ok: true, message: '验证邮件已发送' };
     if (message.action === 'sync') return { ok: true, message: '同步完成' };
     if (message.action === 'set-auto-sync') return { ok: true, autoSyncEnabled: true, message: '云同步已开启' };
     if (message.action === 'sign-out') return { ok: true, message: '云同步已关闭' };
@@ -64,32 +64,45 @@ async function enableForm(): Promise<void> {
   await act(async () => element<HTMLInputElement>('input[aria-label="开启自动云同步"]').click());
 }
 
-describe('CloudSyncSettings passwordless opt-in', () => {
-  it('starts disabled and has no account registration, password or Chrome Identity flow', async () => {
+describe('CloudSyncSettings verified LunaTOC password accounts', () => {
+  it('starts disabled without credential inputs before user opts in', async () => {
     await render();
     expect(host.querySelector('input[type="email"]')).toBeNull();
     expect(host.querySelector('input[type="password"]')).toBeNull();
-    expect(host.textContent).not.toContain('注册同步账号');
     expect(host.textContent).toContain('云同步已关闭');
   });
 
-  it('requests permission, emails a link, verifies the one-time code and starts syncing', async () => {
+  it('logs in with verified email/password then enables initial sync', async () => {
     await render();
     await enableForm();
     expect(mocks.requestPermissions).toHaveBeenCalledTimes(1);
-    expect(host.textContent).toContain('等待邮箱验证');
-    const email = element<HTMLInputElement>('input[type="email"]');
-    await typeInto(email, 'user@example.com');
-    const buttons = Array.from(host.querySelectorAll('button'));
-    await act(async () => buttons.find(b => b.textContent?.includes('发送验证邮件'))?.click());
-    await typeInto(element<HTMLInputElement>('input[type="url"]'),
-      'https://lunatoc-demo.firebaseapp.com/__/auth/action?mode=signIn&oobCode=code&apiKey=public');
+    expect(host.textContent).toContain('等待 LunaTOC 登录');
+    await typeInto(element<HTMLInputElement>('input[type="email"]'), 'user@example.com');
+    await typeInto(element<HTMLInputElement>('input[type="password"]'), 'a-secure-test-password');
     await act(async () => Array.from(host.querySelectorAll('button'))
-      .find(b => b.textContent?.includes('验证链接并开启同步'))?.click());
-    const actions = mocks.sendMessage.mock.calls.map(([arg]) => arg.action);
-    expect(actions).toEqual(['status', 'send-email-link', 'complete-email-link', 'sync', 'set-auto-sync']);
+      .find(b => b.textContent?.includes('登录并开启云同步'))?.click());
+    expect(mocks.sendMessage.mock.calls.map(([arg]) => arg.action))
+      .toEqual(['status', 'login', 'sync', 'set-auto-sync']);
     expect(element<HTMLInputElement>('input[aria-label="开启自动云同步"]').checked).toBe(true);
-    expect(host.textContent).toContain('自动同步已开启');
+    expect(host.querySelector('input[type="password"]')).toBeNull();
+  });
+
+  it('registers an account, waits for verified email, then starts syncing', async () => {
+    await render();
+    await enableForm();
+    await act(async () => Array.from(host.querySelectorAll('button'))
+      .find(b => b.textContent?.includes('注册 LunaTOC'))?.click());
+    await typeInto(element<HTMLInputElement>('input[type="email"]'), 'user@example.com');
+    await typeInto(element<HTMLInputElement>('input[type="password"]'), 'a-secure-test-password');
+    await act(async () => Array.from(host.querySelectorAll('button'))
+      .find(b => b.textContent === '注册 LunaTOC 账号')?.click());
+    expect(host.textContent).toContain('邮箱尚未验证');
+    expect(mocks.sendMessage.mock.calls.map(([arg]) => arg.action))
+      .toEqual(['status', 'register']);
+    await act(async () => Array.from(host.querySelectorAll('button'))
+      .find(b => b.textContent?.includes('我已完成邮箱验证'))?.click());
+    expect(mocks.sendMessage.mock.calls.map(([arg]) => arg.action))
+      .toEqual(['status', 'register', 'check-verification', 'sync', 'set-auto-sync']);
   });
 
   it('cannot enable without Firebase permissions', async () => {
@@ -101,20 +114,26 @@ describe('CloudSyncSettings passwordless opt-in', () => {
     expect(mocks.sendMessage.mock.calls.map(([arg]) => arg.action)).toEqual(['status']);
   });
 
-  it('does not enable auto upload when email verification fails', async () => {
+  it('does not upload if a registered email is still unverified', async () => {
     mocks.sendMessage.mockImplementation(async ({ action }: { action: string }) => {
       if (action === 'status') return { ok: true, configured: true, autoSyncEnabled: false };
-      if (action === 'complete-email-link') return { ok: false, error: 'EXPIRED_OOB_CODE' };
-      return { ok: true, message: 'sent' };
+      if (action === 'register') return { ok: true, uid: 'firebase-user', emailVerified: false, message: '验证邮件已发送' };
+      if (action === 'check-verification') return { ok: true, uid: 'firebase-user', emailVerified: false, message: '邮箱尚未验证' };
+      return { ok: false, error: 'unexpected action' };
     });
     await render();
     await enableForm();
-    await typeInto(element<HTMLInputElement>('input[type="email"]'), 'user@example.com');
-    await typeInto(element<HTMLInputElement>('input[type="url"]'), 'https://some-verified-link/');
     await act(async () => Array.from(host.querySelectorAll('button'))
-      .find(b => b.textContent?.includes('验证链接并开启同步'))?.click());
-    expect(host.textContent).toContain('EXPIRED_OOB_CODE');
+      .find(b => b.textContent?.includes('注册 LunaTOC'))?.click());
+    await typeInto(element<HTMLInputElement>('input[type="email"]'), 'user@example.com');
+    await typeInto(element<HTMLInputElement>('input[type="password"]'), 'a-secure-test-password');
+    await act(async () => Array.from(host.querySelectorAll('button'))
+      .find(b => b.textContent === '注册 LunaTOC 账号')?.click());
+    await act(async () => Array.from(host.querySelectorAll('button'))
+      .find(b => b.textContent?.includes('我已完成邮箱验证'))?.click());
+    expect(host.textContent).toContain('邮箱尚未验证');
     expect(mocks.sendMessage.mock.calls.map(([arg]) => arg.action))
-      .not.toContain('set-auto-sync');
+      .toEqual(['status', 'register', 'check-verification']);
+    expect(element<HTMLInputElement>('input[aria-label="开启自动云同步"]').checked).toBe(true);
   });
 });
