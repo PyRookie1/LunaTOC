@@ -7,7 +7,7 @@
 
 export type ResolvedTheme = 'light' | 'dark';
 
-const RESOLVED_THEME_KEY = 'chatToc:resolvedChatGPTTheme';
+const RESOLVED_THEME_KEY = 'lunatoc:resolvedChatGPTTheme:v1';
 
 /** Returns the theme represented by ChatGPT's root class. */
 export function getResolvedTheme(): ResolvedTheme {

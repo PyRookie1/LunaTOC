@@ -19,9 +19,8 @@ afterEach(() => {
   disposeChatGptSideBySide();
   promptContextMenuController.close();
   vi.useRealTimers();
-  sessionStorage.removeItem('chatTocSidebarPinned');
-  sessionStorage.removeItem('chatToc:activeSidebarLayoutMode');
-  sessionStorage.removeItem('chatTocToggleButtonPosition');
+  sessionStorage.removeItem('lunatoc:sidebarPinned:v1');
+  sessionStorage.removeItem('lunatoc:activeSidebarLayoutMode:v1');
   document.body.textContent = '';
 });
 
