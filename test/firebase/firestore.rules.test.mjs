@@ -24,8 +24,9 @@ const env = await initializeTestEnvironment({
     port: 8080,
   },
 });
-const alice = env.authenticatedContext('firebase-alice');
-const bob = env.authenticatedContext('firebase-bob');
+const alice = env.authenticatedContext('firebase-alice', { email_verified: true });
+const bob = env.authenticatedContext('firebase-bob', { email_verified: true });
+const notVerified = env.authenticatedContext('firebase-alice', { email_verified: false });
 const visitor = env.unauthenticatedContext();
 const path = (uid = 'firebase-alice', account = accountHash) =>
   ['users', uid, 'accounts', account];
@@ -45,6 +46,13 @@ try {
     await assertFails(setDoc(ref, { json: validJson }));
     await assertFails(updateDoc(ref, { json: validJson }));
     await assertFails(deleteDoc(ref));
+  });
+
+  await test('an unverified email cannot access the owner document', async () => {
+    const ref = doc(notVerified.firestore(), ...path());
+    await assertFails(getDoc(ref));
+    await assertFails(setDoc(ref, { json: validJson }));
+    await assertFails(updateDoc(ref, { json: validJson }));
   });
 
   await test('unauthenticated requests cannot access the account document', async () => {
