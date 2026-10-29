@@ -6,7 +6,7 @@ const roots = ['src', 'test', 'docs', 'README.md', 'CHANGELOG.md', 'PRIVACY.md',
   'manifest.json', 'package.json'];
 const patterns = [
   [/LunaTOC-SC|luna-toc-sc/gi, 'obsolete project name'],
-  [/chatToc:|lumaToc:|lunaToc:|luna:chatgpt:runtimeConfig/g, 'non-LunaTOC storage namespace'],
+  [/chatToc|lumaToc|lunaToc:|luna:chatgpt:runtimeConfig/g, 'non-LunaTOC storage namespace'],
   [/LEGACY_CHATGPT_RUNTIME_CONFIG_STORAGE_KEY|chatGptRuntimeConfig|LEGACY_PINNED_STORAGE_PREFIX|getLegacyPageKey|chatTocSidebarPinned|chatTocToggleButtonPosition/g, 'previous-release migration'],
   [/旧版本|旧数据|旧记录：未绑定账号|未绑定（旧数据）/g, 'previous-release product copy'],
   [/\bB0(?:01|33|34)\b/g, 'historical bug number'],
