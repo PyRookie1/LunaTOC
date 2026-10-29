@@ -10,7 +10,7 @@ import {
   type PromptUsageCommitResponse,
 } from './promptUsageWriteCoordinator';
 
-const STORAGE_KEY = 'lunaToc:promptUsageV1';
+const STORAGE_KEY = 'lunatoc:promptUsage:v1';
 export interface PromptUsage { usageCount: number; lastUsedAt: number; }
 export type PromptUsageMap = Record<string, PromptUsage>;
 export interface PromptUsageStore {

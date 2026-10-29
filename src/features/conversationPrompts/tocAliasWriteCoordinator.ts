@@ -3,8 +3,8 @@ import { isPermanentConversationId } from '@/navigation/lifecycle/protocol';
 import { createSerialWriteQueue, type SerialWriteQueue } from '@/features/storage/serialWriteQueue';
 import { isValidAccountOwnerId } from '@/features/storage/accountSettings';
 
-export const TOC_ALIAS_PREFIX = 'chatToc:aliases:v1:';
-export const TOC_ALIAS_DELETED_PREFIX = 'chatToc:aliases:deleted:v1:';
+export const TOC_ALIAS_PREFIX = 'lunatoc:aliases:v1:';
+export const TOC_ALIAS_DELETED_PREFIX = 'lunatoc:aliases:deleted:v1:';
 export const TOC_ALIAS_COMMIT_TYPE = 'LUNA_TOC_ALIAS_COMMIT_V1';
 
 export interface TocAliasRecord {

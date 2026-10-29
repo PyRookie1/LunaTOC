@@ -186,8 +186,7 @@ const cloudController = createCloudController(
   chrome.storage.local, chrome.storage.local, storageWriteQueue, hasVerifiedChatGptOwner
 );
 
-// Automatic sync is opt-in. Local changes are uploaded only after a Google
-// identity has authenticated with the maintainer's Firebase project.
+// Automatic sync is opt-in. Local changes are uploaded only after an email-link Firebase identity has authenticated with the maintainer's project.
 async function findVerifiedChatGptOwners(): Promise<string[]> {
   let tabs: chrome.tabs.Tab[];
   try {

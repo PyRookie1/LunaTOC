@@ -69,7 +69,7 @@ function firebaseHarness() {
 }
 const initialLocal = () => ({ [PROMPT_STORAGE_KEY]: [item],
   [ACCOUNT_SETTINGS_KEY]: { [owner]: settings },
-  'lunaToc:promptUsageV1': { 'tip-a': { usageCount: 5, lastUsedAt: 10 } },
+  'lunatoc:promptUsage:v1': { 'tip-a': { usageCount: 5, lastUsedAt: 10 } },
 });
 async function ready(local: ReturnType<typeof storage>, cloud: ReturnType<typeof firebaseHarness>,
   verified = async () => true) {
@@ -86,7 +86,7 @@ async function ready(local: ReturnType<typeof storage>, cloud: ReturnType<typeof
   return { service, sessions };
 }
 describe('Firebase REST account sync', () => {
-  it('rejects user-specified Firebase backend and ignores legacy config', async () => {
+  it('rejects user-specified Firebase backend without a managed project configuration', async () => {
     const local = storage({ 'lunatoc:cloud:config:v1': {
       projectId: 'attacker-project', apiKey: 'AIzaSy-Attacker-public-key',
     } });
@@ -171,7 +171,7 @@ describe('Firebase REST account sync', () => {
     expect(written.prompts).toEqual([item]);
     expect(written).not.toHaveProperty('promptUsage');
     expect(JSON.stringify(written)).not.toContain('refresh-token');
-    expect(local.state['lunaToc:promptUsageV1']).toEqual({ 'tip-a': { usageCount: 5, lastUsedAt: 10 } });
+    expect(local.state['lunatoc:promptUsage:v1']).toEqual({ 'tip-a': { usageCount: 5, lastUsedAt: 10 } });
     expect(await service.execute(request('sync', { ownerId: owner }))).toMatchObject({ ok: true });
     expect(remote.writes()).toBe(1);
   });

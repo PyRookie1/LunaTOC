@@ -38,7 +38,7 @@ export function LocalAliasCleanupSettings(): React.JSX.Element {
     if (!window.confirm(
       '仅清理浏览器本地目录别名，不会删除 ChatGPT 会话。\n' +
       '会话 ID：' + item.routeKey + '\n' +
-      '关联账号：' + (item.record.ownerId ?? '旧记录：未绑定账号') + '\n' +
+      '关联账号：' + (item.record.ownerId) + '\n' +
       '别名数量：' + item.aliasCount + '\n\n' +
       '确认已保存可恢复的本地备份，并确定这是不再需要的会话？'
     )) return;
@@ -101,7 +101,7 @@ export function LocalAliasCleanupSettings(): React.JSX.Element {
                       <a href={`https://chatgpt.com/c/${encodeURIComponent(item.routeKey)}`}
                         target="_blank" rel="noopener noreferrer">{item.routeKey}</a>
                       {' · '}别名 {item.aliasCount} 条
-                      {' · '}账号 {item.record.ownerId ?? '未绑定（旧数据）'}
+                      {' · '}账号 {item.record.ownerId}
                     </p>
                     <button className="settings-backup-button" type="button"
                       disabled={busy || !hasBackup} onClick={() => void clean(item)}>

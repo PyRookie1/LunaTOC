@@ -6,7 +6,7 @@ import { createPromptUsageWriteCoordinator, PROMPT_USAGE_COMMIT_TYPE } from '@/f
 import { createSerialWriteQueue } from '@/features/storage/serialWriteQueue';
 import type { SavedPrompt } from '@/features/myPrompts/promptStore';
 
-const USAGE = 'lunaToc:promptUsageV1';
+const USAGE = 'lunatoc:promptUsage:v1';
 const prompt: SavedPrompt = { id: 'saved', ownerId: 'account-1', title: 'Saved', content: 'Text', createdAt: 1, updatedAt: 1 };
 const clone = <T>(x: T): T => JSON.parse(JSON.stringify(x)) as T;
 const clear = () => ({ type: PROMPT_COMMIT_TYPE, action: 'clear-account' as const, ownerId: 'account-1' });

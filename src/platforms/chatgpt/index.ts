@@ -169,7 +169,7 @@ export const chatGptPlatform: Platform = {
     logEvent: logChatGptNavigationEvent,
     isJumpVizDebugEnabled,
   },
-  runtimeConfigKey: 'luna:chatgpt:runtimeConfig',
+  runtimeConfigKey: 'lunatoc:chatgpt:runtimeConfig:v1',
   theme: {
     getResolvedTheme,
     observe: observeTheme,

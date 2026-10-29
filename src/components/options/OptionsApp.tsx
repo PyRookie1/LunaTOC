@@ -59,7 +59,7 @@ export function OptionsApp(): React.JSX.Element {
       areaName: chrome.storage.AreaName
     ): void => {
       if (areaName !== 'local') return;
-      if ('luna:chatgpt:runtimeConfig' in changes) refreshRuntimeConfig();
+      if ('lunatoc:chatgpt:runtimeConfig:v1' in changes) refreshRuntimeConfig();
       if (ACCOUNT_SETTINGS_KEY in changes || ACCOUNT_EMAILS_KEY in changes) {
         void refreshAccounts().catch(() => {
           if (!cancelled) setSaveError('无法刷新账号设置列表。');

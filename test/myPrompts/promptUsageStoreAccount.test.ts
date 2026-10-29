@@ -31,7 +31,7 @@ beforeEach(() => {
         ) => {
           const result = Array.isArray(keys) || keys === PROMPT_STORAGE_KEY
             ? { [PROMPT_STORAGE_KEY]: prompts }
-            : { 'lunaToc:promptUsageV1': usage };
+            : { 'lunatoc:promptUsage:v1': usage };
           if (callback) { callback(result); return; }
           return Promise.resolve(result);
         }),
