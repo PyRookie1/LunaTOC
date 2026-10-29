@@ -23,6 +23,10 @@ import { createToolbarWarningController } from '@/features/contractAlert/toolbar
 import { installRemoteDeletionObserver } from '@/background/remoteDeletionObserver';
 import { createCloudController, CLOUD_MESSAGE_TYPE, CLOUD_AUTO_SYNC_KEY, CLOUD_AUTO_SYNC_STATUS_KEY } from '@/features/cloud/cloudController';
 import { ACCOUNT_SETTINGS_KEY, GET_ACTIVE_ACCOUNT_OWNER_MESSAGE, isValidAccountOwnerId } from '@/features/storage/accountSettings';
+import {
+  CLOUD_RETRY_ALARM, CLOUD_RETRY_STATE_KEY, CLOUD_POLL_ALARM, CLOUD_POLL_MINUTES,
+  cloudRetryDelayMs, isTransientCloudError, parseCloudRetryState,
+} from '@/features/cloud/cloudRetry';
 
 // Observe only actual successful ChatGPT delete/visibility-removal mutations in the browser network layer.
 // The observer never stores request bodies and only sends a route ID to the originating tab.
@@ -233,9 +237,50 @@ async function findVerifiedChatGptOwners(): Promise<string[]> {
   return [...owners];
 }
 
+/**
+ * Alarms, rather than in-memory timeouts alone, keep pending cloud work alive
+ * across Manifest V3 service-worker suspension and browser restarts.
+ */
+async function armCloudRetry(attempt: number): Promise<void> {
+  const enabled = await chrome.storage.local.get(CLOUD_AUTO_SYNC_KEY);
+  if (enabled[CLOUD_AUTO_SYNC_KEY] !== true) return;
+  const nextRetryAt = Date.now() + cloudRetryDelayMs(attempt);
+  await chrome.storage.local.set({
+    [CLOUD_RETRY_STATE_KEY]: { pending: true, attempt: Math.min(attempt, 100), nextRetryAt },
+  });
+  await chrome.alarms.create(CLOUD_RETRY_ALARM, { when: nextRetryAt });
+}
+
+async function clearCloudRetry(): Promise<void> {
+  await chrome.storage.local.remove(CLOUD_RETRY_STATE_KEY);
+  await chrome.alarms.clear(CLOUD_RETRY_ALARM);
+}
+
+async function refreshCloudPolling(): Promise<void> {
+  const enabled = await chrome.storage.local.get(CLOUD_AUTO_SYNC_KEY);
+  if (enabled[CLOUD_AUTO_SYNC_KEY] === true) {
+    await chrome.alarms.create(CLOUD_POLL_ALARM, {
+      delayInMinutes: CLOUD_POLL_MINUTES,
+      periodInMinutes: CLOUD_POLL_MINUTES,
+    });
+    // Chrome may clear alarms after restart or extension updates. Rehydrate
+    // pending work from persistent storage instead of trusting alarm persistence.
+    const stored = await chrome.storage.local.get(CLOUD_RETRY_STATE_KEY);
+    const pending = parseCloudRetryState(stored[CLOUD_RETRY_STATE_KEY]);
+    if (pending) {
+      await chrome.alarms.create(CLOUD_RETRY_ALARM, {
+        when: Math.max(Date.now() + 1_000, pending.nextRetryAt),
+      });
+    }
+  } else {
+    await chrome.alarms.clear(CLOUD_POLL_ALARM);
+    await clearCloudRetry();
+  }
+}
+
 let autoSyncRunning = false;
 let autoSyncPending = false;
-async function runAutomaticSync(): Promise<void> {
+async function runAutomaticSync(force = false): Promise<void> {
   if (autoSyncRunning) {
     autoSyncPending = true;
     return;
@@ -246,8 +291,10 @@ async function runAutomaticSync(): Promise<void> {
       autoSyncPending = false;
       const enabled = await chrome.storage.local.get(CLOUD_AUTO_SYNC_KEY);
       if (enabled[CLOUD_AUTO_SYNC_KEY] !== true) break;
-      // Firebase email-link identity is persisted in extension local storage;
-      // refresh tokens are rotated by cloudController without browser popups.
+      const stored = await chrome.storage.local.get(CLOUD_RETRY_STATE_KEY);
+      const retry = parseCloudRetryState(stored[CLOUD_RETRY_STATE_KEY]);
+      // Respect backoff after transient failures, including after worker restart.
+      if (!force && retry && retry.nextRetryAt > Date.now()) break;
       const authStatus = await cloudController.execute({ type: CLOUD_MESSAGE_TYPE, action: 'status' });
       if (!authStatus.ok || authStatus.configured !== true || !authStatus.uid) {
         await chrome.storage.local.set({ [CLOUD_AUTO_SYNC_STATUS_KEY]: {
@@ -256,26 +303,41 @@ async function runAutomaticSync(): Promise<void> {
         break;
       }
       const owners = await findVerifiedChatGptOwners();
+      const errors: string[] = [];
+      let transientFailure = false;
       for (const ownerId of owners) {
         const result = await cloudController.execute({
           type: CLOUD_MESSAGE_TYPE, action: 'sync', ownerId,
         });
-        await chrome.storage.local.set({
-          [CLOUD_AUTO_SYNC_STATUS_KEY]: {
-            state: result.ok ? 'success' : 'error',
-            message: result.ok ? result.message : result.error,
-            updatedAt: Date.now(),
-          },
-        });
         if (!result.ok) {
-          // Keep local work intact. Automatic failures never erase local data.
+          errors.push(result.error);
+          transientFailure ||= isTransientCloudError(result.error);
           console.warn('LunaTOC automatic cloud sync skipped:', result.error);
         }
       }
+      const failed = errors.length > 0;
+      if (owners.length > 0) {
+        await chrome.storage.local.set({
+          [CLOUD_AUTO_SYNC_STATUS_KEY]: {
+            state: failed ? 'error' : 'success',
+            message: failed ? errors[0] : '已完成所有已验证 ChatGPT 账号的同步',
+            updatedAt: Date.now(),
+          },
+        });
+      }
+      if (transientFailure) {
+        await armCloudRetry(Math.min((retry?.attempt ?? 0) + 1, 100));
+      } else if (!failed && owners.length > 0) {
+        await clearCloudRetry();
+      } else if (owners.length === 0 && retry) {
+        // Stay pending while the owner has no authenticated ChatGPT tab.
+        await armCloudRetry(Math.min(retry.attempt + 1, 100));
+      }
+      force = false;
     } while (autoSyncPending);
   } finally {
     autoSyncRunning = false;
-    if (autoSyncPending) void runAutomaticSync();
+    if (autoSyncPending) void runAutomaticSync().catch(() => {});
   }
 }
 
@@ -285,30 +347,42 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   const relevant = Object.entries(changes).some(([key, change]) => {
     const accountData = key === PROMPT_STORAGE_KEY || key === ACCOUNT_SETTINGS_KEY ||
       key.startsWith(TOC_ALIAS_PREFIX) || key.startsWith(TOC_ALIAS_DELETED_PREFIX);
-    // applySnapshot writes account data even if unchanged. Do not recursively
-    // schedule another cloud fetch for identical local-storage values.
     return accountData && JSON.stringify(change.oldValue) !== JSON.stringify(change.newValue);
   });
   if (!relevant) return;
-  if (autoSyncDebounce) clearTimeout(autoSyncDebounce);
-  // Collapse bursts of local prompt/alias/setting updates into a single sync.
-  autoSyncDebounce = setTimeout(() => {
-    autoSyncDebounce = undefined;
-    void runAutomaticSync();
-  }, 1000);
+  // Persist a retry alarm before the short debounce. The alarm survives worker suspension.
+  void (async () => {
+    const enabled = await chrome.storage.local.get(CLOUD_AUTO_SYNC_KEY);
+    if (enabled[CLOUD_AUTO_SYNC_KEY] !== true) return;
+    const stored = await chrome.storage.local.get(CLOUD_RETRY_STATE_KEY);
+    if (!parseCloudRetryState(stored[CLOUD_RETRY_STATE_KEY])) await armCloudRetry(0);
+    if (autoSyncDebounce) clearTimeout(autoSyncDebounce);
+    autoSyncDebounce = setTimeout(() => {
+      autoSyncDebounce = undefined;
+      void runAutomaticSync(true).catch(() => {});
+    }, 1000);
+  })().catch(() => {});
 });
 
-// Opening or switching to ChatGPT makes that account eligible for sync once
-// the content script can verify its identity.
-chrome.tabs.onActivated.addListener(() => { void runAutomaticSync(); });
+// A verified ChatGPT tab makes its owner eligible for upload and download.
+chrome.tabs.onActivated.addListener(() => { void runAutomaticSync().catch(() => {}); });
 chrome.tabs.onUpdated.addListener((_tabId, changeInfo, tab) => {
   if (changeInfo.status === 'complete' &&
       /^https:\/\/(?:chatgpt\.com|chat\.openai\.com)(?:\/|$)/.test(tab.url ?? '')) {
-    void runAutomaticSync();
+    void runAutomaticSync().catch(() => {});
   }
 });
-chrome.runtime.onStartup.addListener(() => { void runAutomaticSync(); });
-chrome.runtime.onInstalled.addListener(() => { void runAutomaticSync(); });
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === CLOUD_RETRY_ALARM || alarm.name === CLOUD_POLL_ALARM) {
+    void runAutomaticSync().catch(() => {});
+  }
+});
+chrome.runtime.onStartup.addListener(() => {
+  void refreshCloudPolling().then(() => runAutomaticSync()).catch(() => {});
+});
+chrome.runtime.onInstalled.addListener(() => {
+  void refreshCloudPolling().then(() => runAutomaticSync()).catch(() => {});
+});
 
 chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
   if (!message || typeof message !== 'object' ||
@@ -320,8 +394,19 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
     sendResponse({ ok: false, error: 'Firebase 操作只允许从扩展设置页执行' });
     return false;
   }
-  void cloudController.execute(message).then(sendResponse, () =>
-    sendResponse({ ok: false, error: 'Firebase 服务暂不可用' })
-  );
+  void cloudController.execute(message).then(async (result) => {
+    if (result.ok && ['set-auto-sync', 'sign-out'].includes(String((message as { action?: unknown }).action))) {
+      try {
+        await refreshCloudPolling();
+        if ((message as { enabled?: unknown }).enabled === true) {
+          void runAutomaticSync(true).catch(() => {});
+        }
+      } catch {
+        sendResponse({ ok: false, error: '无法设置 Chrome 同步定时任务；请重新打开扩展设置页' });
+        return;
+      }
+    }
+    sendResponse(result);
+  }, () => sendResponse({ ok: false, error: 'Firebase 服务暂不可用' }));
   return true;
 });
