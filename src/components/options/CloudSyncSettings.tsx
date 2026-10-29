@@ -207,6 +207,10 @@ export function CloudSyncSettings({ accountId }: { accountId: string }): React.J
                 )}
               </>
             )}
+            {uid && emailVerified && (
+              <button type="button" className="settings-backup-button" disabled={busy}
+                onClick={() => void run(initialSync)}>重试首次云同步</button>
+            )}
             {uid && (
               <button type="button" className="settings-backup-button" disabled={busy}
                 onClick={() => void run(async () => {
