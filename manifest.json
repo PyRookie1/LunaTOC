@@ -28,7 +28,8 @@
     },
     "permissions": [
         "storage",
-        "webRequest"
+        "webRequest",
+        "alarms"
     ],
     "host_permissions": [
         "https://chatgpt.com/*",
