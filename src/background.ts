@@ -22,7 +22,7 @@ import {
 import { createToolbarWarningController } from '@/features/contractAlert/toolbarBackground';
 import { installRemoteDeletionObserver } from '@/background/remoteDeletionObserver';
 import { createCloudController, CLOUD_MESSAGE_TYPE, CLOUD_AUTO_SYNC_KEY, CLOUD_AUTO_SYNC_STATUS_KEY } from '@/features/cloud/cloudController';
-import { ACCOUNT_SETTINGS_KEY, GET_ACTIVE_ACCOUNT_OWNER_MESSAGE } from '@/features/storage/accountSettings';
+import { ACCOUNT_SETTINGS_KEY, GET_ACTIVE_ACCOUNT_OWNER_MESSAGE, isValidAccountOwnerId } from '@/features/storage/accountSettings';
 
 // Observe only actual successful ChatGPT delete/visibility-removal mutations in the browser network layer.
 // The observer never stores request bodies and only sends a route ID to the originating tab.
@@ -78,7 +78,13 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
     sendResponse({ ok: false, error: 'Untrusted extension message sender' });
     return false;
   }
-  void promptCoordinator.commit(message).then(sendResponse, () =>
+  void (async () => {
+    const ownerId = (message as { ownerId?: unknown }).ownerId;
+    if (!isValidAccountOwnerId(ownerId) || !(await hasVerifiedChatGptOwner(ownerId))) {
+      return { ok: false, error: 'ChatGPT account not verified; prompt write refused' };
+    }
+    return promptCoordinator.commit(message);
+  })().then(sendResponse, () =>
     sendResponse({ ok: false, error: 'Prompt storage writer unavailable' })
   );
   return true;
@@ -93,7 +99,15 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
     sendResponse({ ok: false, error: 'Untrusted extension message sender' });
     return false;
   }
-  void tocAliasCoordinator.commit(message).then(sendResponse, () =>
+  void (async () => {
+    const request = message as { ownerId?: unknown; action?: unknown; expected?: { ownerId?: unknown } };
+    const ownerId = request.action === 'cleanup-conversation'
+      ? request.expected?.ownerId : request.ownerId;
+    if (!isValidAccountOwnerId(ownerId) || !(await hasVerifiedChatGptOwner(ownerId))) {
+      return { ok: false, error: 'ChatGPT account not verified; alias update refused' };
+    }
+    return tocAliasCoordinator.commit(message);
+  })().then(sendResponse, () =>
     sendResponse({ ok: false, error: 'TOC alias writer unavailable' })
   );
   return true;
@@ -108,7 +122,13 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
     sendResponse({ ok: false, error: 'Untrusted extension message sender' });
     return false;
   }
-  void promptUsageCoordinator.commit(message).then(sendResponse, () =>
+  void (async () => {
+    const ownerId = (message as { ownerId?: unknown }).ownerId;
+    if (!isValidAccountOwnerId(ownerId) || !(await hasVerifiedChatGptOwner(ownerId))) {
+      return { ok: false, error: 'ChatGPT account not verified; usage update refused' };
+    }
+    return promptUsageCoordinator.commit(message);
+  })().then(sendResponse, () =>
     sendResponse({ ok: false, error: 'Prompt usage writer unavailable' })
   );
   return true;
@@ -130,7 +150,15 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
     sendResponse({ ok: false, error: 'Account registration requires an active ChatGPT content context' });
     return false;
   }
-  void settingsCoordinator.commit(message).then(sendResponse, () =>
+  void (async () => {
+    if (action !== 'register-account') {
+      const ownerId = (message as { ownerId?: unknown }).ownerId;
+      if (!isValidAccountOwnerId(ownerId) || !(await hasVerifiedChatGptOwner(ownerId))) {
+        return { ok: false, error: 'ChatGPT account not verified; settings update refused' };
+      }
+    }
+    return settingsCoordinator.commit(message);
+  })().then(sendResponse, () =>
     sendResponse({ ok: false, error: 'Settings writer unavailable' })
   );
   return true;
