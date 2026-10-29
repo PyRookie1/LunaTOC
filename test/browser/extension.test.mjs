@@ -291,6 +291,21 @@ test('Chromium MV3: TOC, search, layout, SPA and failure paths',{timeout:150000}
       await page.waitForFunction(()=>document.querySelector('#navigator-list')?.textContent?.includes('账号 A 私有标题'));
     });
 
+    await t.test('account writers reject unverified owner mutations',async()=>{
+      const routeKey='account-authorization-probe';
+      const aliasKey='lunatoc:aliases:v1:'+routeKey;
+      const ownerId='fixture-account-not-logged-in';
+      const before=await worker.evaluate(async key=>(await chrome.storage.local.get(key))[key],aliasKey);
+      const result=await worker.evaluate(async({routeKey,ownerId})=>
+        chrome.runtime.sendMessage({
+          type:'LUNA_TOC_ALIAS_COMMIT_V1',action:'update',routeKey,
+          messageId:'probe',label:'unauthorized',ownerId
+        }),{routeKey,ownerId});
+      assert.equal(result.ok,false,'unverified account must not be allowed to write aliases');
+      const after=await worker.evaluate(async key=>(await chrome.storage.local.get(key))[key],aliasKey);
+      assert.deepEqual(after,before,'denied mutation must not create local records');
+    });
+
     await t.test('Page-originated deletion messages are ignored; confirmed browser deletion cleans aliases',{timeout:20000},async()=>{
       const routeKey='lunatoc-e2e';
       const aliasKey='lunatoc:aliases:v1:'+routeKey;
