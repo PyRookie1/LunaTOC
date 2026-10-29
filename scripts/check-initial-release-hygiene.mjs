@@ -2,7 +2,7 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, extname } from 'node:path';
 
-const roots = ['src', 'test', 'docs', 'README.md', 'CHANGELOG.md', 'PRIVACY.md',
+const roots = ['src', 'test', 'docs', 'scripts', 'README.md', 'CHANGELOG.md', 'PRIVACY.md',
   'manifest.json', 'package.json'];
 const patterns = [
   [/LunaTOC-SC|luna-toc-sc/gi, 'obsolete project name'],
@@ -22,6 +22,7 @@ function walk(path) {
 for (const root of roots) walk(root);
 const violations = [];
 for (const path of files) {
+  if (path === 'scripts/check-initial-release-hygiene.mjs') continue;
   const content = readFileSync(path, 'utf8');
   for (const [re, label] of patterns) {
     re.lastIndex = 0;
