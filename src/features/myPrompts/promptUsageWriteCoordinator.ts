@@ -5,7 +5,7 @@ import type { PromptUsage, PromptUsageMap } from './promptUsageStore';
 import { isValidAccountOwnerId } from '@/features/storage/accountSettings';
 
 export const PROMPT_USAGE_COMMIT_TYPE = 'LUNA_TOC_PROMPT_USAGE_COMMIT_V1';
-const STORAGE_KEY = 'lunaToc:promptUsageV1';
+const STORAGE_KEY = 'lunatoc:promptUsage:v1';
 const MAX_RECORDS = 20_000;
 
 export type PromptUsageCommitAction =

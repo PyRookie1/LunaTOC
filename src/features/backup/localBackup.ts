@@ -10,10 +10,10 @@ import { ACCOUNT_SETTINGS_KEY, isValidAccountOwnerId, type AccountSettingsMap } 
 import { isPermanentConversationId } from '@/navigation/lifecycle/protocol';
 import { isValidTocMessageId } from '@/features/conversationPrompts/tocAliasWriteCoordinator';
 
-const PROMPTS_KEY = 'lumaToc:myPromptsV1';
-const USAGE_KEY = 'lunaToc:promptUsageV1';
-const ALIAS_PREFIX = 'chatToc:aliases:v1:';
-const ALIAS_DELETED_PREFIX = 'chatToc:aliases:deleted:v1:';
+const PROMPTS_KEY = 'lunatoc:prompts:v1';
+const USAGE_KEY = 'lunatoc:promptUsage:v1';
+const ALIAS_PREFIX = 'lunatoc:aliases:v1:';
+const ALIAS_DELETED_PREFIX = 'lunatoc:aliases:deleted:v1:';
 export const BACKUP_FORMAT = 'lunatoc-local-backup';
 export const BACKUP_VERSION = 1;
 export const MAX_BACKUP_BYTES = 12 * 1024 * 1024;

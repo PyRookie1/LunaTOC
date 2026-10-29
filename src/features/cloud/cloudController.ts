@@ -185,9 +185,9 @@ export function createCloudController(
     else delete settings[ownerId];
     values[ACCOUNT_SETTINGS_KEY] = settings;
     const validIds = new Set(nextPrompts.map((p) => p.id));
-    const previousUsage = all['lunaToc:promptUsageV1'] as Record<string, unknown> | undefined;
+    const previousUsage = all['lunatoc:promptUsage:v1'] as Record<string, unknown> | undefined;
     if (previousUsage !== undefined) {
-      values['lunaToc:promptUsageV1'] = Object.fromEntries(Object.entries(previousUsage)
+      values['lunatoc:promptUsage:v1'] = Object.fromEntries(Object.entries(previousUsage)
         .filter(([id]) => validIds.has(id)));
     }
     for (const [route, existing] of Object.entries(backup.data.aliases)) {

@@ -3,10 +3,10 @@ import type { SavedPrompt } from './promptStore';
 import { createSerialWriteQueue, type SerialWriteQueue } from '@/features/storage/serialWriteQueue';
 import { isValidAccountOwnerId } from '@/features/storage/accountSettings';
 
-export const PROMPT_STORAGE_KEY = 'lumaToc:myPromptsV1';
+export const PROMPT_STORAGE_KEY = 'lunatoc:prompts:v1';
 export const PROMPT_COMMIT_TYPE = 'LUNA_TOC_PROMPTS_COMMIT_V1';
 const MAX_RECORDS = 20_000;
-const USAGE_STORAGE_KEY = 'lunaToc:promptUsageV1';
+const USAGE_STORAGE_KEY = 'lunatoc:promptUsage:v1';
 
 export type PromptCommitRequest =
   | { type: typeof PROMPT_COMMIT_TYPE; action: 'replace-account'; ownerId: string; next: SavedPrompt[] }
