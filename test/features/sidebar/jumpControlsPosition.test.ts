@@ -32,12 +32,10 @@ describe('jump control pointer positioning', () => {
     expect(clampJumpControlsTop(400, 800, 132)).toBe(334);
     expect(clampJumpControlsTop(5000, 800, 132)).toBe(656);
   });
-  it('updates top position and clears obsolete fixed placement', () => {
+  it('updates top position and adapts to viewport resize', () => {
     const { sidebar, rail } = setup();
-    sessionStorage.setItem('chatToc:jumpControlsBottom', '170');
     const dispose = initializeJumpControlsPosition(sidebar);
     expect(rail.style.top).toBe('334px');
-    expect(sessionStorage.getItem('chatToc:jumpControlsBottom')).toBeNull();
     placeJumpControlsAtPointer(sidebar, 100);
     expect(rail.style.top).toBe('34px');
     expect(rail.style.bottom).toBe('auto');

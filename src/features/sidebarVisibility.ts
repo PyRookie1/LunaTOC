@@ -6,8 +6,7 @@ import type { SidebarLayoutMode } from '@/features/sidebar/sidebarPreferences';
 import { syncChatGptSideBySide } from '@/features/sidebar/chatGptSideBySide';
 import { placeJumpControlsAtPointer } from '@/features/sidebar/jumpControlsPosition';
 
-const PINNED_STORAGE_KEY = 'chatTocSidebarPinned';
-const LEGACY_PINNED_STORAGE_PREFIX = 'chatTocSidebarPinned:';
+const PINNED_STORAGE_KEY = 'lunatoc:sidebarPinned:v1';
 // A short grace period retains portal hover without delayed collapse.
 const AUTO_HIDE_DELAY_MS = 60;
 /** Time the pointer must remain at the right edge after the initial sidebar reveal. */
@@ -15,7 +14,7 @@ export const EDGE_TOOL_DWELL_MS = 50;
 const EDGE_TOOL_THRESHOLD_PX = 12;
 /** Keep revealed right-edge tools visible briefly after the pointer moves away. */
 export const EDGE_TOOL_HIDE_DELAY_MS = 400;
-const LAYOUT_MODE_STORAGE_KEY = 'chatToc:activeSidebarLayoutMode';
+const LAYOUT_MODE_STORAGE_KEY = 'lunatoc:activeSidebarLayoutMode:v1';
 
 let sidebar: HTMLElement | null = null;
 let toggleBtn: HTMLButtonElement | null = null;
@@ -259,38 +258,10 @@ function loadPinnedState(): void {
   setSidebarHidden(!isPinned);
 }
 
-/**
- * Loads the tab-wide pin state and migrates the current route's legacy
- * conversation-scoped value when the tab has not stored a global value yet.
- * @returns {boolean | null}
- */
+/** Reads the current tab's pin preference, if set. */
 function getSavedPinnedState(): boolean | null {
-  const savedPinned = storageGet<boolean>(PINNED_STORAGE_KEY);
-
-  if (typeof savedPinned === 'boolean') {
-    return savedPinned;
-  }
-
-  const legacyPinned = storageGet<boolean>(
-    `${LEGACY_PINNED_STORAGE_PREFIX}${getLegacyPageKey()}`
-  );
-
-  if (typeof legacyPinned === 'boolean') {
-    storageSet(PINNED_STORAGE_KEY, legacyPinned);
-    return legacyPinned;
-  }
-
-  return null;
-}
-
-/**
- * Returns the legacy per-conversation storage suffix for one-time migration.
- * @returns {string}
- */
-function getLegacyPageKey(): string {
-  const match = location.pathname.match(/\/c\/([^/]+)/);
-
-  return match?.[1] || `new-chat:${location.pathname}`;
+  const pinned = storageGet<boolean>(PINNED_STORAGE_KEY);
+  return typeof pinned === 'boolean' ? pinned : null;
 }
 
 function updatePinButtonState(): void {

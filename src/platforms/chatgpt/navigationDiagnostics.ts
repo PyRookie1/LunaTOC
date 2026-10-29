@@ -3,7 +3,7 @@
  */
 import { APP_CONFIG } from '@/config/config';
 
-export const NAVIGATION_DEBUG_STORAGE_KEY = 'chatTocDebugJump';
+export const NAVIGATION_DEBUG_STORAGE_KEY = 'lunatoc:debugJump:v1';
 /**
  * Per-subsystem debug toggle for the click-to-jump visibility dump.
  *
@@ -13,12 +13,12 @@ export const NAVIGATION_DEBUG_STORAGE_KEY = 'chatTocDebugJump';
  * so a developer can see what LunaTOC has access to without manual
  * DevTools spelunking. Default off.
  *
- * Set with `localStorage.setItem('chatTocDebugJumpViz', '1')`. Reload
+ * Set with `localStorage.setItem('lunatoc:debugJumpViz:v1', '1')`. Reload
  * the page to apply.
  */
-export const JUMP_VIZ_DEBUG_STORAGE_KEY = 'chatTocDebugJumpViz';
+export const JUMP_VIZ_DEBUG_STORAGE_KEY = 'lunatoc:debugJumpViz:v1';
 export const NAVIGATION_TEST_CONFIG_STORAGE_KEY =
-  'chatTocNavigationTestConfig';
+  'lunatoc:navigationTestConfig:v1';
 
 export interface ChatGptNavigationTestConfig {
   settleWaitMs: number;

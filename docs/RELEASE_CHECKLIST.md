@@ -5,6 +5,7 @@
 ## 自动化门槛
 
 - [ ] Node.js 22 锁定依赖安装、类型检查、完整 Vitest 测试通过。
+- [ ] 初始版本源码卫生检查通过：无旧项目名称、旧存储键、迁移流程或旧 Bug 编号。
 - [ ] Manifest MV3、版本号、扩展 ZIP 完整性、Chromium E2E、依赖安全审计通过。
 - [ ] Firebase Emulator 实际加载仓库的 firestore.rules，并验证双 UID、匿名访问、越权、异常文档。
 - [ ] 邮件链接发送/兑换、无效链接、错误项目域名、过期验证码、开关和失败保护的自动测试通过。
@@ -28,6 +29,7 @@
 
 - [ ] 真实 Chrome 下的目录、搜索、跳转、回答标题、Markdown 粗体修复与账号隔离正常。
 - [ ] 本地备份导出、合并、覆盖与失败回滚正常。
+- [ ] 确认 Manifest 权限仅包含必要的 storage、webRequest、alarms，Firebase 主机权限在用户启用同步后才请求。
 - [ ] 核对 README、PRIVACY、CHANGELOG、LICENSE 和第三方许可。
 - [ ] 仅在所有真实环境验收通过后，合并 PR 至 main，重新验证 main CI 并发布 1.0.0。
 

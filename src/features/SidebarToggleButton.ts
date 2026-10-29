@@ -1,8 +1,7 @@
 /**
  * Creates the minimal, unlabeled, full-height right-edge sidebar reveal handle.
  *
- * This handle replaces the movable dock. Its fixed position is intentionally
- * independent of saved positions from previous versions.
+ * Its position is defined exclusively by the current CSS, without stored offsets.
  */
 
 /**

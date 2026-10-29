@@ -23,7 +23,7 @@ Firebase 服务使用 identitytoolkit.googleapis.com、securetoken.googleapis.co
 
 ## 网络与权限
 
-`manifest.json` 使用 `storage`、`webRequest`，默认主机权限仅限 `chatgpt.com` 和 `chat.openai.com`。Firebase API 主机权限为可选权限，仅当用户主动开启云同步时请求。扩展不会向其他聊天站点注入脚本，不会阻断或修改监听到的 ChatGPT 删除请求。
+`manifest.json` 使用 `storage`、`webRequest`、`alarms`（后者用于已开启云同步的重试和定期检查），默认主机权限仅限 `chatgpt.com` 和 `chat.openai.com`。Firebase API 主机权限为可选权限，仅当用户主动开启云同步时请求。扩展不会向其他聊天站点注入脚本，不会阻断或修改监听到的 ChatGPT 删除请求。
 
 ## 数据控制
 
