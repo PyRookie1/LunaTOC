@@ -142,11 +142,11 @@ describe('single-tab My Prompts storage', () => {
   });
 
   it('clears prompts and usage together after confirmation', async () => {
-    data['lunaToc:promptUsageV1'] = { saved: { usageCount: 4, lastUsedAt: 1 } };
+    data['lunatoc:promptUsage:v1'] = { saved: { usageCount: 4, lastUsedAt: 1 } };
     const store = createPromptStore();
     await store.clearAll();
     expect(data[PROMPT_STORAGE_KEY]).toEqual([]);
-    expect(data['lunaToc:promptUsageV1']).toEqual({});
+    expect(data['lunatoc:promptUsage:v1']).toEqual({});
     expect(messages).toHaveBeenCalledWith(
       { type: PROMPT_COMMIT_TYPE, action: 'clear-account', ownerId: 'account-1' }, expect.any(Function)
     );
