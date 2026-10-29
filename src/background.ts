@@ -252,13 +252,23 @@ async function runAutomaticSync(): Promise<void> {
   }
 }
 
+let autoSyncDebounce: ReturnType<typeof setTimeout> | undefined;
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName !== 'local') return;
-  const relevant = Object.keys(changes).some((key) =>
-    key === PROMPT_STORAGE_KEY || key === ACCOUNT_SETTINGS_KEY ||
-    key.startsWith(TOC_ALIAS_PREFIX) || key.startsWith(TOC_ALIAS_DELETED_PREFIX)
-  );
-  if (relevant) void runAutomaticSync();
+  const relevant = Object.entries(changes).some(([key, change]) => {
+    const accountData = key === PROMPT_STORAGE_KEY || key === ACCOUNT_SETTINGS_KEY ||
+      key.startsWith(TOC_ALIAS_PREFIX) || key.startsWith(TOC_ALIAS_DELETED_PREFIX);
+    // applySnapshot writes account data even if unchanged. Do not recursively
+    // schedule another cloud fetch for identical local-storage values.
+    return accountData && JSON.stringify(change.oldValue) !== JSON.stringify(change.newValue);
+  });
+  if (!relevant) return;
+  if (autoSyncDebounce) clearTimeout(autoSyncDebounce);
+  // Collapse bursts of local prompt/alias/setting updates into a single sync.
+  autoSyncDebounce = setTimeout(() => {
+    autoSyncDebounce = undefined;
+    void runAutomaticSync();
+  }, 1000);
 });
 
 // Opening or switching to ChatGPT makes that account eligible for sync once
