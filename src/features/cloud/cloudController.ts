@@ -108,7 +108,7 @@ export function createCloudController(
   }
   function emailAddress(value: unknown): string {
     if (typeof value !== 'string' || value.length > 254 ||
-        !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(value)) {
+        !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
       throw new Error('请输入有效的邮箱地址');
     }
     return value.trim();
