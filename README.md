@@ -33,6 +33,7 @@ LunaTOC 是面向 ChatGPT 长对话的 Chrome 扩展，用于整理提问目录�
 - 目录标题只从当前已加载的回答中提取；远距离导航可能需要等待历史内容加载。
 - 默认仅本地保存；官方 Firebase 云同步由维护者统一部署，用户无需创建项目或部署安全规则；未上线时同步功能停用，本地功能正常。说明见 [LunaTOC 云同步](docs/FIREBASE_SYNC.md)。
 - 自动化测试不等同于真实 ChatGPT 页面上的人工验收。
+- **邮件验证额度注意**：Firebase Spark 免费方案目前只允许整个项目每天发送 5 封邮件登录链接，开发联调可用，但公开发布前须解决额度与计费问题，详见 [Firebase 官方限制](https://firebase.google.com/docs/auth/limits)。
 
 ## 隐私
 
