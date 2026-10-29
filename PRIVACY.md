@@ -1,36 +1,30 @@
 # LunaTOC 隐私说明
 
-本说明适用于 [PyRookie1/LunaTOC](https://github.com/PyRookie1/LunaTOC) 仓库中的 Chrome 扩展。
+本说明适用于 [PyRookie1/LunaTOC](https://github.com/PyRookie1/LunaTOC) 的 Chrome 扩展。
 
-## 处理的信息
+## 本地处理
 
-- 为生成对话目录和回答标题索引，扩展会读取 ChatGPT 页面中已显示的消息，并处理 ChatGPT 页面请求返回的会话消息数据。相关处理主要在浏览器内完成。
-- 为识别当前 ChatGPT 账号，扩展隔离环境会请求 ChatGPT 自身的同源接口 `/api/auth/session`，读取账号 ID 和可用的邮箱字段。页面通过 `postMessage` 传来的账号身份不会被当作可信身份。
-- Tips 提示词、自定义目录名称、使用统计、主题与侧边栏偏好保存在 Chrome 本地存储中。部分界面状态可能保存在当前标签页的 Web Storage 中。
-- 本地备份可包含已保存的提示词、目录别名、使用统计和账号偏好；不会导出 ChatGPT 对话正文、浏览器会话凭证或任意未知存储键。备份文件可能包含私人内容和账号标识，应妥善保管。
-- 用户手动导入文件时，扩展会在浏览器内解析文件内容。
+- 扩展读取 ChatGPT 页面已显示的消息、相关会话数据，并通过同源 `/api/auth/session` 识别已登录的 ChatGPT 账号。
+- Tips、目录别名、使用统计、主题和布局等偏好默认保存在本地；手动导出的 JSON 备份可能包含私人内容和账号标识。
+- 默认不向 LunaTOC 维护者上传这些数据；不包含行为遥测或广告追踪。
 
-## LunaTOC 维护者统一提供的 Firebase 云同步
+## 可选 Firebase 自动云同步
 
-云同步默认关闭，Firebase 项目由 LunaTOC 维护者统一创建、配置与维护。普通用户无需提供项目 ID、Web API Key 或部署规则。只有维护者启用该服务后，用户才可在设置页登录或注册 Firebase Email/Password 同步账号，并选择 ChatGPT 账号主动同步。用户将额外授权访问 Firebase 的三个 Google API 主机。
+云同步默认关闭，由维护者统一管理 Firebase 项目。用户开启开关时，扩展请求访问 Firebase 网络服务，用户需输入邮箱收取一次性验证链接，并将邮件中的**完整链接复制粘贴到扩展设置页**。验证成功后 Firebase 自动建立或识别相同邮箱的同步身份；无需用户设置密码或单独注册 LunaTOC 账号。邮件链接是一次性登录凭证，切勿转发或公开。
 
-上传范围：选中 ChatGPT 账号的 Tips 提示词标题与正文、目录别名、主题、侧边栏偏好及已知会话删除标记。不会上传完整对话正文、使用统计、ChatGPT 登录令牌或账号邮箱。Firebase 登录邮箱和密码会发送到 Google Identity Toolkit 用于认证，密码不会持久保存；Firebase ID Token / Refresh Token 仅保存在 Chrome 会话级存储，浏览器重启后需要重新登录。
+- 开启后，扩展在本地提示词、目录别名、账号偏好变化或已验证 ChatGPT 标签页出现时自动尝试同步。断网、权限拒绝、冲突或令牌失效时应保留本地数据并报告错误。
+- 上传范围：所选 ChatGPT 账号的 Tips 标题与正文、目录别名、主题与布局偏好、已知会话删除标记；**不上传**完整聊天正文、使用统计、ChatGPT 登录令牌及 ChatGPT 登录邮箱。
+- Firebase Authentication 接收用户验证邮箱与一次性验证码。邮箱在发送链接后暂存于扩展本地存储，以便完成登录；成功验证后清除待验证邮箱。
+- Firebase ID Token / Refresh Token 存储在扩展本地存储，以允许浏览器重启后继续自动同步。**这是持久登录凭据**：具有该 Chrome 配置文件访问权限的人员或恶意软件可能获取它们。关闭同步会清除本地凭据，但不会自动删除已上传云端数据。
+- 云端路径以 Firebase UID 和 ChatGPT 账号 ID 的 SHA-256 摘要分组。LunaTOC 维护者可能直接查看已同步的 Tips 与目录名称**明文内容**；同步不是端到端加密。
+- 跨设备需使用同一验证邮箱、同一 ChatGPT 账号，并分别开启云同步。允许用户随时关闭云同步，继续完全本地使用扩展。
 
-数据通过 Google Firebase 服务器存储在维护者管理的项目中，维护者可能直接访问云端 Tips 与目录别名的**明文内容**；本同步不是端到端加密。使用者可继续完全本地使用扩展而不上传。Firebase UID 用于云端访问控制，ChatGPT 账号 ID 的 SHA-256 摘要用于账号数据分组；成功同步的基线保存在本地。
+Firebase 服务使用 identitytoolkit.googleapis.com、securetoken.googleapis.com、firestore.googleapis.com；详见 [云同步操作说明](docs/FIREBASE_SYNC.md)。
 
-同步服务使用 identitytoolkit.googleapis.com、securetoken.googleapis.com 和 firestore.googleapis.com；使用前可参阅 [Firebase 云同步](docs/FIREBASE_SYNC.md)。
+## 网络与权限
 
-## 网络与数据传输
-
-扩展需要访问 ChatGPT 自身的页面和同源接口，以显示目录并识别登录账号。默认不会上传用户存储数据。用户主动请求云同步时，所选账号的部分数据通过 HTTPS 上传到 LunaTOC 维护者管理的 Google Firebase 项目；该服务的维护者可以访问云端数据。项目不包含使用行为遥测或广告追踪。
-
-## 权限
-
-`manifest.json` 使用 Chrome 的 `storage` 和 `webRequest` 权限，并将默认主机权限限定为 `chatgpt.com` 与 `chat.openai.com`。Firebase API 主机权限为可选权限，仅在用户主动使用云同步时申请。网络观察逻辑只用于识别这两个站点中与会话删除相关的请求是否成功，不阻止或修改请求，也不会把请求内容发送到外部服务。
-
-扩展不会在 Microsoft Copilot 或其他聊天站点注入脚本。
+`manifest.json` 使用 `storage`、`webRequest`，默认主机权限仅限 `chatgpt.com` 和 `chat.openai.com`。Firebase API 主机权限为可选权限，仅当用户主动开启云同步时请求。扩展不会向其他聊天站点注入脚本，不会阻断或修改监听到的 ChatGPT 删除请求。
 
 ## 数据控制
 
-用户可以通过扩展设置页导出或清理本地扩展数据，也可以在 Chrome 中移除扩展。卸载扩展不会自动删除用户主动导出的备份文件。
-
+用户可以导出或清理本地数据，并关闭云同步；关闭或卸载扩展不会自动删除云端文档或用户已导出的备份文件。联系维护者处理云端副本的管理问题前，不要把邮件验证链接或刷新令牌发送给任何人。

@@ -10,7 +10,7 @@ LunaTOC 初始版本，包含：
 - ChatGPT Markdown 粗体修复。
 - Tips 提示词库、主题与侧边栏布局设置。
 - 本地数据备份与恢复。
-- 由 LunaTOC 维护者统一提供的可选 Firebase 云同步（手动触发）：独立 Firebase 身份认证、按 ChatGPT 账号隔离、三方冲突合并、删除保护及安全规则。
+- 由 LunaTOC 维护者统一提供的可选 Firebase 邮件链接云同步：默认关闭，使用邮箱一次性链接验证后自动同步，无需密码或 Chrome OAuth；按 ChatGPT 账号隔离，提供三方冲突合并、删除保护及安全规则。
 - 类型检查、模拟页面浏览器验收、Firebase REST 模拟测试及真实 Firestore 规则模拟器验证、扩展构建和依赖安全检查。
 
 云同步在发布前仍需使用真实 Firebase Spark 项目完成身份、安全规则和跨设备联调。详见 [发布验收清单](docs/RELEASE_CHECKLIST.md)。

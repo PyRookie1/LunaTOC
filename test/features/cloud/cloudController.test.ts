@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createCloudController, CLOUD_MESSAGE_TYPE } from '@/features/cloud/cloudController';
+import { createCloudController, CLOUD_MESSAGE_TYPE, CLOUD_AUTO_SYNC_KEY } from '@/features/cloud/cloudController';
 import { createSerialWriteQueue } from '@/features/storage/serialWriteQueue';
 import { PROMPT_STORAGE_KEY } from '@/features/myPrompts/promptWriteCoordinator';
 import { ACCOUNT_SETTINGS_KEY } from '@/features/storage/accountSettings';
@@ -31,9 +31,19 @@ function firebaseHarness() {
   let writes = 0;
   const fetcher = vi.fn(async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
     const url = String(input);
-    if (url.includes('accounts:signInWithPassword')) return Response.json({
-      idToken: 'id-token', refreshToken: 'refresh-token', localId: 'firebase-user', expiresIn: '3600',
-    });
+    if (url.includes('accounts:sendOobCode')) return Response.json({ email: 'test@example.com' });
+    if (url.includes('accounts:signInWithEmailLink')) {
+      const body = JSON.parse(init?.body as string) as { email: string; oobCode: string };
+      if (body.oobCode === 'expiredCode1234567890') {
+        return Response.json({ error: { message: 'EXPIRED_OOB_CODE' } }, { status: 400 });
+      }
+      if (body.email !== 'test@example.com' || body.oobCode !== 'singleUseEmailCode1234567890') {
+        return Response.json({ error: { message: 'INVALID_OOB_CODE' } }, { status: 400 });
+      }
+      return Response.json({
+        idToken: 'id-token', refreshToken: 'refresh-token', localId: 'firebase-user', expiresIn: '3600',
+      });
+    }
     if (url.includes('firestore.googleapis.com')) {
       const key = url.split('?')[0];
       if (init?.method === 'PATCH') {
@@ -66,10 +76,11 @@ async function ready(local: ReturnType<typeof storage>, cloud: ReturnType<typeof
   const sessions = storage();
   const service = createCloudController(local.api, sessions.api, createSerialWriteQueue(),
     verified, cloud.fetcher as unknown as typeof fetch,
-    { apiKey: 'AIzaSy-Test-api-key-public', projectId: 'lunatoc-demo' });
+    { apiKey: 'AIzaSy-Test-api-key-public', projectId: 'lunatoc-demo', authDomain: 'lunatoc-demo.firebaseapp.com' });
   expect(await service.execute(request('status'))).toMatchObject({ ok: true, configured: true });
-  const login = await service.execute(request('sign-in', {
-    email: 'test@example.com', password: 'sixcharacters',
+  const login = await service.execute(request('complete-email-link', {
+    email: 'test@example.com',
+    link: 'https://lunatoc-demo.firebaseapp.com/__/auth/action?mode=signIn&oobCode=singleUseEmailCode1234567890&apiKey=AIzaSy-Test-api-key-public',
   }));
   expect(login).toMatchObject({ ok: true, uid: 'firebase-user' });
   return { service, sessions };
@@ -86,11 +97,62 @@ describe('Firebase REST account sync', () => {
     expect(await service.execute(request('configure', {
       config: { projectId: 'attacker-project', apiKey: 'AIzaSy-Attacker-public-key' },
     }))).toMatchObject({ ok: false, error: expect.stringContaining('禁止') });
-    expect(await service.execute(request('sign-in', {
-      email: 'user@example.com', password: 'sixcharacters',
-    }))).toMatchObject({ ok: false, error: expect.stringContaining('尚未配置') });
+    expect(await service.execute(request('send-email-link', { email: 'test@example.com' }))).toMatchObject({ ok: false, error: expect.stringContaining('尚未配置') });
     expect(remote.fetcher).not.toHaveBeenCalled();
   });
+  it('sends a passwordless email link using the managed HTTPS Hosting domain', async () => {
+    const local = storage(), sessions = storage(), cloud = firebaseHarness();
+    const service = createCloudController(local.api, sessions.api, createSerialWriteQueue(),
+      async () => true, cloud.fetcher as unknown as typeof fetch,
+      { apiKey: 'AIzaSy-Test-api-key-public', projectId: 'lunatoc-demo',
+        authDomain: 'lunatoc-demo.firebaseapp.com' });
+    expect(await service.execute(request('send-email-link', { email: 'test@example.com' })))
+      .toMatchObject({ ok: true, pendingEmail: 'test@example.com' });
+    const sent = cloud.fetcher.mock.calls.find(([url]) => String(url).includes('accounts:sendOobCode'));
+    const body = JSON.parse(sent?.[1]?.body as string);
+    expect(body).toEqual({
+      requestType: 'EMAIL_SIGNIN', email: 'test@example.com',
+      continueUrl: 'https://lunatoc-demo.firebaseapp.com/', canHandleCodeInApp: true,
+    });
+    expect(await service.execute(request('status')))
+      .toMatchObject({ ok: true, pendingEmail: 'test@example.com' });
+    expect(local.state).not.toHaveProperty('lunatoc:cloud:auth:session:v1');
+  });
+
+  it('rejects third-party, mismatched, malformed and expired email links', async () => {
+    const local = storage(), sessions = storage(), cloud = firebaseHarness();
+    const service = createCloudController(local.api, sessions.api, createSerialWriteQueue(),
+      async () => true, cloud.fetcher as unknown as typeof fetch,
+      { apiKey: 'AIzaSy-Test-api-key-public', projectId: 'lunatoc-demo',
+        authDomain: 'lunatoc-demo.firebaseapp.com' });
+    const valid = 'https://lunatoc-demo.firebaseapp.com/__/auth/action?mode=signIn&oobCode=singleUseEmailCode1234567890&apiKey=AIzaSy-Test-api-key-public';
+    for (const link of [
+      valid.replace('lunatoc-demo.firebaseapp.com', 'attacker.firebaseapp.com'),
+      valid.replace('apiKey=AIzaSy-Test-api-key-public', 'apiKey=AIzaSy-Other-project'),
+      valid.replace('mode=signIn', 'mode=resetPassword'),
+      'http://'+valid.slice('https://'.length),
+      'not-a-link',
+    ]) {
+      expect((await service.execute(request('complete-email-link', { email: 'test@example.com', link }))).ok).toBe(false);
+    }
+    expect(cloud.fetcher).not.toHaveBeenCalled();
+    expect(await service.execute(request('complete-email-link', {
+      email: 'test@example.com',
+      link: valid.replace('singleUseEmailCode1234567890', 'expiredCode1234567890'),
+    }))).toMatchObject({ ok: false, error: expect.stringContaining('EXPIRED_OOB_CODE') });
+    expect(sessions.state).not.toHaveProperty('lunatoc:cloud:auth:session:v1');
+  });
+
+  it('clears the persisted Firebase session and pending email when sync is disabled', async () => {
+    const local = storage(), cloud = firebaseHarness();
+    const { service, sessions } = await ready(local, cloud);
+    expect(sessions.state).toHaveProperty('lunatoc:cloud:auth:session:v1');
+    await service.execute(request('set-auto-sync', { enabled: true }));
+    expect(await service.execute(request('set-auto-sync', { enabled: false })))
+      .toMatchObject({ ok: true, autoSyncEnabled: false });
+    expect(sessions.state).not.toHaveProperty('lunatoc:cloud:auth:session:v1');
+  });
+
   it('never persists managed Firebase project identifiers to local storage', async () => {
     const local = storage(initialLocal()), remote = firebaseHarness();
     const { service } = await ready(local, remote);
@@ -99,7 +161,7 @@ describe('Firebase REST account sync', () => {
     expect(JSON.stringify(local.state)).not.toContain('AIzaSy-Test-api-key-public');
   });
 
-  it('uploads only allowed account snapshot on explicit sync, never usage or auth secrets', async () => {
+  it('uploads only allowed account snapshot after opt-in, never usage or auth secrets', async () => {
     const local = storage(initialLocal()), remote = firebaseHarness();
     const { service } = await ready(local, remote);
     expect(remote.writes()).toBe(0);
@@ -127,6 +189,21 @@ describe('Firebase REST account sync', () => {
     expect(next.state[PROMPT_STORAGE_KEY]).toEqual([unrelated, item]);
     expect(next.state[ACCOUNT_SETTINGS_KEY]).toEqual({ 'account-2': settings, [owner]: settings });
   });
+
+  it('enables and disables automatic sync without deleting local data', async () => {
+    const local = storage(initialLocal()), remote = firebaseHarness();
+    const { service } = await ready(local, remote);
+    expect(await service.execute(request('set-auto-sync', { enabled: true })))
+      .toMatchObject({ ok: true, autoSyncEnabled: true });
+    expect(local.state[CLOUD_AUTO_SYNC_KEY]).toBe(true);
+    expect(await service.execute(request('set-auto-sync', { enabled: false })))
+      .toMatchObject({ ok: true, autoSyncEnabled: false });
+    expect(local.state[CLOUD_AUTO_SYNC_KEY]).toBe(false);
+    expect(local.state[PROMPT_STORAGE_KEY]).toEqual([item]);
+    expect(await service.execute(request('status')))
+      .toMatchObject({ ok: true, configured: true, autoSyncEnabled: false });
+  });
+
   it('refuses unverified account syncing even if Firebase is already logged in', async () => {
     const local = storage(initialLocal()), cloud = firebaseHarness();
     const { service } = await ready(local, cloud, async () => false);

@@ -7,29 +7,38 @@ import { CLOUD_MAX_BYTES, emptyCloudSnapshot, mergeAccountSnapshots, validateClo
   type CloudSnapshot } from './cloudSnapshot';
 import type { SerialWriteQueue } from '@/features/storage/serialWriteQueue';
 import { bundledFirebaseConfig } from './managedFirebaseConfig';
+import { emailActionCode } from './emailLink';
 
 export const CLOUD_MESSAGE_TYPE = 'LUNATOC_CLOUD_V1';
 const SESSION_KEY = 'lunatoc:cloud:auth:session:v1';
+const PENDING_EMAIL_KEY = 'lunatoc:cloud:pending-email:v1';
+export const CLOUD_AUTO_SYNC_KEY = 'lunatoc:cloud:auto-sync:v1';
+export const CLOUD_AUTO_SYNC_STATUS_KEY = 'lunatoc:cloud:auto-sync-status:v1';
+export interface CloudAutoSyncStatus { state: 'success' | 'error'; message: string; updatedAt: number }
 const BASE_PREFIX = 'lunatoc:cloud:baseline:v1:';
 const PROJECT_PATTERN = /^[a-z][a-z0-9-]{4,62}$/;
 const AUTH_KEY_PATTERN = /^[A-Za-z0-9_-]{16,200}$/;
-interface Config { apiKey: string; projectId: string }
+interface Config { apiKey: string; projectId: string; authDomain: string }
 interface Session { idToken: string; refreshToken: string; uid: string; expiresAt: number }
 interface FirestoreDocument { fields?: { json?: { stringValue?: string } }; updateTime?: string }
 type LocalStorage = Pick<chrome.storage.StorageArea, 'get' | 'set' | 'remove'>;
 type Fetcher = typeof fetch;
 export type CloudAction =
-  | { type: typeof CLOUD_MESSAGE_TYPE; action: 'sign-in' | 'sign-up'; email: string; password: string }
+  | { type: typeof CLOUD_MESSAGE_TYPE; action: 'send-email-link'; email: string }
+  | { type: typeof CLOUD_MESSAGE_TYPE; action: 'complete-email-link'; email: string; link: string }
+  | { type: typeof CLOUD_MESSAGE_TYPE; action: 'set-auto-sync'; enabled: boolean }
   | { type: typeof CLOUD_MESSAGE_TYPE; action: 'sign-out' | 'status' }
   | { type: typeof CLOUD_MESSAGE_TYPE; action: 'sync'; ownerId: string };
-export type CloudResult = { ok: true; message: string; uid?: string; configured?: boolean }
+export type CloudResult = { ok: true; message: string; uid?: string; configured?: boolean; autoSyncEnabled?: boolean; autoSyncStatus?: CloudAutoSyncStatus; pendingEmail?: string }
   | { ok: false; error: string };
 
 function validConfig(value: unknown): value is Config {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const config = value as Record<string, unknown>;
   return typeof config.projectId === 'string' && PROJECT_PATTERN.test(config.projectId) &&
-    typeof config.apiKey === 'string' && AUTH_KEY_PATTERN.test(config.apiKey);
+    typeof config.apiKey === 'string' && AUTH_KEY_PATTERN.test(config.apiKey) &&
+    typeof config.authDomain === 'string' &&
+    /^[a-z0-9-]+\.(?:firebaseapp\.com|web\.app)$/.test(config.authDomain);
 }
 function validSession(value: unknown): value is Session {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
@@ -74,7 +83,7 @@ export function createCloudController(
   }
   async function session(): Promise<Session> {
     const values = await sessionStorage.get(SESSION_KEY);
-    if (!validSession(values[SESSION_KEY])) throw new Error('请先登录 Firebase；浏览器重启后需要重新登录');
+    if (!validSession(values[SESSION_KEY])) throw new Error('请先通过邮箱链接验证云同步身份');
     return values[SESSION_KEY];
   }
   async function token(): Promise<Session> {
@@ -97,22 +106,43 @@ export function createCloudController(
     await sessionStorage.set({ [SESSION_KEY]: renewed });
     return renewed;
   }
-  async function login(email: string, password: string, signup: boolean): Promise<CloudResult> {
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254 ||
-        typeof password !== 'string' || password.length < 6 || password.length > 256) {
-      throw new Error('邮箱或密码格式不符合 Firebase Email/Password 要求');
+  function emailAddress(value: unknown): string {
+    if (typeof value !== 'string' || value.length > 254 ||
+        !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
+      throw new Error('请输入有效的邮箱地址');
     }
+    return value.trim();
+  }
+  async function sendEmailLink(rawEmail: unknown): Promise<CloudResult> {
+    const email = emailAddress(rawEmail);
     const cfg = await config();
-    const method = signup ? 'signUp' : 'signInWithPassword';
     const response = await fetcher(
-      'https://identitytoolkit.googleapis.com/v1/accounts:' + method + '?key=' + encodeURIComponent(cfg.apiKey),
+      'https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=' + encodeURIComponent(cfg.apiKey),
       { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, returnSecureToken: true }) }
+        body: JSON.stringify({
+          requestType: 'EMAIL_SIGNIN', email,
+          continueUrl: 'https://' + cfg.authDomain + '/',
+          canHandleCodeInApp: true,
+        }) }
+    );
+    await jsonResponse(response);
+    // The email is not included in the one-time link, preventing session injection.
+    await local.set({ [PENDING_EMAIL_KEY]: email });
+    return { ok: true, message: '验证邮件已发送。请在邮件中复制完整的登录链接，返回这里粘贴。不要把链接分享给其他人。', pendingEmail: email };
+  }
+  async function completeEmailLink(rawEmail: unknown, link: unknown): Promise<CloudResult> {
+    const email = emailAddress(rawEmail);
+    const cfg = await config();
+    const code = emailActionCode(link, cfg.authDomain, cfg.apiKey);
+    const response = await fetcher(
+      'https://identitytoolkit.googleapis.com/v1/accounts:signInWithEmailLink?key=' + encodeURIComponent(cfg.apiKey),
+      { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, oobCode: code }) }
     );
     const result = await jsonResponse(response);
     if (typeof result.idToken !== 'string' || typeof result.refreshToken !== 'string' ||
         typeof result.localId !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(result.localId)) {
-      throw new Error('Firebase 未返回有效的用户登录信息');
+      throw new Error('Firebase 未返回有效的邮箱登录信息');
     }
     const expiry = Number(result.expiresIn);
     if (!Number.isFinite(expiry) || expiry <= 0) throw new Error('Firebase 登录有效期无效');
@@ -120,8 +150,11 @@ export function createCloudController(
       idToken: result.idToken, refreshToken: result.refreshToken,
       uid: result.localId, expiresAt: Date.now() + expiry * 1000,
     };
+    // Persist the refresh session in extension-owned local storage so reopening
+    // Chrome does not require another email; sign-out removes it explicitly.
     await sessionStorage.set({ [SESSION_KEY]: active });
-    return { ok: true, message: 'Firebase 登录成功；数据尚未上传，请选择已验证的 ChatGPT 账号并点击“立即同步”', uid: active.uid };
+    await local.remove(PENDING_EMAIL_KEY);
+    return { ok: true, message: '邮箱验证成功；正在首次同步', uid: active.uid };
   }
   async function currentLocal(ownerId: string, base: CloudSnapshot): Promise<CloudSnapshot> {
     const backup = await createLocalBackup(local as Parameters<typeof createLocalBackup>[0]);
@@ -276,17 +309,37 @@ export function createCloudController(
       switch (command.action) {
         case 'configure':
           throw new Error('Firebase 项目由 LunaTOC 维护者统一管理，禁止从扩展页面更改');
-        case 'sign-in':
-        case 'sign-up':
-          return await login(command.email as string, command.password as string, command.action === 'sign-up');
-        case 'sign-out':
+        case 'send-email-link':
+          return await sendEmailLink(command.email);
+        case 'complete-email-link':
+          return await completeEmailLink(command.email, command.link);
+        case 'set-auto-sync': {
+          if (typeof command.enabled !== 'boolean') throw new Error('云同步开关状态无效');
+          if (command.enabled) {
+            const active = await session();
+            await local.set({ [CLOUD_AUTO_SYNC_KEY]: true });
+            return { ok: true, message: '云同步已开启；后续本地更改会自动同步', uid: active.uid, autoSyncEnabled: true };
+          }
+          await local.set({ [CLOUD_AUTO_SYNC_KEY]: false });
           await sessionStorage.remove(SESSION_KEY);
-          return { ok: true, message: 'Firebase 已退出；本地和云端数据均未删除' };
+          await local.remove(PENDING_EMAIL_KEY);
+          return { ok: true, message: '云同步已关闭；本地数据保留，云端数据不会自动删除', autoSyncEnabled: false };
+        }
+        case 'sign-out':
+          await local.set({ [CLOUD_AUTO_SYNC_KEY]: false });
+          await sessionStorage.remove(SESSION_KEY);
+          await local.remove(PENDING_EMAIL_KEY);
+          return { ok: true, message: '云同步已关闭；本地和云端数据均未删除', autoSyncEnabled: false };
         case 'status': {
-          const auth = await sessionStorage.get(SESSION_KEY);
+          const [auth, settings] = await Promise.all([
+            sessionStorage.get(SESSION_KEY), local.get([CLOUD_AUTO_SYNC_KEY, CLOUD_AUTO_SYNC_STATUS_KEY, PENDING_EMAIL_KEY]),
+          ]);
           const user = auth[SESSION_KEY];
-          return { ok: true, message: validSession(user) ? 'Firebase 已登录' : 'Firebase 未登录',
-            configured: validConfig(managedConfig),
+          return { ok: true, message: validSession(user) ? '邮箱已验证' : '云同步未验证',
+            configured: validConfig(managedConfig), autoSyncEnabled: settings[CLOUD_AUTO_SYNC_KEY] === true,
+            ...(typeof settings[PENDING_EMAIL_KEY] === 'string' ? { pendingEmail: settings[PENDING_EMAIL_KEY] as string } : {}),
+            ...(settings[CLOUD_AUTO_SYNC_STATUS_KEY] && typeof settings[CLOUD_AUTO_SYNC_STATUS_KEY] === 'object'
+              ? { autoSyncStatus: settings[CLOUD_AUTO_SYNC_STATUS_KEY] as CloudAutoSyncStatus } : {}),
             ...(validSession(user) ? { uid: user.uid } : {}) };
         }
         case 'sync':

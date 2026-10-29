@@ -2,7 +2,7 @@
  * Service-worker bridge for per-tab compatibility warnings in Chrome's toolbar.
  */
 import {
-  PROMPT_COMMIT_TYPE, createPromptWriteCoordinator,
+  PROMPT_COMMIT_TYPE, PROMPT_STORAGE_KEY, createPromptWriteCoordinator,
 } from '@/features/myPrompts/promptWriteCoordinator';
 import { PROMPT_USAGE_COMMIT_TYPE, createPromptUsageWriteCoordinator } from '@/features/myPrompts/promptUsageWriteCoordinator';
 import { SETTINGS_COMMIT_TYPE, createSettingsWriteCoordinator } from '@/features/storage/settingsWriteCoordinator';
@@ -12,7 +12,7 @@ import {
   type BackupStorageMessage, type BackupStorageResponse, type LocalBackup,
 } from '@/features/backup/localBackup';
 import {
-  TOC_ALIAS_COMMIT_TYPE,
+  TOC_ALIAS_COMMIT_TYPE, TOC_ALIAS_PREFIX, TOC_ALIAS_DELETED_PREFIX,
   createTocAliasWriteCoordinator,
 } from '@/features/conversationPrompts/tocAliasWriteCoordinator';
 import {
@@ -21,8 +21,8 @@ import {
 } from '@/features/contractAlert/toolbarWarning';
 import { createToolbarWarningController } from '@/features/contractAlert/toolbarBackground';
 import { installRemoteDeletionObserver } from '@/background/remoteDeletionObserver';
-import { createCloudController, CLOUD_MESSAGE_TYPE } from '@/features/cloud/cloudController';
-import { GET_ACTIVE_ACCOUNT_OWNER_MESSAGE } from '@/features/storage/accountSettings';
+import { createCloudController, CLOUD_MESSAGE_TYPE, CLOUD_AUTO_SYNC_KEY, CLOUD_AUTO_SYNC_STATUS_KEY } from '@/features/cloud/cloudController';
+import { ACCOUNT_SETTINGS_KEY, GET_ACTIVE_ACCOUNT_OWNER_MESSAGE } from '@/features/storage/accountSettings';
 
 // Observe only actual successful ChatGPT delete/visibility-removal mutations in the browser network layer.
 // The observer never stores request bodies and only sends a route ID to the originating tab.
@@ -161,7 +161,7 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
 });
 
 
-/** Only an extension options document may submit Firebase credentials or sync commands. */
+/** Only an extension options document may submit email verification or sync commands. */
 async function hasVerifiedChatGptOwner(ownerId: string): Promise<boolean> {
   if (!ownerId) return false;
   let tabs: chrome.tabs.Tab[];
@@ -183,13 +183,111 @@ async function hasVerifiedChatGptOwner(ownerId: string): Promise<boolean> {
 }
 
 const cloudController = createCloudController(
-  chrome.storage.local, chrome.storage.session, storageWriteQueue, hasVerifiedChatGptOwner
+  chrome.storage.local, chrome.storage.local, storageWriteQueue, hasVerifiedChatGptOwner
 );
+
+// Automatic sync is opt-in. Local changes are uploaded only after a Google
+// identity has authenticated with the maintainer's Firebase project.
+async function findVerifiedChatGptOwners(): Promise<string[]> {
+  let tabs: chrome.tabs.Tab[];
+  try {
+    tabs = await chrome.tabs.query({ url: ['https://chatgpt.com/*', 'https://chat.openai.com/*'] });
+  } catch { return []; }
+  const owners = new Set<string>();
+  for (const tab of tabs) {
+    if (tab.id === undefined) continue;
+    try {
+      const response = await chrome.tabs.sendMessage(tab.id, {
+        type: GET_ACTIVE_ACCOUNT_OWNER_MESSAGE,
+      }) as { ownerId?: unknown } | undefined;
+      if (typeof response?.ownerId === 'string' && response.ownerId) owners.add(response.ownerId);
+    } catch { /* A tab may be loading or not yet have a content script. */ }
+  }
+  return [...owners];
+}
+
+let autoSyncRunning = false;
+let autoSyncPending = false;
+async function runAutomaticSync(): Promise<void> {
+  if (autoSyncRunning) {
+    autoSyncPending = true;
+    return;
+  }
+  autoSyncRunning = true;
+  try {
+    do {
+      autoSyncPending = false;
+      const enabled = await chrome.storage.local.get(CLOUD_AUTO_SYNC_KEY);
+      if (enabled[CLOUD_AUTO_SYNC_KEY] !== true) break;
+      // Firebase email-link identity is persisted in extension local storage;
+      // refresh tokens are rotated by cloudController without browser popups.
+      const authStatus = await cloudController.execute({ type: CLOUD_MESSAGE_TYPE, action: 'status' });
+      if (!authStatus.ok || authStatus.configured !== true || !authStatus.uid) {
+        await chrome.storage.local.set({ [CLOUD_AUTO_SYNC_STATUS_KEY]: {
+          state: 'error', message: '邮箱验证会话已失效，请在设置页重新验证邮箱', updatedAt: Date.now(),
+        } });
+        break;
+      }
+      const owners = await findVerifiedChatGptOwners();
+      for (const ownerId of owners) {
+        const result = await cloudController.execute({
+          type: CLOUD_MESSAGE_TYPE, action: 'sync', ownerId,
+        });
+        await chrome.storage.local.set({
+          [CLOUD_AUTO_SYNC_STATUS_KEY]: {
+            state: result.ok ? 'success' : 'error',
+            message: result.ok ? result.message : result.error,
+            updatedAt: Date.now(),
+          },
+        });
+        if (!result.ok) {
+          // Keep local work intact. Automatic failures never erase local data.
+          console.warn('LunaTOC automatic cloud sync skipped:', result.error);
+        }
+      }
+    } while (autoSyncPending);
+  } finally {
+    autoSyncRunning = false;
+    if (autoSyncPending) void runAutomaticSync();
+  }
+}
+
+let autoSyncDebounce: ReturnType<typeof setTimeout> | undefined;
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName !== 'local') return;
+  const relevant = Object.entries(changes).some(([key, change]) => {
+    const accountData = key === PROMPT_STORAGE_KEY || key === ACCOUNT_SETTINGS_KEY ||
+      key.startsWith(TOC_ALIAS_PREFIX) || key.startsWith(TOC_ALIAS_DELETED_PREFIX);
+    // applySnapshot writes account data even if unchanged. Do not recursively
+    // schedule another cloud fetch for identical local-storage values.
+    return accountData && JSON.stringify(change.oldValue) !== JSON.stringify(change.newValue);
+  });
+  if (!relevant) return;
+  if (autoSyncDebounce) clearTimeout(autoSyncDebounce);
+  // Collapse bursts of local prompt/alias/setting updates into a single sync.
+  autoSyncDebounce = setTimeout(() => {
+    autoSyncDebounce = undefined;
+    void runAutomaticSync();
+  }, 1000);
+});
+
+// Opening or switching to ChatGPT makes that account eligible for sync once
+// the content script can verify its identity.
+chrome.tabs.onActivated.addListener(() => { void runAutomaticSync(); });
+chrome.tabs.onUpdated.addListener((_tabId, changeInfo, tab) => {
+  if (changeInfo.status === 'complete' &&
+      /^https:\/\/(?:chatgpt\.com|chat\.openai\.com)(?:\/|$)/.test(tab.url ?? '')) {
+    void runAutomaticSync();
+  }
+});
+chrome.runtime.onStartup.addListener(() => { void runAutomaticSync(); });
+chrome.runtime.onInstalled.addListener(() => { void runAutomaticSync(); });
+
 chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
   if (!message || typeof message !== 'object' ||
       (message as { type?: unknown }).type !== CLOUD_MESSAGE_TYPE) return;
   // A content script is an extension sender too: only the actual options page
-  // is authorized to pass credentials or trigger cross-device transfers.
+  // is authorized to pass one-time email codes or trigger cross-device transfers.
   const optionsUrl = chrome.runtime.getURL('src/options/options.html');
   if (sender.id !== chrome.runtime.id || sender.url !== optionsUrl) {
     sendResponse({ ok: false, error: 'Firebase 操作只允许从扩展设置页执行' });

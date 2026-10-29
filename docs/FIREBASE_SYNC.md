@@ -1,49 +1,43 @@
-# LunaTOC 云同步：维护者统一 Firebase（方案 B）
+# LunaTOC 邮件链接自动云同步（维护者统一 Firebase）
 
-## 使用者无需配置 Firebase
+## 用户流程
 
-LunaTOC 由维护者提供统一的 Firebase 项目。普通用户不需要创建项目、填写 API Key、修改 Firestore Rules 或理解云端基础设施。
+1. 安装 LunaTOC，默认所有数据仅保存在本地。
+2. 在已登录 ChatGPT 的页面中打开 LunaTOC 设置，开启“自动云同步”。
+3. 输入用于跨设备同步的邮箱，点击“发送验证邮件”。**不需要注册 LunaTOC 账号或设置密码**。
+4. 从邮件中复制**完整的登录链接**，返回扩展设置页粘贴并确认。不要转发链接，也不要先在网页中点击消耗一次性代码。
+5. 完成身份验证后，扩展先验证当前 ChatGPT 账号并尝试首次同步；成功后自动同步开关正式开启。
+6. 在另一台设备使用相同邮箱重复验证；同一 ChatGPT 账号的数据由 Firebase UID 隔离并合并。不同 ChatGPT 账号仍分别储存。
+7. 关闭开关即停止后续上传，并清除本地 Firebase 登录凭据和可选网络权限；不会删除本地或已有云端数据。
 
-- 安装扩展后，所有目录、Tips、外观和备份功能默认只在本地运行。
-- 维护者已上线 Firebase 服务时，设置页提供“登录 / 注册同步账号”，用户明确选择后才会请求额外 Firebase 网络权限。
-- 用户使用自己的同步邮箱、密码登录，选定已验证的 ChatGPT 账号，按“立即同步”上传或下载 Tips、目录别名和偏好。
-- Firebase 同步账号与 ChatGPT 账号相互独立。跨设备需要相同的 Firebase 同步账号和相同的 ChatGPT 账号。
-- 未配置、离线或 Firebase 失败时，不影响本地目录、提示词、布局和备份；不会自动上传聊天正文或使用统计。
-- 目前是手动同步，不提供后台持续轮询、自动冲突解决或端到端加密。请保管敏感提示词。
+*说明：* 用户第一次需要接收邮件、复制链接，这是为了验证云端数据所有权。开启后不要求每次手动点击上传。Firebase Refresh Token 持久保存在当前 Chrome 配置文件中，直到退出、失效或用户清理数据。此方案**不依赖 Chrome 扩展 ID**或 Google OAuth 客户端；但真实 Firebase 邮件的发出和兑换仍需现场验收。
 
-## 维护者首次上线配置（只需维护者完成）
+## 维护者配置
 
-1. 在 Firebase 控制台创建 LunaTOC 所有的项目（可先选择 Spark 方案）。在 Authentication 启用 Email/Password 登录，并创建默认 Cloud Firestore。
-2. 在 Firestore 中部署仓库根目录 [firestore.rules](../firestore.rules)。规则只允许已认证 Firebase UID 读取/修改自身的账户文档；禁止列举、删除、跨 UID 访问和非预期结构写入。
-3. 在项目 Web App 设置中获取公开的 Project ID、Web API Key。它们是客户端标识符，不是服务账号密钥；不要在仓库中加入 Firebase Admin SDK 私钥。
-4. 在 GitHub 仓库 Settings → Secrets and variables → Actions → Variables 添加：
-   - LUNATOC_FIREBASE_PROJECT_ID：官方 Firebase 项目 ID。
-   - LUNATOC_FIREBASE_WEB_API_KEY：官方 Firebase Web API Key。
-5. CI 用这两个变量在 Vite 构建时嵌入官方项目配置。代码不再接受用户自带项目地址，也不会相信遗留的本地项目配置存储键。
-6. main 和所有以 main 为目标的 PR 自动运行 release-config 门禁；没有有效的公开 Firebase 配置将失败，防止误发不可用的云同步版本。
-7. 配置项目后，维护者用独立测试账号执行一次真正的 Firebase Auth + Firestore 联调、真实 Chrome/ChatGPT 冒烟测试，确认已部署规则一致，才可以将发布 PR 合并到 main。公开配置的格式检查不是实际联调。
+1. 在 Firebase 创建维护者拥有的项目（可先使用 Spark）、默认 Cloud Firestore，部署仓库根目录的 [firestore.rules](../firestore.rules)。
+2. Authentication → Sign-in method：保持 **Email/Password** 启用，同时开启 **Email link (passwordless sign-in)**。之前开启的 Google 提供方不作为此功能所需前提，可按运营政策独立管理。
+3. Authentication → Settings → Authorized domains：确认 Firebase Web App 的 `authDomain` 在授权域名列表中。用户收到的动作链接需来自该项目自己的 HTTPS Firebase Hosting 域名。
+4. Project settings → General → Your apps → Web App → Config：分别找到 `projectId`、`apiKey`、`authDomain`。**authDomain 不一定等于 Project ID 加 firebaseapp.com**；2026 年以后新项目的默认 Hosting 站点 ID 可能不同。若尚无默认 Hosting 域名，应先按 Firebase 控制台提示创建站点，且无需部署用户网站代码。
+5. GitHub 仓库 Settings → Secrets and variables → Actions → Variables 设定三项公开客户端配置：
+   - `LUNATOC_FIREBASE_PROJECT_ID`：Firebase Web App 的 `projectId`。
+   - `LUNATOC_FIREBASE_WEB_API_KEY`：Firebase Web App 的 `apiKey`。
+   - `LUNATOC_FIREBASE_AUTH_DOMAIN`：Firebase Web App 的 `authDomain`，例如 `lunatoc-prod.firebaseapp.com`，**不带 https://、路径或引号**。
+6. 对应 GitHub CI 的环境变量分别为 `VITE_LUNATOC_FIREBASE_PROJECT_ID`、`VITE_LUNATOC_FIREBASE_WEB_API_KEY` 和 `VITE_LUNATOC_FIREBASE_AUTH_DOMAIN`。旧的 `LUNATOC_GOOGLE_OAUTH_CLIENT_ID` 不再读取，可从仓库变量中删除。
+7. 构建后检查“官方云同步配置已就绪”并执行真实邮件链接登录、Firestore 写入、另一 Chrome 配置文件读取、账号隔离和退出测试。**格式检查与模拟器测试并不等于真实部署成功。**
 
-## 无账号、无生产凭据的自动测试
+## 安全与限制
 
-CI 的 firebase-rules 作业使用 Firebase 官方 Firestore 模拟器实际加载同一份 firestore.rules，而非只模拟成功响应，验证：
+- 邮件 URL 是一次性登录凭据。扩展只接受所属 Firebase `authDomain` 的 HTTPS URL、`mode=signIn`、正确的 Web API Key，并将 `oobCode` 交给 Firebase 验证。绝不在日志中打印完整链接。
+- 验证完成的 Firebase Refresh Token 持久保存在扩展本地存储，允许浏览器重启后自动同步；不要公开 Chrome 配置文件、扩展存储或任何凭据。
+- 云端路径：`users/{firebaseUid}/accounts/acct_{sha256(chatgptOwnerId)}`；每份快照限制 240 KB。Firestore 规则禁止匿名读写、跨 UID、列举与删除，且要求合法数据结构。
+- 同步使用三方合并、条件更新、删除保护和本地回滚。失败时保留本地数据；两台设备同时修改相同项目可能需要人工解决冲突。维护者可能查看云端明文内容；这不是端到端加密。
+- **生产上线阻断：** 根据 Firebase 官方 Auth quotas，Spark 免费方案邮件链接登录邮件目前**每项目每天只有 5 封**，并不是每用户 5 封。Blaze 方案的额度约为每天 25,000 封，但可能产生费用。Spark 适用于少量联调，不能按普通公测用户规模直接开放。正式发布前必须明确邮件发送方案和费用预算；不允许未经维护者确认而升级 Blaze。另需监控 Firestore 同步请求频率、用量与恶意滥用。
 
-- Firebase UID A 仅能读写自己的合法快照；UID B 和匿名身份不能读取、改写或删除 A 的文档。
-- 任何身份不能列举账户集合或删除文档。
-- 非法账户哈希、额外字段、非字符串字段、超长快照及其他路径均被拒绝。
+## 自动测试
 
-本地运行需要 Node.js 22、Java 21 和网络下载 npm 包及模拟器。
+CI 包含类型检查、Vitest、Chromium 模拟页面测试、Firebase Emulator 加载真实 firestore.rules 的隔离测试、扩展打包和依赖安全审计。邮件发送及一次性代码兑换由模拟 REST 测试覆盖，但最终必须用维护者**真实 Firebase 项目和真实邮箱**完成联调。
+
+本地 Firestore 模拟器测试（Node.js 22、Java 21）：
 
     npm --prefix test/firebase install --no-package-lock
     test/firebase/node_modules/.bin/firebase emulators:exec --only firestore --project demo-lunatoc-ci "node --test test/firebase/firestore.rules.test.mjs"
-
-原项目的 Vitest 测试还验证双设备隔离存储、Firebase REST 协调、登录、离线、权限拒绝与合并逻辑。但模拟器不能证明生产环境已部署规则；仍需维护者发布前联调。
-
-## 数据与隐私
-
-云端路径为 users/{firebaseUid}/accounts/acct_{sha256(chatgptOwnerId)}。数据库按 Firebase UID 进行隔离；扩展还要求目标 ChatGPT 标签页重新验证真实会话身份。Firebase 登录凭据只保留在 Chrome 会话存储，密码不会持久化。每份快照限 240 KB，使用 Firestore 条件写入、基线三方合并和本地回滚。同步失败时保留本地数据，遇到数据冲突停止覆盖。
-
-**隐私提醒：** Firebase 项目由 LunaTOC 维护者托管，维护者可能在其 Firebase 数据库查看用户主动上传的明文 Tips 内容与目录名称。这不是端到端加密。用户不想上传私人内容，可关闭同步并继续本地使用；需要时可导出本地备份。
-
-## Spark 额度
-
-标准 Cloud Firestore 可适用 Spark 免费额度，但统一项目会汇聚所有用户的用量。维护者必须监控用量与滥用，不能保证增长后永远免费，也不能让客户端持有服务账号密钥或开放安全规则。

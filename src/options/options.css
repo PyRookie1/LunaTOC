@@ -87,7 +87,7 @@ body {
 .settings-backup-button:focus-visible, .settings-backup-upload:focus-within {
   outline: 2px solid var(--o-accent); outline-offset: 2px;
 }
-.settings-backup-button:disabled { cursor: wait; opacity: .55; }
+.settings-backup-button:disabled { cursor: not-allowed; opacity: .55; }
 .settings-backup-upload input { display: block; margin-top: 8px; font-size: 12px; max-width: 100%; }
 .settings-backup-preview {
   margin-top: 15px; padding: 12px; border: 1px solid var(--o-border);
