@@ -29,16 +29,25 @@ const request = (action: string, options: Record<string, unknown> = {}) =>
 function firebaseHarness() {
   const documents = new Map<string, { snapshot: unknown; updateTime: string }>();
   let writes = 0;
+  let verified = true;
   const fetcher = vi.fn(async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
     const url = String(input);
-    if (url.includes('accounts:sendOobCode')) return Response.json({ email: 'test@example.com' });
-    if (url.includes('accounts:signInWithEmailLink')) {
-      const body = JSON.parse(init?.body as string) as { email: string; oobCode: string };
-      if (body.oobCode === 'expiredCode1234567890') {
-        return Response.json({ error: { message: 'EXPIRED_OOB_CODE' } }, { status: 400 });
-      }
-      if (body.email !== 'test@example.com' || body.oobCode !== 'singleUseEmailCode1234567890') {
-        return Response.json({ error: { message: 'INVALID_OOB_CODE' } }, { status: 400 });
+    if (url.includes('accounts:sendOobCode')) {
+      const body = JSON.parse(init?.body as string) as { requestType?: string };
+      if (body.requestType !== 'VERIFY_EMAIL') throw new Error('Unexpected email request');
+      return Response.json({ email: 'test@example.com' });
+    }
+    if (url.includes('securetoken.googleapis.com')) return Response.json({
+      id_token: 'new-id-token', refresh_token: 'new-refresh-token', user_id: 'firebase-user',
+      expires_in: '3600',
+    });
+    if (url.includes('accounts:lookup')) return Response.json({
+      users: [{ localId: 'firebase-user', email: 'test@example.com', emailVerified: verified }],
+    });
+    if (url.includes('accounts:signInWithPassword') || url.includes('accounts:signUp')) {
+      const body = JSON.parse(init?.body as string) as { email: string; password: string };
+      if (body.email !== 'test@example.com' || body.password !== 'a-secure-test-password') {
+        return Response.json({ error: { message: 'INVALID_LOGIN_CREDENTIALS' } }, { status: 400 });
       }
       return Response.json({
         idToken: 'id-token', refreshToken: 'refresh-token', localId: 'firebase-user', expiresIn: '3600',
@@ -65,7 +74,7 @@ function firebaseHarness() {
     }
     throw new Error('Unexpected Firebase URL ' + url);
   });
-  return { documents, fetcher, writes: () => writes };
+  return { documents, fetcher, writes: () => writes, setVerified: (value: boolean) => { verified = value; } };
 }
 const initialLocal = () => ({ [PROMPT_STORAGE_KEY]: [item],
   [ACCOUNT_SETTINGS_KEY]: { [owner]: settings },
@@ -78,9 +87,8 @@ async function ready(local: ReturnType<typeof storage>, cloud: ReturnType<typeof
     verified, cloud.fetcher as unknown as typeof fetch,
     { apiKey: 'AIzaSy-Test-api-key-public', projectId: 'lunatoc-demo', authDomain: 'lunatoc-demo.firebaseapp.com' });
   expect(await service.execute(request('status'))).toMatchObject({ ok: true, configured: true });
-  const login = await service.execute(request('complete-email-link', {
-    email: 'test@example.com',
-    link: 'https://lunatoc-demo.firebaseapp.com/__/auth/action?mode=signIn&oobCode=singleUseEmailCode1234567890&apiKey=AIzaSy-Test-api-key-public',
+  const login = await service.execute(request('login', {
+    email: 'test@example.com', password: 'a-secure-test-password',
   }));
   expect(login).toMatchObject({ ok: true, uid: 'firebase-user' });
   return { service, sessions };
@@ -97,53 +105,50 @@ describe('Firebase REST account sync', () => {
     expect(await service.execute(request('configure', {
       config: { projectId: 'attacker-project', apiKey: 'AIzaSy-Attacker-public-key' },
     }))).toMatchObject({ ok: false, error: expect.stringContaining('禁止') });
-    expect(await service.execute(request('send-email-link', { email: 'test@example.com' }))).toMatchObject({ ok: false, error: expect.stringContaining('尚未配置') });
+    expect(await service.execute(request('login', { email: 'test@example.com', password: 'a-secure-test-password' }))).toMatchObject({ ok: false, error: expect.stringContaining('尚未配置') });
     expect(remote.fetcher).not.toHaveBeenCalled();
   });
-  it('sends a passwordless email link using the managed HTTPS Hosting domain', async () => {
+  it('registers with a password, sends a verification email, and blocks cloud access until verified', async () => {
     const local = storage(), sessions = storage(), cloud = firebaseHarness();
+    cloud.setVerified(false);
     const service = createCloudController(local.api, sessions.api, createSerialWriteQueue(),
       async () => true, cloud.fetcher as unknown as typeof fetch,
       { apiKey: 'AIzaSy-Test-api-key-public', projectId: 'lunatoc-demo',
         authDomain: 'lunatoc-demo.firebaseapp.com' });
-    expect(await service.execute(request('send-email-link', { email: 'test@example.com' })))
-      .toMatchObject({ ok: true, pendingEmail: 'test@example.com' });
-    const sent = cloud.fetcher.mock.calls.find(([url]) => String(url).includes('accounts:sendOobCode'));
-    const body = JSON.parse(sent?.[1]?.body as string);
-    expect(body).toEqual({
-      requestType: 'EMAIL_SIGNIN', email: 'test@example.com',
-      continueUrl: 'https://lunatoc-demo.firebaseapp.com/', canHandleCodeInApp: true,
+    const signup = await service.execute(request('register', {
+      email: 'test@example.com', password: 'a-secure-test-password',
+    }));
+    expect(signup).toMatchObject({ ok: true, uid: 'firebase-user', emailVerified: false });
+    const verify = cloud.fetcher.mock.calls.find(([url]) => String(url).includes('accounts:sendOobCode'));
+    expect(JSON.parse(verify?.[1]?.body as string)).toEqual({
+      requestType: 'VERIFY_EMAIL', idToken: 'id-token',
     });
-    expect(await service.execute(request('status')))
-      .toMatchObject({ ok: true, pendingEmail: 'test@example.com' });
-    expect(local.state).not.toHaveProperty('lunatoc:cloud:auth:session:v1');
+    expect(JSON.stringify(sessions.state)).not.toContain('a-secure-test-password');
+    expect(await service.execute(request('set-auto-sync', { enabled: true })))
+      .toMatchObject({ ok: false, error: expect.stringContaining('验证') });
+    expect(await service.execute(request('sync', { ownerId: owner })))
+      .toMatchObject({ ok: false, error: expect.stringContaining('验证') });
+    cloud.setVerified(true);
+    expect(await service.execute(request('check-verification')))
+      .toMatchObject({ ok: true, emailVerified: true });
+    expect(await service.execute(request('set-auto-sync', { enabled: true })))
+      .toMatchObject({ ok: true, autoSyncEnabled: true });
   });
 
-  it('rejects third-party, mismatched, malformed and expired email links', async () => {
+  it('rejects incorrect credentials and short passwords without establishing any session', async () => {
     const local = storage(), sessions = storage(), cloud = firebaseHarness();
     const service = createCloudController(local.api, sessions.api, createSerialWriteQueue(),
       async () => true, cloud.fetcher as unknown as typeof fetch,
       { apiKey: 'AIzaSy-Test-api-key-public', projectId: 'lunatoc-demo',
         authDomain: 'lunatoc-demo.firebaseapp.com' });
-    const valid = 'https://lunatoc-demo.firebaseapp.com/__/auth/action?mode=signIn&oobCode=singleUseEmailCode1234567890&apiKey=AIzaSy-Test-api-key-public';
-    for (const link of [
-      valid.replace('lunatoc-demo.firebaseapp.com', 'attacker.firebaseapp.com'),
-      valid.replace('apiKey=AIzaSy-Test-api-key-public', 'apiKey=AIzaSy-Other-project'),
-      valid.replace('mode=signIn', 'mode=resetPassword'),
-      'http://'+valid.slice('https://'.length),
-      'not-a-link',
-    ]) {
-      expect((await service.execute(request('complete-email-link', { email: 'test@example.com', link }))).ok).toBe(false);
-    }
-    expect(cloud.fetcher).not.toHaveBeenCalled();
-    expect(await service.execute(request('complete-email-link', {
-      email: 'test@example.com',
-      link: valid.replace('singleUseEmailCode1234567890', 'expiredCode1234567890'),
-    }))).toMatchObject({ ok: false, error: expect.stringContaining('EXPIRED_OOB_CODE') });
+    expect((await service.execute(request('login', { email: 'test@example.com',
+      password: 'short' }))).ok).toBe(false);
+    expect((await service.execute(request('login', { email: 'test@example.com',
+      password: 'wrong-long-password' }))).ok).toBe(false);
     expect(sessions.state).not.toHaveProperty('lunatoc:cloud:auth:session:v1');
   });
 
-  it('clears the persisted Firebase session and pending email when sync is disabled', async () => {
+  it('clears the persisted Firebase session when sync is disabled', async () => {
     const local = storage(), cloud = firebaseHarness();
     const { service, sessions } = await ready(local, cloud);
     expect(sessions.state).toHaveProperty('lunatoc:cloud:auth:session:v1');
