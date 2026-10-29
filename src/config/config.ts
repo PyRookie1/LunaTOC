@@ -210,15 +210,12 @@ export function getActiveContractValue(
   return useLocalConfig ? entry.local : entry.formal;
 }
 
-/** `chrome.storage.local` key for runtime overrides of ChatGPT config flags. */
-export const CHATGPT_RUNTIME_CONFIG_STORAGE_KEY = 'chatGptRuntimeConfig';
-
-/** Legacy alias kept for one release so existing dev storage migrates safely. */
-export const LEGACY_CHATGPT_RUNTIME_CONFIG_STORAGE_KEY = 'chatGptRuntimeConfig';
+/** `chrome.storage.local` key for LunaTOC ChatGPT runtime settings. */
+export const CHATGPT_RUNTIME_CONFIG_STORAGE_KEY = 'lunatoc:chatgpt:runtimeConfig:v1';
 
 /** `chrome.storage.local` key for runtime overrides, generic across platforms. */
 export function platformRuntimeConfigKey(platformId: string): string {
-  return `luna:${platformId}:runtimeConfig`;
+  return `lunatoc:${platformId}:runtimeConfig:v1`;
 }
 
 /** Runtime overrides for ChatGPT config flags, loaded from `chrome.storage.local`. */
@@ -230,8 +227,7 @@ export interface ChatGptRuntimeConfig {
 /**
  * Generic, per-platform runtime-config loader. Falls back to the committed
  * `APP_CONFIG.platforms[platformId]` defaults when the storage entry is
- * missing or malformed. Migrates the legacy `chatGptRuntimeConfig` storage
- * key on first read (preserved for one release).
+ * missing or malformed. No migration is required for the initial release.
  *
  * @param {string} platformId
  * @param {Pick<chrome.storage.StorageArea, 'get'>} [storage]
@@ -251,7 +247,7 @@ export async function loadPlatformRuntimeConfig(
 
   const newKey = platformRuntimeConfigKey(platformId);
   try {
-    const raw = await storage.get([newKey, LEGACY_CHATGPT_RUNTIME_CONFIG_STORAGE_KEY]);
+    const raw = await storage.get(newKey);
     const newEntry = raw?.[newKey] as unknown;
     if (newEntry && typeof newEntry === 'object') {
       const overrides = newEntry as Record<string, unknown>;
@@ -267,30 +263,6 @@ export async function loadPlatformRuntimeConfig(
       };
     }
 
-    // Legacy key path — read once and migrate forward to the new key.
-    const legacy = raw?.[LEGACY_CHATGPT_RUNTIME_CONFIG_STORAGE_KEY] as unknown;
-    if (platformId === 'chatgpt' && legacy && typeof legacy === 'object') {
-      const overrides = legacy as Record<string, unknown>;
-      const migrated: ChatGptRuntimeConfig = {
-        useLocalConfig:
-          typeof overrides.useLocalConfig === 'boolean'
-            ? overrides.useLocalConfig
-            : defaults.useLocalConfig,
-        showCompatibilityAlert:
-          typeof overrides.showCompatibilityAlert === 'boolean'
-            ? overrides.showCompatibilityAlert
-            : defaults.showCompatibilityAlert,
-      };
-      try {
-        await storage.set({ [newKey]: migrated });
-        await storage.remove(LEGACY_CHATGPT_RUNTIME_CONFIG_STORAGE_KEY);
-      } catch {
-        // Storage migration failures are non-fatal — return the migrated
-        // value anyway so callers can proceed.
-      }
-      return migrated;
-    }
-
     return defaults;
   } catch {
     return defaults;
@@ -298,9 +270,8 @@ export async function loadPlatformRuntimeConfig(
 }
 
 /**
- * Writes the runtime override layer for any platform's config flags. Mirrors
- * `loadPlatformRuntimeConfig`; uses the new `luna:<id>:runtimeConfig` storage
- * key (no longer the legacy `chatGptRuntimeConfig`).
+ * Writes the LunaTOC runtime override layer for a platform's config flags.
+ * Mirrors `loadPlatformRuntimeConfig` without any previous-release migration.
  *
  * @param {string} platformId
  * @param {Partial<ChatGptRuntimeConfig>} overrides

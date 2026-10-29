@@ -86,7 +86,7 @@ async function ready(local: ReturnType<typeof storage>, cloud: ReturnType<typeof
   return { service, sessions };
 }
 describe('Firebase REST account sync', () => {
-  it('rejects user-specified Firebase backend and ignores legacy config', async () => {
+  it('rejects user-specified Firebase backend without a managed project configuration', async () => {
     const local = storage({ 'lunatoc:cloud:config:v1': {
       projectId: 'attacker-project', apiKey: 'AIzaSy-Attacker-public-key',
     } });
