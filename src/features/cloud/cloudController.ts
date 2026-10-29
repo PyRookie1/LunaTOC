@@ -24,6 +24,7 @@ type Fetcher = typeof fetch;
 export type CloudAction =
   | { type: typeof CLOUD_MESSAGE_TYPE; action: 'register' | 'login'; email: string; password: string }
   | { type: typeof CLOUD_MESSAGE_TYPE; action: 'resend-verification' | 'check-verification' }
+  | { type: typeof CLOUD_MESSAGE_TYPE; action: 'reset-password'; email: string }
   | { type: typeof CLOUD_MESSAGE_TYPE; action: 'set-auto-sync'; enabled: boolean }
   | { type: typeof CLOUD_MESSAGE_TYPE; action: 'sign-out' | 'status' }
   | { type: typeof CLOUD_MESSAGE_TYPE; action: 'sync'; ownerId: string };
@@ -141,6 +142,18 @@ export function createCloudController(
         body: JSON.stringify({ requestType: 'VERIFY_EMAIL', idToken: user.idToken }) }
     );
     await jsonResponse(response);
+  }
+  async function requestPasswordReset(rawEmail: unknown): Promise<CloudResult> {
+    const email = emailAddress(rawEmail);
+    const cfg = await config();
+    const response = await fetcher(
+      'https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=' + encodeURIComponent(cfg.apiKey),
+      { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requestType: 'PASSWORD_RESET', email }) }
+    );
+    await jsonResponse(response);
+    // Do not disclose if this address is registered.
+    return { ok: true, message: '如该邮箱已注册，密码重置邮件将发送到该地址，请检查收件箱' };
   }
   async function passwordAuth(mode: 'register' | 'login', rawEmail: unknown, rawPassword: unknown): Promise<CloudResult> {
     const email = emailAddress(rawEmail);
@@ -340,6 +353,8 @@ export function createCloudController(
         case 'register':
         case 'login':
           return await passwordAuth(command.action, command.email, command.password);
+        case 'reset-password':
+          return await requestPasswordReset(command.email);
         case 'resend-verification': {
           const active = await session();
           if (active.emailVerified) throw new Error('邮箱已验证，无需重复发送');
