@@ -34,7 +34,7 @@ function firebaseHarness() {
     const url = String(input);
     if (url.includes('accounts:sendOobCode')) {
       const body = JSON.parse(init?.body as string) as { requestType?: string };
-      if (body.requestType !== 'VERIFY_EMAIL') throw new Error('Unexpected email request');
+      if (body.requestType !== 'VERIFY_EMAIL' && body.requestType !== 'PASSWORD_RESET') throw new Error('Unexpected email request');
       return Response.json({ email: 'test@example.com' });
     }
     if (url.includes('securetoken.googleapis.com')) return Response.json({
@@ -133,6 +133,21 @@ describe('Firebase REST account sync', () => {
       .toMatchObject({ ok: true, emailVerified: true });
     expect(await service.execute(request('set-auto-sync', { enabled: true })))
       .toMatchObject({ ok: true, autoSyncEnabled: true });
+  });
+
+  it('uses the password-reset mail quota only on explicit user request', async () => {
+    const local = storage(), sessions = storage(), cloud = firebaseHarness();
+    const service = createCloudController(local.api, sessions.api, createSerialWriteQueue(),
+      async () => true, cloud.fetcher as unknown as typeof fetch,
+      { apiKey: 'AIzaSy-Test-api-key-public', projectId: 'lunatoc-demo',
+        authDomain: 'lunatoc-demo.firebaseapp.com' });
+    expect(await service.execute(request('reset-password', { email: 'test@example.com' })))
+      .toMatchObject({ ok: true, message: expect.stringContaining('如该邮箱已注册') });
+    const sent = cloud.fetcher.mock.calls.find(([url]) => String(url).includes('accounts:sendOobCode'));
+    expect(JSON.parse(sent?.[1]?.body as string)).toEqual({
+      requestType: 'PASSWORD_RESET', email: 'test@example.com',
+    });
+    expect(sessions.state).not.toHaveProperty('lunatoc:cloud:auth:session:v1');
   });
 
   it('rejects incorrect credentials and short passwords without establishing any session', async () => {
