@@ -123,7 +123,7 @@ export function CloudSyncSettings({ accountId }: { accountId: string }): React.J
   }
 
   return (
-    <div className="settings-cloud-panel">
+    <div className="settings-cloud-panel" aria-busy={!statusLoaded}>
       <div className="settings-choice settings-no-border">
         <span className="settings-choice-info settings-inline-title">
           <label htmlFor="cloud-auto-sync-toggle"><strong>自动云同步</strong></label>
