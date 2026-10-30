@@ -93,22 +93,19 @@ export function LocalBackupSettings(): React.JSX.Element {
     <section className="settings-section" aria-labelledby="backup-heading">
       <div className="settings-section-heading">
         <h2 id="backup-heading">本地数据备份与恢复</h2>
-        <p>备份提示词、使用统计、自定义目录名称、主题及侧边栏偏好。只在本机处理文件，不上传到服务器。</p>
       </div>
       <div className="settings-card">
         <div className="settings-backup-block">
-          <strong className="settings-setting-title">导出完整备份</strong>
-          <p className="settings-backup-description">生成带版本号的 JSON 文件；原有的 Markdown 提示词导入导出仍可继续使用。</p>
+          <strong className="settings-setting-title">导出</strong>
           <button type="button" className="settings-backup-button" onClick={() => void exportBackup()} disabled={busy}>
             导出本地数据
           </button>
         </div>
         <div className="settings-divider" />
         <div className="settings-backup-block">
-          <strong className="settings-setting-title">从备份恢复</strong>
-          <p className="settings-backup-description">先选择文件并预览，不会立即写入。文件可能包含私人提示词、账号标识及会话编号，请勿公开分享。</p>
-          <label className="settings-backup-upload">
-            选择 JSON 备份文件
+          <strong className="settings-setting-title">导入</strong>
+          <label className="settings-backup-file-row">
+            <span>选择备份文件</span>
             <input type="file" accept=".json,application/json" onChange={(event) => void selectFile(event)} disabled={busy} />
           </label>
           {preview && summary && (
