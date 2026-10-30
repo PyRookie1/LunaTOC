@@ -128,12 +128,16 @@ jobs:
           NODE
 
       - name: Package and verify extension ZIP
+        id: package
         run: |
-          (cd dist && zip -q -r ../lunatoc-chrome.zip .)
-          unzip -tq lunatoc-chrome.zip
-          unzip -Z1 lunatoc-chrome.zip | grep -Fxq manifest.json
-          sha256sum lunatoc-chrome.zip > lunatoc-chrome.zip.sha256
-          sha256sum -c lunatoc-chrome.zip.sha256
+          VERSION="$(node -p "require('./package.json').version")"
+          PACKAGE="lunatoc-v${VERSION}.zip"
+          echo "package_base=lunatoc-v${VERSION}" >> "$GITHUB_OUTPUT"
+          (cd dist && zip -q -r "../${PACKAGE}" .)
+          unzip -tq "$PACKAGE"
+          unzip -Z1 "$PACKAGE" | grep -Fxq manifest.json
+          sha256sum "$PACKAGE" > "${PACKAGE}.sha256"
+          sha256sum -c "${PACKAGE}.sha256"
 
       - name: Install isolated Chromium test runner
         run: npm run test:browser:setup
@@ -147,10 +151,10 @@ jobs:
       - name: Upload verified extension package
         uses: actions/upload-artifact@v7
         with:
-          name: lunatoc-chrome
+          name: ${{ steps.package.outputs.package_base }}
           path: |
-            lunatoc-chrome.zip
-            lunatoc-chrome.zip.sha256
+            lunatoc-v*.zip
+            lunatoc-v*.zip.sha256
           if-no-files-found: error
           retention-days: 14
 
