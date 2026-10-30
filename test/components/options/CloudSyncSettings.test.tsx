@@ -71,18 +71,16 @@ describe('CloudSyncSettings verified LunaTOC password accounts', () => {
     await render();
     expect(host.querySelector('input[type="email"]')).toBeNull();
     expect(host.querySelector('input[type="password"]')).toBeNull();
-    expect(host.textContent).toContain('云同步已关闭');
+    expect(host.textContent).not.toContain('官方云同步配置已就绪');
     expect(host.textContent).not.toContain('LunaTOC 云同步（可选）');
-    expect(host.querySelector('#cloud-sync-help')?.textContent)
-      .toBe('首次需使用邮箱+密码注册 LunaTOC 账号并验证邮箱。');
-    expect(host.querySelector('button[aria-describedby="cloud-sync-help"]')).not.toBeNull();
+    expect(host.querySelector('#cloud-sync-help')).toBeNull();
   });
 
   it('logs in with verified email/password then enables initial sync', async () => {
     await render();
     await enableForm();
     expect(mocks.requestPermissions).toHaveBeenCalledTimes(1);
-    expect(host.textContent).toContain('等待 LunaTOC 登录');
+    expect(host.querySelector('input[type="email"]')).not.toBeNull();
     const fields = element<HTMLDivElement>('.settings-cloud-credentials');
     expect(fields.querySelectorAll('label')).toHaveLength(2);
     expect(fields.querySelectorAll('input')).toHaveLength(2);
@@ -116,7 +114,7 @@ describe('CloudSyncSettings verified LunaTOC password accounts', () => {
     await typeInto(element<HTMLInputElement>('input[type="password"]'), 'a-secure-test-password');
     await act(async () => Array.from(host.querySelectorAll('button'))
       .find(b => b.textContent === '注册 LunaTOC 账号')?.click());
-    expect(host.textContent).toContain('邮箱尚未验证');
+    expect(host.textContent).toContain('邮箱还没验证');
     expect(mocks.sendMessage.mock.calls.map(([arg]) => arg.action))
       .toEqual(['status', 'register']);
     await act(async () => Array.from(host.querySelectorAll('button'))
@@ -141,7 +139,7 @@ describe('CloudSyncSettings verified LunaTOC password accounts', () => {
     });
     vi.spyOn(window, 'confirm').mockReturnValue(true);
     await render();
-    expect(host.textContent).toContain('另一个 LunaTOC 云账号');
+    expect(host.textContent).toContain('别的云账号');
     expect(host.textContent).not.toContain('绑定当前 ChatGPT 账号并同步到此云空间');
     await act(async () => Array.from(host.querySelectorAll('button'))
       .find(b => b.textContent?.includes('解除当前 ChatGPT 账号原有云端绑定'))?.click());
@@ -208,7 +206,7 @@ describe('CloudSyncSettings verified LunaTOC password accounts', () => {
     await render();
     await enableForm();
     expect(element<HTMLInputElement>('input[aria-label="开启自动云同步"]').checked).toBe(false);
-    expect(host.textContent).toContain('未授权 Firebase 网络访问');
+    expect(host.textContent).toContain('没有开启云同步权限');
     expect(mocks.sendMessage.mock.calls.map(([arg]) => arg.action)).toEqual(['status']);
   });
 
@@ -229,7 +227,7 @@ describe('CloudSyncSettings verified LunaTOC password accounts', () => {
       .find(b => b.textContent === '注册 LunaTOC 账号')?.click());
     await act(async () => Array.from(host.querySelectorAll('button'))
       .find(b => b.textContent?.includes('我已完成邮箱验证'))?.click());
-    expect(host.textContent).toContain('邮箱尚未验证');
+    expect(host.textContent).toContain('邮箱还没验证');
     expect(mocks.sendMessage.mock.calls.map(([arg]) => arg.action))
       .toEqual(['status', 'register', 'check-verification']);
     expect(element<HTMLInputElement>('input[aria-label="开启自动云同步"]').checked).toBe(true);
