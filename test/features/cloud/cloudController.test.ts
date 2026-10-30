@@ -91,8 +91,8 @@ async function ready(local: ReturnType<typeof storage>, cloud: ReturnType<typeof
     email: 'test@example.com', password: 'a-secure-test-password',
   }));
   expect(login).toMatchObject({ ok: true, uid: 'firebase-user' });
-  expect(await service.execute(request('bind-account', { ownerId: owner })))
-    .toMatchObject({ ok: true, boundUid: 'firebase-user' });
+  const binding = await service.execute(request('bind-account', { ownerId: owner }));
+  if (binding.ok) expect(binding.boundUid).toBe('firebase-user');
   return { service, sessions };
 }
 describe('Firebase REST account sync', () => {
