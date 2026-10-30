@@ -404,7 +404,7 @@ export function createCloudController(
       // New installations auto-register default preferences. Defaults are
       // not intentional edits: on first sync prefer a customized remote setting.
       const defaults = {
-        theme: { followChatGPT: true, manualTheme: 'dark' },
+        theme: { followChatGPT: false, manualTheme: 'light' },
         sidebar: { layoutMode: 'overlay', backgroundColor: 'default', revealTint: false },
       };
       const initialLocal = !hasBaseline && remote.settings && here.settings &&
