@@ -142,12 +142,10 @@ export function OptionsApp(): React.JSX.Element {
       </header>
 
       <section className="settings-section" aria-labelledby="account-settings-heading">
-        <div className="settings-section-heading">
-          <h2 id="account-settings-heading">当前ChatGPT账号</h2>
-        </div>
         <div className="settings-card">
-          <div className="settings-choice settings-no-border">
-            <select className="settings-account-select" aria-label="当前ChatGPT账号"
+          <div className="settings-choice settings-no-border settings-account-row">
+            <h2 id="account-settings-heading" className="settings-inline-section-title">当前ChatGPT账号</h2>
+            <select className="settings-account-select" aria-labelledby="account-settings-heading"
               value={selectedAccountId}
               disabled={accountIds.length === 0 || savingSettings}
               onChange={(event) => setSelectedAccountId(event.currentTarget.value)}>
@@ -227,6 +225,8 @@ export function OptionsApp(): React.JSX.Element {
         </div>
       </section>
 
+      <LocalBackupSettings />
+      <LocalAliasCleanupSettings />
       <section className="settings-section" aria-label="ChatGPT 兼容性警告设置">
         <div className="settings-card">
           <div className="settings-choice settings-no-border">
@@ -244,8 +244,6 @@ export function OptionsApp(): React.JSX.Element {
           </div>
         </div>
       </section>
-      <LocalBackupSettings />
-      <LocalAliasCleanupSettings />
       {savingSettings && <p className="settings-backup-status" role="status">正在保存侧边栏设置…</p>}
       {saveError && <p className="settings-error" role="alert">{saveError}</p>}
       <p className="settings-footnote">默认保存在浏览器本地；仅当主动登录并执行同步时才将所选账号的提示词、别名与偏好发送到 LunaTOC 维护的 Firebase 项目；服务维护者可能访问云端明文数据。</p>
