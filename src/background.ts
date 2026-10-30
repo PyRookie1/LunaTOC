@@ -84,7 +84,7 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
   }
   void (async () => {
     const ownerId = (message as { ownerId?: unknown }).ownerId;
-    if (!isValidAccountOwnerId(ownerId) || !(await hasVerifiedChatGptOwner(ownerId))) {
+    if (!isValidAccountOwnerId(ownerId) || !(await hasVerifiedChatGptOwner(ownerId, sender.tab?.id))) {
       return { ok: false, error: 'ChatGPT account not verified; prompt write refused' };
     }
     return promptCoordinator.commit(message);
@@ -107,7 +107,7 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
     const request = message as { ownerId?: unknown; action?: unknown; expected?: { ownerId?: unknown } };
     const ownerId = request.action === 'cleanup-conversation'
       ? request.expected?.ownerId : request.ownerId;
-    if (!isValidAccountOwnerId(ownerId) || !(await hasVerifiedChatGptOwner(ownerId))) {
+    if (!isValidAccountOwnerId(ownerId) || !(await hasVerifiedChatGptOwner(ownerId, sender.tab?.id))) {
       return { ok: false, error: 'ChatGPT account not verified; alias update refused' };
     }
     return tocAliasCoordinator.commit(message);
@@ -128,7 +128,7 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
   }
   void (async () => {
     const ownerId = (message as { ownerId?: unknown }).ownerId;
-    if (!isValidAccountOwnerId(ownerId) || !(await hasVerifiedChatGptOwner(ownerId))) {
+    if (!isValidAccountOwnerId(ownerId) || !(await hasVerifiedChatGptOwner(ownerId, sender.tab?.id))) {
       return { ok: false, error: 'ChatGPT account not verified; usage update refused' };
     }
     return promptUsageCoordinator.commit(message);
@@ -155,11 +155,9 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
     return false;
   }
   void (async () => {
-    if (action !== 'register-account') {
-      const ownerId = (message as { ownerId?: unknown }).ownerId;
-      if (!isValidAccountOwnerId(ownerId) || !(await hasVerifiedChatGptOwner(ownerId))) {
-        return { ok: false, error: 'ChatGPT account not verified; settings update refused' };
-      }
+    const ownerId = (message as { ownerId?: unknown }).ownerId;
+    if (!isValidAccountOwnerId(ownerId) || !(await hasVerifiedChatGptOwner(ownerId, sender.tab?.id))) {
+      return { ok: false, error: 'ChatGPT account not verified; settings update refused' };
     }
     return settingsCoordinator.commit(message);
   })().then(sendResponse, () =>
@@ -194,7 +192,7 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
 
 
 /** Only an extension options document may submit email verification or sync commands. */
-async function hasVerifiedChatGptOwner(ownerId: string): Promise<boolean> {
+async function hasVerifiedChatGptOwner(ownerId: string, sourceTabId?: number): Promise<boolean> {
   if (!ownerId) return false;
   let tabs: chrome.tabs.Tab[];
   try {
@@ -203,7 +201,7 @@ async function hasVerifiedChatGptOwner(ownerId: string): Promise<boolean> {
     });
   } catch { return false; }
   for (const tab of tabs) {
-    if (tab.id === undefined) continue;
+    if (tab.id === undefined || (sourceTabId !== undefined && tab.id !== sourceTabId)) continue;
     try {
       const response = await chrome.tabs.sendMessage(tab.id, {
         type: GET_ACTIVE_ACCOUNT_OWNER_MESSAGE,
@@ -302,7 +300,9 @@ async function runAutomaticSync(force = false): Promise<void> {
         } });
         break;
       }
-      const owners = await findVerifiedChatGptOwners();
+      // An authenticated LunaTOC user syncs only their explicitly bound ChatGPT accounts.
+      const owners = (await findVerifiedChatGptOwners())
+        .filter((owner) => authStatus.boundOwners?.includes(owner) === true);
       const errors: string[] = [];
       let transientFailure = false;
       for (const ownerId of owners) {
@@ -395,7 +395,7 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
     return false;
   }
   void cloudController.execute(message).then(async (result) => {
-    if (result.ok && ['set-auto-sync', 'sign-out'].includes(String((message as { action?: unknown }).action))) {
+    if (result.ok && ['set-auto-sync', 'sign-out', 'register', 'login'].includes(String((message as { action?: unknown }).action))) {
       try {
         await refreshCloudPolling();
         if ((message as { enabled?: unknown }).enabled === true) {
