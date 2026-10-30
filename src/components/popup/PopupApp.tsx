@@ -28,6 +28,7 @@ export function PopupApp(): React.JSX.Element {
   const [settingsOwnerId, setSettingsOwnerId] = useState<string | null>(null);
   const [settingsError, setSettingsError] = useState('');
   const [chatGPTTheme, setChatGPTTheme] = useState<ResolvedTheme>('dark');
+  const [themeReady, setThemeReady] = useState(false);
   const [compatibilityWarning, setCompatibilityWarning] =
     useState<ToolbarCompatibilityWarning | null>(null);
 
@@ -68,7 +69,11 @@ export function PopupApp(): React.JSX.Element {
       if (!active) return;
       setSettingsOwnerId(ownerId);
       if (!ownerId) {
+        const resolvedTheme = await readResolvedChatGPTTheme();
+        if (!active) return;
+        setChatGPTTheme(resolvedTheme);
         setSettingsError('请先打开并登录 ChatGPT；主题偏好按账号保存。');
+        setThemeReady(true);
         return;
       }
       const [savedSettings, resolvedTheme] = await Promise.all([
@@ -77,11 +82,16 @@ export function PopupApp(): React.JSX.Element {
       if (!active) return;
       setSettings(savedSettings);
       setChatGPTTheme(resolvedTheme);
+      setThemeReady(true);
       unsubscribeSettings = subscribeThemeSettings(setSettings, ownerId);
       unsubscribeResolvedTheme = subscribeResolvedChatGPTTheme(setChatGPTTheme);
     };
     void initialize().catch((error: unknown) => {
-      if (active) setSettingsError(error instanceof Error ? error.message : '无法读取主题设置。');
+      if (active) {
+        setSettingsError(error instanceof Error ? error.message : '无法读取主题设置。');
+        // Avoid a permanently hidden popup if settings cannot be read.
+        setThemeReady(true);
+      }
     });
     return () => {
       active = false;
@@ -95,9 +105,10 @@ export function PopupApp(): React.JSX.Element {
     : settings.manualTheme;
 
   useEffect(() => {
+    if (!themeReady) return;
     document.documentElement.dataset.theme = resolvedTheme;
     document.body.dataset.theme = resolvedTheme;
-  }, [resolvedTheme]);
+  }, [resolvedTheme, themeReady]);
 
   const updateSettings = (nextSettings: ThemeSettingsValue): void => {
     if (!settingsOwnerId) return;
