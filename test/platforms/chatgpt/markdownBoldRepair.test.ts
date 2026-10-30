@@ -73,6 +73,16 @@ describe('parseUnrenderedBoldMarkdown', () => {
       { text: 'inner', bold: true },
     ]);
   });
+
+  it('does not repeatedly rescan unmatched backtick runs', () => {
+    const prefix = Array.from({ length: 500 }, (_, index) => '`'.repeat(index + 1)).join(' ');
+    const start = performance.now();
+    expect(parseUnrenderedBoldMarkdown(prefix + ' **valid**')).toEqual([
+      { text: prefix + ' ', bold: false },
+      { text: 'valid', bold: true },
+    ]);
+    expect(performance.now() - start).toBeLessThan(2_000);
+  });
 });
 
 describe('startMarkdownBoldRepair', () => {
