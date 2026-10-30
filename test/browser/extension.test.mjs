@@ -405,7 +405,7 @@ test('Chromium MV3: TOC, search, layout, SPA and failure paths',{timeout:150000}
           }
         }));
         const downloadPromise=settings.waitForEvent('download');
-        await settings.getByRole('button',{name:'导出本地数据'}).click();
+        await settings.getByRole('button',{name:'备份数据'}).click();
         const download=await downloadPromise,filePath=await download.path();
         assert.ok(filePath,'backup download should complete');
         const backup=JSON.parse(readFileSync(filePath,'utf8'));
