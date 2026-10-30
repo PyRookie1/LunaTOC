@@ -92,6 +92,9 @@ describe('Options sidebar save handling', () => {
     await render();
     const accountSection = host.querySelector('#account-settings-heading')?.closest('section');
     expect(accountSection?.querySelector('h2')?.textContent).toBe('当前ChatGPT账号');
+    const accountRow = accountSection?.querySelector('.settings-account-row');
+    expect(accountRow?.firstElementChild?.textContent).toBe('当前ChatGPT账号');
+    expect(accountRow?.lastElementChild?.tagName).toBe('SELECT');
     expect(accountSection?.querySelector<HTMLSelectElement>('.settings-account-select')?.value)
       .toBe('account-1');
     expect(accountSection?.querySelector('[data-testid="cloud-sync-slot"]')
@@ -104,12 +107,15 @@ describe('Options sidebar save handling', () => {
     ];
     for (const [id, expected] of help) {
       expect(host.querySelector(`#${id}`)?.textContent).toBe(expected);
-      expect(host.querySelector(`button[aria-describedby="${id}"]`)).not.toBeNull();
+      const button = host.querySelector<HTMLButtonElement>(`button[aria-describedby="${id}"]`);
+      expect(button?.textContent).toBe('?');
     }
     expect(host.querySelectorAll('.settings-swatch-text')).toHaveLength(0);
     expect(host.querySelectorAll('.settings-swatch-label').length).toBeGreaterThan(0);
     expect(host.textContent).toContain('触发区颜色显示');
     expect(host.querySelector('input#compat-alert-toggle')).not.toBeNull();
+    expect(host.querySelectorAll('main > section')[host.querySelectorAll('main > section').length - 1]
+      ?.getAttribute('aria-label')).toBe('ChatGPT 兼容性警告设置');
     expect(host.textContent).not.toContain('账号标识用于区分设置');
     expect(host.textContent).not.toContain('开发者诊断功能');
   });
