@@ -148,7 +148,7 @@ describe('single-tab My Prompts storage', () => {
     expect(data[PROMPT_STORAGE_KEY]).toEqual([]);
     expect(data['lunaToc:promptUsageV1']).toEqual({});
     expect(messages).toHaveBeenCalledWith(
-      { type: PROMPT_COMMIT_TYPE, action: 'clear-account', ownerId: 'account-1' }, expect.any(Function)
+      { type: PROMPT_COMMIT_TYPE, action: 'clear-account', ownerId: 'account-1', expected: [original] }, expect.any(Function)
     );
   });
 
@@ -176,4 +176,26 @@ describe('single-tab My Prompts storage', () => {
     await store.update((prompts) => [...prompts, make('new')]);
     expect((await store.getAll()).length).toBe(2);
   });
+  it('automatically combines simultaneous additions from different tabs', async () => {
+    const tabA = createPromptStore();
+    const tabB = createPromptStore();
+    await Promise.all([
+      tabA.update((prompts) => [...prompts, make('from-a')]),
+      tabB.update((prompts) => [...prompts, make('from-b')]),
+    ]);
+    expect((data[PROMPT_STORAGE_KEY] as SavedPrompt[]).map((item) => item.id).sort())
+      .toEqual(['from-a', 'from-b', 'saved']);
+  });
+
+  it('does not overwrite a prompt edited by another tab at the same time', async () => {
+    const tabA = createPromptStore();
+    const tabB = createPromptStore();
+    const results = await Promise.allSettled([
+      tabA.update((prompts) => prompts.map((item) => ({ ...item, title: 'From A' }))),
+      tabB.update((prompts) => prompts.map((item) => ({ ...item, title: 'From B' }))),
+    ]);
+    expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
+    expect(['From A', 'From B']).toContain((data[PROMPT_STORAGE_KEY] as SavedPrompt[])[0].title);
+  });
+
 });
