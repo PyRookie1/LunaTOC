@@ -7,7 +7,7 @@ import { ACCOUNT_SETTINGS_KEY } from '@/features/storage/accountSettings';
 const owner = 'account-1';
 const item = { id: 'tip-a', ownerId: owner, title: 'Saved', content: 'Private content',
   createdAt: 1, updatedAt: 2 };
-const settings = { theme: { followChatGPT: true, manualTheme: 'dark' },
+const settings = { theme: { followChatGPT: false, manualTheme: 'light' },
   sidebar: { layoutMode: 'overlay', backgroundColor: 'default', revealTint: false } };
 function storage(initial: Record<string, unknown> = {}) {
   const state: Record<string, unknown> = structuredClone(initial);
