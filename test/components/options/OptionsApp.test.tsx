@@ -28,6 +28,10 @@ vi.mock('@/components/options/LocalBackupSettings', () => ({
 vi.mock('@/components/options/LocalAliasCleanupSettings', () => ({
   LocalAliasCleanupSettings: () => null,
 }));
+vi.mock('@/components/options/CloudSyncSettings', () => ({
+  CloudSyncSettings: ({ accountId }: { accountId: string }) =>
+    <div data-testid="cloud-sync-slot" data-account-id={accountId}>自动云同步</div>,
+}));
 vi.mock('@/config/config', () => ({
   loadPlatformRuntimeConfig: vi.fn(async () => ({
     useLocalConfig: false, showCompatibilityAlert: false,
@@ -84,6 +88,32 @@ function colorInput(value: string): HTMLInputElement {
 }
 
 describe('Options sidebar save handling', () => {
+  it('shows the compact settings labels, contextual help and account-scoped cloud entry', async () => {
+    await render();
+    const accountSection = host.querySelector('#account-settings-heading')?.closest('section');
+    expect(accountSection?.querySelector('h2')?.textContent).toBe('当前ChatGPT账号');
+    expect(accountSection?.querySelector<HTMLSelectElement>('.settings-account-select')?.value)
+      .toBe('account-1');
+    expect(accountSection?.querySelector('[data-testid="cloud-sync-slot"]')
+      ?.getAttribute('data-account-id')).toBe('account-1');
+
+    const help: Array<[string, string]> = [
+      ['layout-help', '选择对话和目录的排列方式。'],
+      ['appearance-help', '选择 LunaTOC 的背景颜色。'],
+      ['compat-help', '检查会话 API 和关键页面标记；开启后可能发送额外的同源诊断请求。'],
+    ];
+    for (const [id, expected] of help) {
+      expect(host.querySelector(`#${id}`)?.textContent).toBe(expected);
+      expect(host.querySelector(`button[aria-describedby="${id}"]`)).not.toBeNull();
+    }
+    expect(host.querySelectorAll('.settings-swatch-text')).toHaveLength(0);
+    expect(host.querySelectorAll('.settings-swatch-label').length).toBeGreaterThan(0);
+    expect(host.textContent).toContain('触发区颜色显示');
+    expect(host.querySelector('input#compat-alert-toggle')).not.toBeNull();
+    expect(host.textContent).not.toContain('账号标识用于区分设置');
+    expect(host.textContent).not.toContain('开发者诊断功能');
+  });
+
   it('displays the verified account email as the account label', async () => {
     await render();
     const selector = host.querySelector<HTMLSelectElement>('.settings-account-select');
