@@ -57,6 +57,21 @@ describe('My Prompts editor saves', () => {
     expect(saved[0].content).toBe('Edited content');
   });
 
+  it('refuses a stale editor opened before another tab changed that prompt', async () => {
+    showDialog(first);
+    const submit = promptEditorController.getSnapshot()!.onSubmit;
+    saved = clone([{ ...first, title: 'Other tab edit', updatedAt: 10 }]);
+
+    const pending = submit({ title: 'Stale edit', content: 'Stale content' });
+    await vi.waitFor(() => {
+      expect(document.querySelector('#myprompt-message-confirm')).not.toBeNull();
+    });
+    (document.querySelector('#myprompt-message-confirm') as HTMLButtonElement).click();
+
+    await expect(pending).rejects.toThrow('已在其他标签页被修改');
+    expect(saved[0].title).toBe('Other tab edit');
+  });
+
   it('uses the same ID for retrying the same new-prompt editor submission', async () => {
     showDialog(null);
     const submit = promptEditorController.getSnapshot()!.onSubmit;
