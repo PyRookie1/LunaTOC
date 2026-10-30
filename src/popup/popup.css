@@ -3,15 +3,13 @@
 @import 'tailwindcss/theme.css' layer(theme);
 @import 'tailwindcss/utilities.css' layer(utilities);
 
-/* Keep the popup invisible until the persisted ChatGPT theme is resolved.
-   Chrome's default dark palette must not flash before the async storage read. */
+/* Keep the popup invisible until the account's manual theme is loaded. */
 html:not([data-theme]) body { visibility: hidden; }
 
 /* ============================================================
    Popup Theme Tokens
    ============================================================ */
 
-:root,
 html[data-theme='dark'],
 body[data-theme='dark'] {
   --p-bg-body: #0f172a;
@@ -33,6 +31,7 @@ body[data-theme='dark'] {
 
 }
 
+:root,
 html[data-theme='light'],
 body[data-theme='light'] {
   --p-bg-body: #e0effe;
