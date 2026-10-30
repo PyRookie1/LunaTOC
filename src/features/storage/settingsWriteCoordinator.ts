@@ -12,7 +12,7 @@ import {
 } from './accountSettings';
 
 export const SETTINGS_COMMIT_TYPE = 'LUNA_TOC_SETTINGS_COMMIT_V2';
-const DEFAULT_THEME: ThemeSettings = { followChatGPT: true, manualTheme: 'dark' };
+const DEFAULT_THEME: ThemeSettings = { followChatGPT: false, manualTheme: 'light' };
 const DEFAULT_SIDEBAR: SidebarPreferences = {
   layoutMode: 'overlay', backgroundColor: 'default', revealTint: false,
 };

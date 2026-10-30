@@ -44,7 +44,7 @@ describe('cloud snapshots and three-way merge', () => {
   });
   it('merges independent theme and sidebar fields from two devices', () => {
     const baseSettings = {
-      theme: { followChatGPT: true, manualTheme: 'dark' as const },
+      theme: { followChatGPT: false, manualTheme: 'dark' as const },
       sidebar: { layoutMode: 'overlay' as const, backgroundColor: 'default' as const, revealTint: false },
     };
     const base = { ...snapshot(), settings: baseSettings };
@@ -61,7 +61,7 @@ describe('cloud snapshots and three-way merge', () => {
 
   it('rejects concurrent divergent edits to the same settings field', () => {
     const base = { ...snapshot(), settings: {
-      theme: { followChatGPT: true, manualTheme: 'dark' as const },
+      theme: { followChatGPT: false, manualTheme: 'dark' as const },
       sidebar: { layoutMode: 'overlay' as const, backgroundColor: 'default' as const, revealTint: false },
     } };
     const local = { ...snapshot(), settings: {
@@ -76,11 +76,11 @@ describe('cloud snapshots and three-way merge', () => {
   it('preserves remote custom preferences when local defaults are unchanged', () => {
     const base = { ...snapshot(), settings: null };
     const local = { ...snapshot(), settings: {
-      theme: { followChatGPT: true, manualTheme: 'dark' as const },
+      theme: { followChatGPT: false, manualTheme: 'light' as const },
       sidebar: { layoutMode: 'overlay' as const, backgroundColor: 'default' as const, revealTint: false },
     } };
     const remote = { ...snapshot(), settings: {
-      theme: { followChatGPT: false, manualTheme: 'light' as const },
+      theme: { followChatGPT: false, manualTheme: 'dark' as const },
       sidebar: { layoutMode: 'overlay' as const, backgroundColor: 'default' as const, revealTint: true },
     } };
     const merged = mergeAccountSnapshots(base, local, remote, owner);

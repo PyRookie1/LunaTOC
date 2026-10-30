@@ -3,7 +3,7 @@ import { createSettingsWriteCoordinator, SETTINGS_COMMIT_TYPE } from '@/features
 import { ACCOUNT_EMAILS_KEY, ACCOUNT_SETTINGS_KEY } from '@/features/storage/accountSettings';
 import { createSerialWriteQueue } from '@/features/storage/serialWriteQueue';
 
-const DEFAULT_THEME = { followChatGPT: true, manualTheme: 'dark' as const };
+const DEFAULT_THEME = { followChatGPT: false, manualTheme: 'light' as const };
 const DEFAULT_SIDEBAR = { layoutMode: 'overlay' as const, backgroundColor: 'default' as const, revealTint: false };
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
@@ -69,7 +69,7 @@ describe('account-scoped background settings writer', () => {
     const writer = createSettingsWriteCoordinator(box.storage);
     await writer.commit({ type: SETTINGS_COMMIT_TYPE, action: 'register-account', ownerId: 'account-1' });
     await writer.commit({ type: SETTINGS_COMMIT_TYPE, action: 'register-account', ownerId: 'account-2' });
-    const nextTheme = { followChatGPT: false, manualTheme: 'light' as const };
+    const nextTheme = { followChatGPT: false, manualTheme: 'dark' as const };
     expect(await writer.commit({
       type: SETTINGS_COMMIT_TYPE, action: 'theme', ownerId: 'account-1', settings: nextTheme,
     })).toEqual({ ok: true });

@@ -315,16 +315,6 @@ export interface PlatformMyPromptsAdapter {
 }
 
 /**
- * Optional theme detector. Some platforms expose a `dark` class on the
- * document root; others may not. Platforms without theme observation leave
- * this `undefined` and the application falls back to manual theme.
- */
-export interface PlatformThemeAdapter {
-  getResolvedTheme(): 'light' | 'dark' | null;
-  observe(listener: (theme: 'light' | 'dark') => void): () => void;
-}
-
-/**
  * The full platform record — union of every adapter above.
  */
 export interface Platform {
@@ -339,5 +329,4 @@ export interface Platform {
   contentCapture: PlatformContentCapture;
   diagnostics: PlatformNavigationDiagnostics;
   runtimeConfigKey: string;
-  theme?: PlatformThemeAdapter;
 }

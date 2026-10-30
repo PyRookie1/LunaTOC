@@ -82,6 +82,35 @@ export function createCloudController(
     }
     return managedConfig;
   }
+  async function firebaseFetch(url: string, options: RequestInit): Promise<Response> {
+    // Firebase calls run in the MV3 background worker, not the ChatGPT page.
+    // Distinguish revoked optional host permissions from DNS/proxy/firewall failures.
+    try {
+      return await fetcher(url, options);
+    } catch (cause) {
+      const detail = cause instanceof Error ? cause.message : String(cause);
+      if (!(cause instanceof TypeError) && !/failed to fetch|fetch failed|network/i.test(detail)) {
+        throw cause;
+      }
+      const host = new URL(url).hostname;
+      if (typeof chrome !== 'undefined' && chrome.permissions?.contains) {
+        try {
+          const allowed = await chrome.permissions.contains({ origins: ['https://' + host + '/*'] });
+          if (!allowed) {
+            throw new Error('Firebase 网络权限不足：扩展未获准访问 ' + host +
+              '。请关闭再开启「自动云同步」，重新授权 Firebase 网络访问后重试。');
+          }
+        } catch (permissionError) {
+          if (permissionError instanceof Error && permissionError.message.startsWith('Firebase 网络权限不足')) {
+            throw permissionError;
+          }
+          // If permissions cannot be inspected, retain the original network diagnosis.
+        }
+      }
+      throw new Error('无法连接 Firebase（' + host +
+        '）：网络请求失败。请检查 Chrome 网络/代理、DNS、防火墙及拦截扩展，并确认 Firebase API 可访问；云同步未开启。');
+    }
+  }
   /** Local cloud bindings are explicit, account-scoped and excluded from cloud snapshots. */
   async function accountBindings(): Promise<Record<string, string>> {
     const raw = (await local.get(CLOUD_ACCOUNT_BINDINGS_KEY))[CLOUD_ACCOUNT_BINDINGS_KEY];
@@ -134,7 +163,7 @@ export function createCloudController(
     const existing = await session();
     if (!forceRefresh && existing.expiresAt - Date.now() > 60_000) return existing;
     const cfg = await config();
-    const response = await fetcher('https://securetoken.googleapis.com/v1/token?key=' + encodeURIComponent(cfg.apiKey), {
+    const response = await firebaseFetch('https://securetoken.googleapis.com/v1/token?key=' + encodeURIComponent(cfg.apiKey), {
       method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: existing.refreshToken }),
     });
@@ -166,7 +195,7 @@ export function createCloudController(
   }
   async function lookupIdentity(user: Session): Promise<{ verified: boolean; email?: string }> {
     const cfg = await config();
-    const response = await fetcher(
+    const response = await firebaseFetch(
       'https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=' + encodeURIComponent(cfg.apiKey),
       { method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ idToken: user.idToken }) }
@@ -184,7 +213,7 @@ export function createCloudController(
   }
   async function sendVerification(user: Session): Promise<void> {
     const cfg = await config();
-    const response = await fetcher(
+    const response = await firebaseFetch(
       'https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=' + encodeURIComponent(cfg.apiKey),
       { method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ requestType: 'VERIFY_EMAIL', idToken: user.idToken }) }
@@ -194,7 +223,7 @@ export function createCloudController(
   async function requestPasswordReset(rawEmail: unknown): Promise<CloudResult> {
     const email = emailAddress(rawEmail);
     const cfg = await config();
-    const response = await fetcher(
+    const response = await firebaseFetch(
       'https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=' + encodeURIComponent(cfg.apiKey),
       { method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ requestType: 'PASSWORD_RESET', email }) }
@@ -208,7 +237,7 @@ export function createCloudController(
     const password = passwordValue(rawPassword);
     const cfg = await config();
     const endpoint = mode === 'register' ? 'signUp' : 'signInWithPassword';
-    const response = await fetcher(
+    const response = await firebaseFetch(
       'https://identitytoolkit.googleapis.com/v1/accounts:' + endpoint + '?key=' + encodeURIComponent(cfg.apiKey),
       { method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password, returnSecureToken: true }) }
@@ -355,7 +384,7 @@ export function createCloudController(
       const url = 'https://firestore.googleapis.com/v1/projects/' + encodeURIComponent(cfg.projectId) +
         '/databases/(default)/documents/users/' + encodeURIComponent(user.uid) +
         '/accounts/' + ownerHash;
-      const response = await fetcher(url, { headers: { Authorization: 'Bearer ' + user.idToken } });
+      const response = await firebaseFetch(url, { headers: { Authorization: 'Bearer ' + user.idToken } });
       let remote = emptyCloudSnapshot();
       let updateTime: string | null = null;
       // An authenticated 404 after an acknowledged sync is NOT a deletion
@@ -375,7 +404,7 @@ export function createCloudController(
       // New installations auto-register default preferences. Defaults are
       // not intentional edits: on first sync prefer a customized remote setting.
       const defaults = {
-        theme: { followChatGPT: true, manualTheme: 'dark' },
+        theme: { followChatGPT: false, manualTheme: 'light' },
         sidebar: { layoutMode: 'overlay', backgroundColor: 'default', revealTint: false },
       };
       const initialLocal = !hasBaseline && remote.settings && here.settings &&
@@ -389,7 +418,7 @@ export function createCloudController(
         const precondition = updateTime
           ? 'currentDocument.updateTime=' + encodeURIComponent(updateTime)
           : 'currentDocument.exists=false';
-        const patched = await fetcher(url + '?' + precondition, {
+        const patched = await firebaseFetch(url + '?' + precondition, {
           method: 'PATCH', headers: { Authorization: 'Bearer ' + user.idToken, 'Content-Type': 'application/json' },
           body: JSON.stringify({ fields: { json: { stringValue: JSON.stringify(merged) } } }),
         });

@@ -54,7 +54,6 @@ import {
   observeVisibleUserMessages as observeChatGptVisibleUserMessages,
   getJumpTargetElement as getChatGptJumpTargetElement,
 } from './nativePromptNavigation';
-import { getResolvedTheme, observeTheme } from './theme';
 import {
   CHATGPT_CONTRACT_TABLE,
   resolveChatGptContractValue,
@@ -168,8 +167,4 @@ export const chatGptPlatform: Platform = {
     isJumpVizDebugEnabled,
   },
   runtimeConfigKey: 'lunatoc:chatgpt:runtimeConfig:v1',
-  theme: {
-    getResolvedTheme,
-    observe: observeTheme,
-  },
 };

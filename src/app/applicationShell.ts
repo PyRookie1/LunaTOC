@@ -11,14 +11,8 @@ import { DEFAULT_SIDEBAR_PREFERENCES, readSidebarPreferences, sidebarAppearance,
 import { createSidebarToggleButton } from '@/features/SidebarToggleButton';
 import { buttonTooltip, previewTooltip } from '@/features/tooltip';
 import {
-  getChatGPTTheme,
-  observeChatGPTTheme,
-  writeResolvedChatGPTTheme,
-} from '@/features/theme/chatGptTheme';
-import {
   readThemeSettings,
   subscribeThemeSettings,
-  type ResolvedTheme,
   type ThemeSettings,
 } from '@/features/theme/themeSettings';
 import { getLunaTocTheme, setLunaTocTheme } from '@/features/theme/lunaTocTheme';
@@ -184,30 +178,15 @@ function initSidebarResize(sidebar: HTMLElement): void {
 }
 
 function initTheme(): void {
-  let settings: ThemeSettings | null = null;
-
-  const applyTheme = (theme: ResolvedTheme): void => {
-    setLunaTocTheme(theme);
+  // LunaTOC no longer reads or observes ChatGPT's theme.
+  // Apply the light default before async account preference hydration.
+  setLunaTocTheme('light');
+  const applySettings = (settings: ThemeSettings): void => {
+    setLunaTocTheme(settings.manualTheme);
     applySidebarAppearance();
   };
-  const handleChatGPTTheme = (theme: ResolvedTheme): void => {
-    void writeResolvedChatGPTTheme(theme);
-    if (settings?.followChatGPT) applyTheme(theme);
-  };
-  const applySettings = (nextSettings: ThemeSettings): void => {
-    settings = nextSettings;
-    applyTheme(
-      nextSettings.followChatGPT
-        ? getChatGPTTheme()
-        : nextSettings.manualTheme
-    );
-  };
-
-  observeChatGPTTheme(handleChatGPTTheme);
-  void readThemeSettings().then(applySettings);
-  subscribeThemeSettings((nextSettings) => {
-    applySettings(nextSettings);
-  });
+  void readThemeSettings().then(applySettings).catch(() => undefined);
+  subscribeThemeSettings(applySettings);
 }
 
 /**

@@ -2,6 +2,7 @@
 export type ResolvedTheme = 'dark' | 'light';
 
 export interface ThemeSettings {
+  /** Legacy storage field only; detection is removed and new writes always use false. */
   followChatGPT: boolean;
   manualTheme: ResolvedTheme;
 }
@@ -13,14 +14,17 @@ import {
 } from '@/features/storage/accountSettings';
 import { getActiveConversationOwner, subscribeActiveConversationOwner } from '@/navigation/lifecycle/conversationOwner';
 
-const DEFAULT_SETTINGS: ThemeSettings = { followChatGPT: true, manualTheme: 'dark' };
+const DEFAULT_SETTINGS: ThemeSettings = { followChatGPT: false, manualTheme: 'light' };
 
 function normalizeThemeSettings(value: unknown): ThemeSettings | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const candidate = value as Partial<ThemeSettings>;
   if (typeof candidate.followChatGPT !== 'boolean' ||
       (candidate.manualTheme !== 'dark' && candidate.manualTheme !== 'light')) return null;
-  return { followChatGPT: candidate.followChatGPT, manualTheme: candidate.manualTheme };
+  // Legacy follow-ChatGPT preferences become the new light default; explicit manual choices survive.
+  return candidate.followChatGPT
+    ? { followChatGPT: false, manualTheme: 'light' }
+    : { followChatGPT: false, manualTheme: candidate.manualTheme };
 }
 
 /** Reads only the selected account's theme; an unverified context gets safe defaults. */
