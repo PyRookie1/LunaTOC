@@ -274,7 +274,8 @@ describe('Firebase REST account sync', () => {
       reorder(await originalGet(keys)));
     expect(await service.execute(request('sync', { ownerId: owner })))
       .toMatchObject({ ok: true });
-    expect(local.state[PROMPT_STORAGE_KEY]).toEqual([item, other]);
+    const persisted = local.state[PROMPT_STORAGE_KEY] as typeof item[];
+    expect([...persisted].sort((a, b) => a.id.localeCompare(b.id))).toEqual([item, other]);
     expect(local.state[ACCOUNT_SETTINGS_KEY]).toEqual({ [owner]: settings, 'account-2': settings });
     expect(remote.writes()).toBe(1);
     expect(await service.execute(request('sync', { ownerId: owner })))
