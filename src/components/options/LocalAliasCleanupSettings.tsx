@@ -60,6 +60,10 @@ export function LocalAliasCleanupSettings(): React.JSX.Element {
     }
   };
 
+  // Keep cleanup accessible when aliases or unreadable records remain.
+  if (!inventory && !error) return null;
+  if (inventory?.candidates.length === 0 && inventory.unreadable === 0 && !status && !error) return null;
+
   return (
     <section className="settings-section" aria-labelledby="alias-cleanup-heading">
       <div className="settings-section-heading">
