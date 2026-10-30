@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { LocalBackupSettings } from './LocalBackupSettings';
 import { LocalAliasCleanupSettings } from './LocalAliasCleanupSettings';
 import { CloudSyncSettings } from './CloudSyncSettings';
+import { SettingsHelp } from './SettingsHelp';
 import {
   loadPlatformRuntimeConfig,
   savePlatformRuntimeConfig,
@@ -128,9 +129,9 @@ export function OptionsApp(): React.JSX.Element {
     void savePlatformRuntimeConfig('chatgpt', { showCompatibilityAlert: enabled });
   };
 
-  const modeOptions: Array<{ id: SidebarLayoutMode; name: string; detail: string }> = [
-    { id: 'side-by-side', name: '并列排布', detail: '对话区域与目录并排，默认固定展开' },
-    { id: 'overlay', name: '浮于上层', detail: '不改变对话区域，目录默认自动隐藏' },
+  const modeOptions: Array<{ id: SidebarLayoutMode; name: string }> = [
+    { id: 'side-by-side', name: '并列排布' },
+    { id: 'overlay', name: '浮于上层' },
   ];
 
   return (
@@ -138,21 +139,13 @@ export function OptionsApp(): React.JSX.Element {
       <header className="settings-header">
         <p className="settings-brand">LunaTOC</p>
         <h1>设置</h1>
-        <p className="settings-caption">偏好设置会自动同步到已打开的 ChatGPT 页面。</p>
       </header>
 
       <section className="settings-section" aria-labelledby="account-settings-heading">
-        <div className="settings-section-heading">
-          <h2 id="account-settings-heading">账号偏好</h2>
-          <p>主题与侧边栏设置按 ChatGPT 账号保存，并在该账号的所有对话中共享。</p>
-        </div>
         <div className="settings-card">
-          <label className="settings-choice settings-no-border">
-            <span className="settings-choice-info">
-              <strong>设置所属账号</strong>
-              <small>账号标识用于区分设置；只有主动启用 Firebase 同步时才上传其派生的云端分组。</small>
-            </span>
-            <select className="settings-account-select" aria-label="设置所属账号"
+          <div className="settings-choice settings-no-border settings-account-row">
+            <h2 id="account-settings-heading" className="settings-inline-section-title">当前ChatGPT账号</h2>
+            <select className="settings-account-select" aria-labelledby="account-settings-heading"
               value={selectedAccountId}
               disabled={accountIds.length === 0 || savingSettings}
               onChange={(event) => setSelectedAccountId(event.currentTarget.value)}>
@@ -162,26 +155,28 @@ export function OptionsApp(): React.JSX.Element {
                 </option>
               ))}
             </select>
-          </label>
+          </div>
           {accountIds.length === 0 && (
             <p className="settings-backup-status" role="status">
               尚无已验证账号。请先打开并登录 ChatGPT，等待页面完成初始化后重新打开此设置页。
             </p>
           )}
+          <CloudSyncSettings accountId={selectedAccountId} />
         </div>
       </section>
 
       <section className="settings-section" aria-labelledby="layout-heading">
         <div className="settings-section-heading">
-          <h2 id="layout-heading">布局</h2>
-          <p>选择对话和目录的排列方式。</p>
+          <div className="settings-heading-row">
+            <h2 id="layout-heading">布局</h2>
+            <SettingsHelp id="layout-help" text="选择对话和目录的排列方式。" />
+          </div>
         </div>
         <div className="settings-card settings-layout-choice">
           {modeOptions.map((mode) => (
             <label className="settings-choice" key={mode.id}>
               <span className="settings-choice-info">
                 <strong>{mode.name}</strong>
-                <small>{mode.detail}</small>
               </span>
               <input type="radio" name="sidebar-layout" value={mode.id}
                 checked={preferences.layoutMode === mode.id}
@@ -194,16 +189,18 @@ export function OptionsApp(): React.JSX.Element {
 
       <section className="settings-section" aria-labelledby="appearance-heading">
         <div className="settings-section-heading">
-          <h2 id="appearance-heading">外观</h2>
-          <p>选择 LunaTOC 的背景配色，与 ChatGPT 浅色和深色主题协调。</p>
+          <div className="settings-heading-row">
+            <h2 id="appearance-heading">外观</h2>
+            <SettingsHelp id="appearance-help" text="选择 LunaTOC 的背景颜色。" />
+          </div>
         </div>
         <div className="settings-card">
           <div className="settings-setting-title">侧边栏背景颜色</div>
           <div className="settings-palette" role="radiogroup" aria-label="侧边栏背景颜色">
             {SIDEBAR_COLORS.map((color) => (
-              <label className="settings-swatch-label" key={color.id}
-                title={color.label} aria-label={color.label}>
+              <label className="settings-swatch-label" key={color.id}>
                 <input type="radio" name="sidebar-color" value={color.id}
+                  aria-label={color.label}
                   checked={preferences.backgroundColor === color.id}
                   disabled={!settingsLoaded || savingSettings}
                   onChange={() => updatePreferences({ backgroundColor: color.id })} />
@@ -211,15 +208,13 @@ export function OptionsApp(): React.JSX.Element {
                   aria-hidden="true">
                   {preferences.backgroundColor === color.id ? '✓' : ''}
                 </span>
-                <span className="settings-swatch-text">{color.label}</span>
               </label>
             ))}
           </div>
           <div className="settings-divider" />
           <label className="settings-choice settings-no-border">
             <span className="settings-choice-info">
-              <strong>为隐藏侧边栏的触发区显示颜色</strong>
-              <small>开启时与背景所选色系一致，使用半透明显示；关闭则完全透明。</small>
+              <strong>触发区颜色显示</strong>
             </span>
             <input className="settings-switch-input" type="checkbox"
               checked={preferences.revealTint}
@@ -230,30 +225,27 @@ export function OptionsApp(): React.JSX.Element {
         </div>
       </section>
 
-      <section className="settings-section" aria-labelledby="compat-heading">
-        <div className="settings-section-heading">
-          <h2 id="compat-heading">兼容性</h2>
-          <p>开发者诊断功能，默认关闭。</p>
-        </div>
-        <div className="settings-card">
-          <label className="settings-choice settings-no-border">
-            <span className="settings-choice-info">
-              <strong>ChatGPT 兼容性警告</strong>
-              <small>检查会话 API 和关键页面标记；开启后可能发送额外的同源诊断请求。</small>
-            </span>
-            <input className="settings-switch-input" type="checkbox"
-              checked={runtimeConfig?.showCompatibilityAlert ?? false}
-              onChange={(event) => toggleCompatibilityAlert(event.target.checked)} />
-            <span className="settings-switch-track" aria-hidden="true" />
-          </label>
-        </div>
-      </section>
-      <CloudSyncSettings accountId={selectedAccountId} />
       <LocalBackupSettings />
       <LocalAliasCleanupSettings />
+      <section className="settings-section" aria-label="ChatGPT 兼容性警告设置">
+        <div className="settings-card">
+          <div className="settings-choice settings-no-border">
+            <span className="settings-choice-info settings-inline-title">
+              <label htmlFor="compat-alert-toggle"><strong>ChatGPT 兼容性警告</strong></label>
+              <SettingsHelp id="compat-help"
+                text="检查会话 API 和关键页面标记；开启后可能发送额外的同源诊断请求。" />
+            </span>
+            <label className="settings-switch-control">
+              <input id="compat-alert-toggle" className="settings-switch-input" type="checkbox"
+                checked={runtimeConfig?.showCompatibilityAlert ?? false}
+                onChange={(event) => toggleCompatibilityAlert(event.target.checked)} />
+              <span className="settings-switch-track" aria-hidden="true" />
+            </label>
+          </div>
+        </div>
+      </section>
       {savingSettings && <p className="settings-backup-status" role="status">正在保存侧边栏设置…</p>}
       {saveError && <p className="settings-error" role="alert">{saveError}</p>}
-      <p className="settings-footnote">默认保存在浏览器本地；仅当主动登录并执行同步时才将所选账号的提示词、别名与偏好发送到 LunaTOC 维护的 Firebase 项目；服务维护者可能访问云端明文数据。</p>
     </main>
   );
 }

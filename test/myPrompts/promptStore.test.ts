@@ -148,7 +148,7 @@ describe('single-tab My Prompts storage', () => {
     expect(data[PROMPT_STORAGE_KEY]).toEqual([]);
     expect(data['lunatoc:promptUsage:v1']).toEqual({});
     expect(messages).toHaveBeenCalledWith(
-      { type: PROMPT_COMMIT_TYPE, action: 'clear-account', ownerId: 'account-1' }, expect.any(Function)
+      { type: PROMPT_COMMIT_TYPE, action: 'clear-account', ownerId: 'account-1', expected: [original] }, expect.any(Function)
     );
   });
 
@@ -187,4 +187,36 @@ describe('single-tab My Prompts storage', () => {
     await store.update((prompts) => [...prompts, make('new')]);
     expect((await store.getAll()).length).toBe(2);
   });
+  it('merges independent additions made by two tabs at once', async () => {
+    const a = createPromptStore();
+    const b = createPromptStore();
+    await Promise.all([
+      a.update((prompts) => [...prompts, make('from-a')]),
+      b.update((prompts) => [...prompts, make('from-b')]),
+    ]);
+    expect((data[PROMPT_STORAGE_KEY] as SavedPrompt[]).map((item) => item.id).sort())
+      .toEqual(['from-a', 'from-b', 'saved']);
+  });
+
+  it('preserves a second tab addition while deleting a different prompt', async () => {
+    const a = createPromptStore();
+    const b = createPromptStore();
+    await Promise.all([
+      a.update((prompts) => prompts.filter((item) => item.id !== 'saved')),
+      b.update((prompts) => [...prompts, make('from-b')]),
+    ]);
+    expect((data[PROMPT_STORAGE_KEY] as SavedPrompt[]).map((item) => item.id)).toEqual(['from-b']);
+  });
+
+  it('refuses two simultaneous edits to the same prompt', async () => {
+    const a = createPromptStore();
+    const b = createPromptStore();
+    const results = await Promise.allSettled([
+      a.update((prompts) => prompts.map((item) => ({ ...item, title: 'From A' }))),
+      b.update((prompts) => prompts.map((item) => ({ ...item, title: 'From B' }))),
+    ]);
+    expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
+    expect(['From A', 'From B']).toContain((data[PROMPT_STORAGE_KEY] as SavedPrompt[])[0].title);
+  });
+
 });

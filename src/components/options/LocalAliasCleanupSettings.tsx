@@ -9,7 +9,7 @@ const PAGE_SIZE = 20;
 const errorText = (error: unknown): string =>
   error instanceof Error ? error.message : '未知错误';
 
-export function LocalAliasCleanupSettings(): React.JSX.Element {
+export function LocalAliasCleanupSettings(): React.JSX.Element | null {
   const [inventory, setInventory] = useState<AliasCleanupInventory | null>(null);
   const [shown, setShown] = useState(PAGE_SIZE);
   const [hasBackup, setHasBackup] = useState(false);
@@ -59,6 +59,10 @@ export function LocalAliasCleanupSettings(): React.JSX.Element {
       setBusy(false);
     }
   };
+
+  // Keep cleanup accessible when aliases or unreadable records remain.
+  if (!inventory && !error) return null;
+  if (inventory?.candidates.length === 0 && inventory.unreadable === 0 && !status && !error) return null;
 
   return (
     <section className="settings-section" aria-labelledby="alias-cleanup-heading">

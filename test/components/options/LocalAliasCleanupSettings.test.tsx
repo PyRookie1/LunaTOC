@@ -47,6 +47,12 @@ function findButton(partial: string): HTMLButtonElement {
 }
 
 describe('Options manual TOC alias cleanup controls', () => {
+  it('hides the entire section when there are no local aliases to clean', async () => {
+    mocked.list.mockResolvedValueOnce({ candidates: [], unreadable: 0 });
+    await show();
+    expect(host.querySelector('#alias-cleanup-heading')).toBeNull();
+  });
+
   it('requires backup acknowledgment and a second confirmation before deleting', async () => {
     await show();
     const cleanButton = findButton('确认清理');

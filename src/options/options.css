@@ -47,7 +47,7 @@ body {
 .settings-choice-info small { font-size: 12px; line-height: 1.55; color: var(--o-muted); }
 .settings-choice input[type=radio] { width: 18px; height: 18px; flex-shrink: 0; accent-color: var(--o-accent); cursor: pointer; }
 .settings-setting-title { padding-top: 17px; }
-.settings-palette { display: grid; grid-template-columns: repeat(auto-fill, minmax(70px, 1fr)); gap: 14px 9px; padding: 18px 0 22px; }
+.settings-palette { display: flex; flex-wrap: wrap; gap: 14px; padding: 18px 0 22px; }
 .settings-swatch-label { min-width: 0; display: flex; flex-direction: column; gap: 7px; align-items: center; cursor: pointer; }
 .settings-swatch-label input { position: absolute; opacity: 0; width: 1px; height: 1px; }
 .settings-swatch {
@@ -57,7 +57,6 @@ body {
 }
 .settings-swatch-label input:checked + .settings-swatch { outline: 2px solid var(--o-text); }
 .settings-swatch-label input:focus-visible + .settings-swatch { outline: 3px solid var(--o-accent); outline-offset: 3px; }
-.settings-swatch-text { color: var(--o-muted); font-size: 11px; }
 .settings-divider { border-top: 1px solid var(--o-border); }
 .settings-switch-input { position: absolute; opacity: 0; width: 1px; height: 1px; }
 .settings-switch-track {
@@ -79,16 +78,23 @@ body {
 .settings-backup-block { padding: 17px 0; }
 .settings-backup-block .settings-setting-title { padding-top: 0; display: block; }
 .settings-backup-description { color: var(--o-muted); font-size: 12px; line-height: 1.65; margin: 8px 0 13px; }
-.settings-backup-button, .settings-backup-upload {
+.settings-backup-button {
   border: 1px solid var(--o-accent); border-radius: 8px; background: var(--o-accent-soft);
   color: var(--o-text); font: inherit; font-size: 13px; font-weight: 600;
   cursor: pointer; padding: 9px 12px; display: inline-block;
 }
-.settings-backup-button:focus-visible, .settings-backup-upload:focus-within {
+.settings-backup-button:focus-visible {
   outline: 2px solid var(--o-accent); outline-offset: 2px;
 }
 .settings-backup-button:disabled { cursor: not-allowed; opacity: .55; }
-.settings-backup-upload input { display: block; margin-top: 8px; font-size: 12px; max-width: 100%; }
+.settings-backup-import { position: relative; overflow: hidden; }
+.settings-backup-import:has(input:disabled) { cursor: not-allowed; opacity: .55; }
+.settings-backup-import:focus-within { outline: 2px solid var(--o-accent); outline-offset: 2px; }
+.settings-backup-import input {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  opacity: 0; cursor: pointer; font-size: 0;
+}
+.settings-backup-import input:disabled { cursor: not-allowed; }
 .settings-backup-preview {
   margin-top: 15px; padding: 12px; border: 1px solid var(--o-border);
   border-radius: 10px; overflow-wrap: anywhere; font-size: 12px; line-height: 1.6;
@@ -113,6 +119,10 @@ body {
   padding: 7px 10px;
   font: inherit;
 }
+
+.settings-account-row { gap: 12px; }
+.settings-inline-section-title { margin: 0; font-size: 16px; font-weight: 650; white-space: nowrap; }
+.settings-account-row .settings-account-select { min-width: 0; }
 
 /* Cloud login uses explicit rows instead of inline label/input flow. */
 .settings-cloud-credentials {
@@ -149,3 +159,36 @@ body {
 .settings-cloud-identity p { margin: 3px 0; }
 .settings-cloud-identity strong { color: var(--o-text); font-weight: 600; }
 .settings-cloud-identity code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+
+/* Compact help buttons reveal explanatory copy on hover or keyboard focus. */
+.settings-heading-row, .settings-inline-title { display: flex; align-items: center; gap: 8px; }
+.settings-heading-row h2, .settings-inline-title strong { line-height: 20px; }
+.settings-heading-row h2 { margin-bottom: 0; }
+.settings-choice-info.settings-inline-title { flex-direction: row; flex-wrap: wrap; }
+.settings-inline-title label { cursor: pointer; }
+.settings-help { display: inline-flex; align-items: center; justify-content: center; position: relative; flex: 0 0 16px; vertical-align: middle; }
+.settings-help-button {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex: 0 0 16px; width: 16px; height: 16px; padding: 0; margin: 0;
+  border: 1px solid var(--o-muted);
+  border-radius: 50%; background: transparent; color: var(--o-muted);
+  font-family: Arial, sans-serif; font-size: 10px; font-weight: 700; line-height: 1; cursor: help;
+}
+.settings-help-glyph { display: block; line-height: 1; transform: translateY(-.5px); }
+.settings-help-button:hover, .settings-help-button:focus-visible {
+  color: var(--o-text); border-color: var(--o-text);
+}
+.settings-help-button:focus-visible { outline: 2px solid var(--o-accent); outline-offset: 2px; }
+.settings-help-tooltip {
+  position: absolute; left: 0; bottom: calc(100% + 9px); z-index: 10;
+  width: max-content; max-width: min(300px, calc(100vw - 48px));
+  padding: 9px 11px; border: 1px solid var(--o-border); border-radius: 8px;
+  background: var(--o-surface); color: var(--o-text);
+  box-shadow: 0 6px 22px #0002; font-size: 12px; font-weight: 400; line-height: 1.55;
+  opacity: 0; visibility: hidden; pointer-events: none;
+}
+.settings-help:hover .settings-help-tooltip,
+.settings-help:focus-within .settings-help-tooltip { opacity: 1; visibility: visible; }
+.settings-switch-control { display: inline-flex; align-items: center; flex-shrink: 0; cursor: pointer; }
+.settings-cloud-panel { border-top: 1px solid var(--o-border); }
+.settings-cloud-details { padding-bottom: 13px; }

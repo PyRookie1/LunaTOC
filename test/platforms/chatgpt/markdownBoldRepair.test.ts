@@ -78,6 +78,31 @@ describe('parseUnrenderedBoldMarkdown', () => {
   it('does not interpret malformed nested double-star markers as bold', () => {
     expect(parseUnrenderedBoldMarkdown('**outer ** inner**')).toBeNull();
   });
+  it('handles thousands of unmatched bold markers promptly', () => {
+    const malformed = '**x '.repeat(20_000);
+    const start = performance.now();
+    expect(parseUnrenderedBoldMarkdown(malformed)).toBeNull();
+    expect(performance.now() - start).toBeLessThan(2_000);
+  });
+
+  it('finds valid bold after a malformed opening marker', () => {
+    expect(parseUnrenderedBoldMarkdown('**outer **inner**')).toEqual([
+      { text: '**outer ', bold: false },
+      { text: 'inner', bold: true },
+    ]);
+  });
+
+  it('bounds unmatched backticks and math openers', () => {
+    const ticks = Array.from({ length: 500 }, (_, index) => '`'.repeat(index + 1)).join(' ');
+    const brokenMath = '$x '.repeat(5_000);
+    const start = performance.now();
+    expect(parseUnrenderedBoldMarkdown(ticks + brokenMath + ' **valid**')).toEqual([
+      { text: ticks + brokenMath + ' ', bold: false },
+      { text: 'valid', bold: true },
+    ]);
+    expect(performance.now() - start).toBeLessThan(2_000);
+  });
+
 });
 
 describe('startMarkdownBoldRepair', () => {

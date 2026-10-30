@@ -221,16 +221,15 @@ test('Chromium MV3: TOC, search, layout, SPA and failure paths',{timeout:150000}
       try{
         const optionsPage=await worker.evaluate(()=>chrome.runtime.getManifest().options_ui.page);
         await settings.goto('chrome-extension://'+extensionId+'/'+optionsPage);
-        const cloud=settings.locator('section[aria-labelledby="cloud-sync-heading"]');
+        const cloud=settings.locator('section[aria-labelledby="account-settings-heading"] .settings-cloud-panel');
         const waitForManagedConfigState=async()=>{
-          // Wait for the component to report whether the maintainer config is present.
+          // Wait for the async status request, not visible UI copy.
           await settings.waitForFunction(()=>{
-            const section=document.querySelector('section[aria-labelledby="cloud-sync-heading"]');
-            const text=section?.textContent??'';
-            return Boolean(section?.querySelector('input[aria-label="开启自动云同步"]') &&
-              (text.includes('官方云同步尚未完成配置') || text.includes('官方云同步配置已就绪')));
+            const section=document.querySelector('section[aria-labelledby="account-settings-heading"] .settings-cloud-panel');
+            return section?.getAttribute('aria-busy')==='false' &&
+              Boolean(section.querySelector('input[aria-label="开启自动云同步"]'));
           },null,{timeout:10000});
-          const unavailable=await cloud.getByText('官方云同步尚未完成配置',{exact:false}).count()>0;
+          const unavailable=await cloud.getByText('云同步暂时用不了',{exact:false}).count()>0;
           return !unavailable;
         };
         const configuredBeforeUntrustedSetting=await waitForManagedConfigState();
@@ -406,7 +405,7 @@ test('Chromium MV3: TOC, search, layout, SPA and failure paths',{timeout:150000}
           }
         }));
         const downloadPromise=settings.waitForEvent('download');
-        await settings.getByRole('button',{name:'导出本地数据'}).click();
+        await settings.getByRole('button',{name:'备份数据'}).click();
         const download=await downloadPromise,filePath=await download.path();
         assert.ok(filePath,'backup download should complete');
         const backup=JSON.parse(readFileSync(filePath,'utf8'));

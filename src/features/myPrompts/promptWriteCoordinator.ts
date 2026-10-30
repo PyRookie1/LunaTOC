@@ -9,9 +9,12 @@ const MAX_RECORDS = 20_000;
 const USAGE_STORAGE_KEY = 'lunatoc:promptUsage:v1';
 
 export type PromptCommitRequest =
-  | { type: typeof PROMPT_COMMIT_TYPE; action: 'replace-account'; ownerId: string; next: SavedPrompt[] }
-  | { type: typeof PROMPT_COMMIT_TYPE; action: 'clear-account'; ownerId: string };
-export type PromptCommitResponse = { ok: true } | { ok: false; error: string };
+  | { type: typeof PROMPT_COMMIT_TYPE; action: 'replace-account'; ownerId: string; expected: SavedPrompt[]; next: SavedPrompt[] }
+  | { type: typeof PROMPT_COMMIT_TYPE; action: 'clear-account'; ownerId: string; expected: SavedPrompt[] };
+export type PromptCommitResponse =
+  | { ok: true }
+  | { ok: false; conflict: true }
+  | { ok: false; error: string };
 
 type PromptStorage = Pick<chrome.storage.StorageArea, 'get' | 'set'> &
   Partial<Pick<chrome.storage.StorageArea, 'remove'>>;
@@ -113,9 +116,12 @@ export function isPromptCommitRequest(value: unknown): value is PromptCommitRequ
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const item = value as Record<string, unknown>;
   if (item.type !== PROMPT_COMMIT_TYPE) return false;
-  if (item.action === 'clear-account') return validOwner(item.ownerId);
-  return item.action === 'replace-account' && validOwner(item.ownerId) &&
-    isPromptList(item.next) &&
+  if (!validOwner(item.ownerId) || !isPromptList(item.expected) ||
+      !(item.expected as SavedPrompt[]).every((prompt) => prompt.ownerId === item.ownerId)) {
+    return false;
+  }
+  if (item.action === 'clear-account') return true;
+  return item.action === 'replace-account' && isPromptList(item.next) &&
     (item.next as SavedPrompt[]).every((prompt) => prompt.ownerId === item.ownerId);
 }
 
@@ -185,6 +191,12 @@ export function createPromptWriteCoordinator(
           const cleanedUsage = pruneUsage(usage, current);
 
           const ownerId = request.ownerId;
+          const currentOwned = current.filter((prompt) => prompt.ownerId === ownerId);
+          // All writes share this queue. Refuse stale account snapshots before
+          // touching usage or prompts, including for a clear-all operation.
+          if (!equalPromptLists(currentOwned, request.expected)) {
+            return { ok: false, conflict: true };
+          }
           const otherAccounts = current.filter((prompt) => prompt.ownerId !== ownerId);
           const currentAccountIds = new Set(otherAccounts.map((prompt) => prompt.id));
           const nextOwned = request.action === 'replace-account' ? request.next : [];

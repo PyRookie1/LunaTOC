@@ -112,21 +112,28 @@ export function repairMarkdownBoldTextNode(textNode: Text): boolean {
   return true;
 }
 
+/**
+ * Scan bold markers once, without restarting a search from each unmatched
+ * opener. A later delimiter supersedes an earlier unclosed opener, which
+ * preserves the existing behavior for nested/malformed marker sequences.
+ */
 export function parseUnrenderedBoldMarkdown(
   text: string
 ): MarkdownBoldSegment[] | null {
   const segments: MarkdownBoldSegment[] = [];
+  const codeSpanEnds = findAllCodeSpanEnds(text);
+  const mathSpanEnds = indexMathSpanEnds(text);
   let plainStart = 0;
   let index = 0;
+  let openingIndex = -1;
   let foundBold = false;
 
   while (index < text.length) {
-    const mathEnd = findMathSpanEnd(text, index);
-    if (mathEnd !== -1) {
+    const mathEnd = mathSpanEnds.get(index);
+    if (mathEnd !== undefined) {
       index = mathEnd;
       continue;
     }
-
     if (text[index] === '\\') {
       index += Math.min(2, text.length - index);
       continue;
@@ -134,53 +141,42 @@ export function parseUnrenderedBoldMarkdown(
 
     if (text[index] === BACKTICK) {
       const runLength = countRun(text, index, BACKTICK);
-      const codeEnd = findCodeSpanEnd(text, index, runLength);
-      if (codeEnd !== -1) {
-        index = codeEnd;
-      } else {
-        index += runLength;
-      }
+      const codeEnd = codeSpanEnds.get(index) ?? -1;
+      index = codeEnd === -1 ? index + runLength : codeEnd;
       continue;
     }
 
-    if (
-      isDoubleStarDelimiter(text, index) &&
-      !isWhitespace(text[index + 2])
-    ) {
-      const closingIndex = findClosingBold(text, index + 2);
+    if (!isDoubleStarDelimiter(text, index)) {
+      index += 1;
+      continue;
+    }
 
-      if (closingIndex !== -1) {
-        const content = text.slice(index + 2, closingIndex);
-
-        if (isValidBoldContent(content)) {
-          if (index > plainStart) {
-            segments.push({
-              text: text.slice(plainStart, index),
-              bold: false,
-            });
-          }
-
-          segments.push({ text: content, bold: true });
-          foundBold = true;
-          index = closingIndex + 2;
-          plainStart = index;
-          continue;
+    if (openingIndex !== -1 && !isWhitespace(text[index - 1])) {
+      const content = text.slice(openingIndex + 2, index);
+      if (isValidBoldContent(content) &&
+          !containsCodeSpan(content) && !containsMathSyntax(content)) {
+        if (openingIndex > plainStart) {
+          segments.push({ text: text.slice(plainStart, openingIndex), bold: false });
         }
+        segments.push({ text: content, bold: true });
+        foundBold = true;
+        index += 2;
+        plainStart = index;
+        openingIndex = -1;
+        continue;
       }
-
-      index += 2;
-      continue;
     }
 
-    index += 1;
+    // Every unmatched marker invalidates the earlier candidate. It may
+    // itself start a new pair, unless the next character is whitespace.
+    openingIndex = isWhitespace(text[index + 2]) ? -1 : index;
+    index += 2;
   }
 
   if (!foundBold) return null;
-
   if (plainStart < text.length) {
     segments.push({ text: text.slice(plainStart), bold: false });
   }
-
   return segments;
 }
 
@@ -316,71 +312,59 @@ function isWithinOwnedMarkdown(node: Node, owner: HTMLElement): boolean {
  * Keep paired inline or display math delimiters opaque to bold repair.
  * Prose bold markers in the same text node can still be repaired.
  */
-function findMathSpanEnd(text: string, start: number): number {
-  if (text.startsWith('\\(', start) || text.startsWith('\\[', start)) {
-    if (isEscapedAt(text, start)) return -1;
-    const close = text[start + 1] === '(' ? '\\)' : '\\]';
-    const end = text.indexOf(close, start + 2);
-    return end > start + 2 ? end + 2 : -1;
+/**
+ * Find math delimiters once. Sorted lists and binary lookups avoid scanning
+ * an entire unfinished expression for every repeated '$' or '\\(' opener.
+ */
+function indexMathSpanEnds(text: string): Map<number, number> {
+  const inlineClosers: number[] = [];
+  const displayClosers: number[] = [];
+  const parenClosers: number[] = [];
+  const bracketClosers: number[] = [];
+  const linebreaks: number[] = [];
+  for (let index = 0; index < text.length; index += 1) {
+    if (text[index] === '\n') linebreaks.push(index);
+    if (text.startsWith('$$', index)) displayClosers.push(index);
+    if (text[index] === '$' && !isEscapedAt(text, index) &&
+        !isWhitespace(text[index - 1])) inlineClosers.push(index);
+    if (text.startsWith('\\)', index)) parenClosers.push(index);
+    if (text.startsWith('\\]', index)) bracketClosers.push(index);
   }
 
-  if (text[start] !== '$' || isEscapedAt(text, start)) return -1;
-  if (text.startsWith('$$', start)) {
-    const end = text.indexOf('$$', start + 2);
-    return end > start + 2 ? end + 2 : -1;
-  }
-
-  if (text[start + 1] === '$' || isWhitespace(text[start + 1])) return -1;
-  for (let end = start + 1; end < text.length && text[end] !== '\n'; end += 1) {
-    if (text[end] === '$' && !isEscapedAt(text, end) &&
-      !isWhitespace(text[end - 1]) && end > start + 1) {
-      return end + 1;
+  const firstAfter = (indices: number[], minimum: number): number => {
+    let low = 0;
+    let high = indices.length;
+    while (low < high) {
+      const mid = (low + high) >>> 1;
+      if (indices[mid] < minimum) low = mid + 1;
+      else high = mid;
     }
-  }
-  return -1;
-}
+    return low < indices.length ? indices[low] : -1;
+  };
 
-function findClosingBold(text: string, start: number): number {
-  let index = start;
-
-  while (index < text.length) {
-    const mathEnd = findMathSpanEnd(text, index);
-    if (mathEnd !== -1) {
-      index = mathEnd;
+  const spans = new Map<number, number>();
+  for (let index = 0; index < text.length; index += 1) {
+    if (text.startsWith('\\(', index) || text.startsWith('\\[', index)) {
+      if (isEscapedAt(text, index)) continue;
+      const closes = text[index + 1] === '(' ? parenClosers : bracketClosers;
+      const end = firstAfter(closes, index + 3);
+      if (end !== -1) spans.set(index, end + 2);
       continue;
     }
-
-    if (text[index] === '\\') {
-      index += Math.min(2, text.length - index);
+    if (text[index] !== '$' || isEscapedAt(text, index)) continue;
+    if (text.startsWith('$$', index)) {
+      const end = firstAfter(displayClosers, index + 2);
+      if (end > index + 2) spans.set(index, end + 2);
       continue;
     }
-
-    if (text[index] === BACKTICK) {
-      const runLength = countRun(text, index, BACKTICK);
-      const codeEnd = findCodeSpanEnd(text, index, runLength);
-      index = codeEnd === -1 ? index + runLength : codeEnd;
-      continue;
+    if (text[index + 1] === '$' || isWhitespace(text[index + 1])) continue;
+    const end = firstAfter(inlineClosers, index + 2);
+    const linebreak = firstAfter(linebreaks, index + 1);
+    if (end !== -1 && (linebreak === -1 || end < linebreak)) {
+      spans.set(index, end + 1);
     }
-
-    if (
-      isDoubleStarDelimiter(text, index) &&
-      !isWhitespace(text[index - 1])
-    ) {
-      const content = text.slice(start, index);
-      if (
-        isValidBoldContent(content) &&
-        !containsUnescapedBoldDelimiter(content) &&
-        !containsCodeSpan(content) &&
-        !containsMathSyntax(content)
-      ) {
-        return index;
-      }
-    }
-
-    index += 1;
   }
-
-  return -1;
+  return spans;
 }
 
 function isValidBoldContent(content: string): boolean {
@@ -420,69 +404,37 @@ function countRun(text: string, start: number, character: string): number {
   return end - start;
 }
 
-function findCodeSpanEnd(
-  text: string,
-  start: number,
-  delimiterLength: number
-): number {
-  let index = start + delimiterLength;
-
-  while (index < text.length) {
+/**
+ * Index matching backtick runs from right to left. A lookup is constant-time,
+ * even if thousands of runs have no partner.
+ */
+function findAllCodeSpanEnds(text: string): Map<number, number> {
+  const runs: Array<{ start: number; length: number }> = [];
+  for (let index = 0; index < text.length;) {
     if (text[index] !== BACKTICK) {
       index += 1;
       continue;
     }
-
-    const runLength = countRun(text, index, BACKTICK);
-    if (runLength === delimiterLength) return index + runLength;
-    index += runLength;
+    const length = countRun(text, index, BACKTICK);
+    runs.push({ start: index, length });
+    index += length;
   }
 
-  return -1;
+  const nextByLength = new Map<number, number>();
+  const ends = new Map<number, number>();
+  for (let index = runs.length - 1; index >= 0; index -= 1) {
+    const run = runs[index];
+    const next = nextByLength.get(run.length);
+    if (next !== undefined) ends.set(run.start, next + run.length);
+    nextByLength.set(run.length, run.start);
+  }
+  return ends;
 }
 
 function containsCodeSpan(text: string): boolean {
-  let index = 0;
-
-  while (index < text.length) {
-    if (text[index] !== BACKTICK) {
-      index += 1;
-      continue;
-    }
-
-    const runLength = countRun(text, index, BACKTICK);
-    if (findCodeSpanEnd(text, index, runLength) !== -1) return true;
-    index += runLength;
-  }
-
-  return false;
-}
-
-function containsUnescapedBoldDelimiter(text: string): boolean {
-  let index = 0;
-
-  while (index < text.length) {
-    if (text[index] === '\\') {
-      index += Math.min(2, text.length - index);
-      continue;
-    }
-
-    if (text[index] === BACKTICK) {
-      const runLength = countRun(text, index, BACKTICK);
-      const codeEnd = findCodeSpanEnd(text, index, runLength);
-      index = codeEnd === -1 ? index + runLength : codeEnd;
-      continue;
-    }
-
-    if (isDoubleStarDelimiter(text, index)) return true;
-    index += 1;
-  }
-
-  return false;
+  return findAllCodeSpanEnds(text).size > 0;
 }
 
 function containsMathSyntax(text: string): boolean {
-  return /\$\$[\s\S]+?\$\$|\$(?!\s)[^$\n]+?\$|\\\([\s\S]+?\\\)|\\\[[\s\S]+?\\\]/.test(
-    text
-  );
+  return indexMathSpanEnds(text).size > 0;
 }

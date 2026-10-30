@@ -113,6 +113,19 @@ describe('Firebase REST account sync', () => {
       .toBe('test@example.com');
   });
 
+  it('does not disable automatic sync when the same Firebase UID logs in again', async () => {
+    const local = storage(initialLocal()), remote = firebaseHarness();
+    const { service } = await ready(local, remote);
+    expect(await service.execute(request('set-auto-sync', { enabled: true })))
+      .toMatchObject({ ok: true, autoSyncEnabled: true });
+    expect((await service.execute(request('login', {
+      email: 'test@example.com', password: 'a-secure-test-password',
+    }))).ok).toBe(true);
+    expect(local.state[CLOUD_AUTO_SYNC_KEY]).toBe(true);
+    expect(await service.execute(request('status')))
+      .toMatchObject({ ok: true, autoSyncEnabled: true, uid: 'firebase-user' });
+  });
+
   it('requires explicit binding and never syncs all local ChatGPT accounts on login', async () => {
     const local = storage(initialLocal()), remote = firebaseHarness(), sessions = storage();
     const service = createCloudController(local.api, sessions.api, createSerialWriteQueue(),
