@@ -224,6 +224,52 @@ describe('Firebase REST account sync', () => {
     expect(sessions.state).not.toHaveProperty('lunatoc:cloud:auth:session:v1');
   });
 
+  it('identifies revoked Firebase host permission instead of a bare Failed to fetch', async () => {
+    const local = storage(), sessions = storage(), cloud = firebaseHarness();
+    const contains = vi.fn(async () => false);
+    vi.stubGlobal('chrome', { permissions: { contains } });
+    try {
+      cloud.fetcher.mockImplementation(async () => { throw new TypeError('Failed to fetch'); });
+      const service = createCloudController(local.api, sessions.api, createSerialWriteQueue(),
+        async () => true, cloud.fetcher as unknown as typeof fetch,
+        { apiKey: 'AIzaSy-Test-api-key-public', projectId: 'lunatoc-demo',
+          authDomain: 'lunatoc-demo.firebaseapp.com' });
+      const result = await service.execute(request('login', {
+        email: 'test@example.com', password: 'a-secure-test-password',
+      }));
+      expect(result).toMatchObject({ ok: false, error: expect.stringContaining('Firebase 网络权限不足') });
+      expect(result).toMatchObject({ ok: false, error: expect.stringContaining('identitytoolkit.googleapis.com') });
+      expect(contains).toHaveBeenCalledWith({
+        origins: ['https://identitytoolkit.googleapis.com/*'],
+      });
+      expect(sessions.state).not.toHaveProperty('lunatoc:cloud:auth:session:v1');
+      expect(local.state).not.toHaveProperty(CLOUD_AUTO_SYNC_KEY);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('identifies Firebase network failure when optional permissions are already granted', async () => {
+    const local = storage(), sessions = storage(), cloud = firebaseHarness();
+    const contains = vi.fn(async () => true);
+    vi.stubGlobal('chrome', { permissions: { contains } });
+    try {
+      cloud.fetcher.mockImplementation(async () => { throw new TypeError('Failed to fetch'); });
+      const service = createCloudController(local.api, sessions.api, createSerialWriteQueue(),
+        async () => true, cloud.fetcher as unknown as typeof fetch,
+        { apiKey: 'AIzaSy-Test-api-key-public', projectId: 'lunatoc-demo',
+          authDomain: 'lunatoc-demo.firebaseapp.com' });
+      const result = await service.execute(request('login', {
+        email: 'test@example.com', password: 'a-secure-test-password',
+      }));
+      expect(result).toMatchObject({ ok: false, error: expect.stringContaining('无法连接 Firebase') });
+      expect(result).toMatchObject({ ok: false, error: expect.stringContaining('DNS') });
+      expect(sessions.state).not.toHaveProperty('lunatoc:cloud:auth:session:v1');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('rejects incorrect credentials and short passwords without establishing any session', async () => {
     const local = storage(), sessions = storage(), cloud = firebaseHarness();
     const service = createCloudController(local.api, sessions.api, createSerialWriteQueue(),
