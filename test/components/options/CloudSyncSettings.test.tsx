@@ -140,6 +140,24 @@ describe('CloudSyncSettings verified LunaTOC password accounts', () => {
       .toEqual(['status', 'unbind-account', 'bind-account', 'sync', 'set-auto-sync']);
   });
 
+  it('can explicitly bind another ChatGPT account while cloud sync is already enabled', async () => {
+    mocks.sendMessage.mockImplementation(async ({ action }: { action: string }) => {
+      if (action === 'status') return { ok: true, configured: true,
+        uid: 'firebase-user', emailVerified: true, autoSyncEnabled: true };
+      if (action === 'bind-account') return { ok: true, boundUid: 'firebase-user', message: '绑定成功' };
+      if (action === 'sync') return { ok: true, message: '同步完成' };
+      if (action === 'set-auto-sync') return { ok: true, autoSyncEnabled: true, message: '已开启' };
+      return { ok: false, error: 'unexpected action' };
+    });
+    await render();
+    expect(host.querySelector('input[type="password"]')).toBeNull();
+    expect(host.textContent).toContain('绑定当前 ChatGPT 账号并同步');
+    await act(async () => Array.from(host.querySelectorAll('button'))
+      .find(b => b.textContent?.includes('绑定当前 ChatGPT 账号并同步'))?.click());
+    expect(mocks.sendMessage.mock.calls.map(([arg]) => arg.action))
+      .toEqual(['status', 'bind-account', 'sync', 'set-auto-sync']);
+  });
+
   it('cannot enable without Firebase permissions', async () => {
     mocks.requestPermissions.mockResolvedValueOnce(false);
     await render();
