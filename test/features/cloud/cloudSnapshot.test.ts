@@ -65,10 +65,10 @@ describe('cloud snapshots and three-way merge', () => {
       sidebar: { layoutMode: 'overlay' as const, backgroundColor: 'default' as const, revealTint: false },
     } };
     const local = { ...snapshot(), settings: {
-      ...base.settings, sidebar: { ...base.settings.sidebar, layoutMode: 'side-by-side' as const },
+      ...base.settings, sidebar: { ...base.settings.sidebar, backgroundColor: 'blue' as const },
     } };
     const remote = { ...snapshot(), settings: {
-      ...base.settings, sidebar: { ...base.settings.sidebar, layoutMode: 'floating' as const },
+      ...base.settings, sidebar: { ...base.settings.sidebar, backgroundColor: 'green' as const },
     } };
     expect(() => mergeAccountSnapshots(base, local, remote, owner)).toThrow('同时修改');
   });
