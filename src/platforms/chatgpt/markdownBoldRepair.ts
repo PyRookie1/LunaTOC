@@ -121,6 +121,7 @@ export function parseUnrenderedBoldMarkdown(
   text: string
 ): MarkdownBoldSegment[] | null {
   const segments: MarkdownBoldSegment[] = [];
+  const codeSpanEnds = findAllCodeSpanEnds(text);
   let plainStart = 0;
   let index = 0;
   let openingIndex = -1;
@@ -134,7 +135,7 @@ export function parseUnrenderedBoldMarkdown(
 
     if (text[index] === BACKTICK) {
       const runLength = countRun(text, index, BACKTICK);
-      const codeEnd = findCodeSpanEnd(text, index, runLength);
+      const codeEnd = codeSpanEnds.get(index) ?? -1;
       index = codeEnd === -1 ? index + runLength : codeEnd;
       continue;
     }
@@ -338,42 +339,35 @@ function countRun(text: string, start: number, character: string): number {
   return end - start;
 }
 
-function findCodeSpanEnd(
-  text: string,
-  start: number,
-  delimiterLength: number
-): number {
-  let index = start + delimiterLength;
-
-  while (index < text.length) {
+/**
+ * Index matching backtick runs from right to left. A lookup is constant-time,
+ * even if thousands of runs have no partner.
+ */
+function findAllCodeSpanEnds(text: string): Map<number, number> {
+  const runs: Array<{ start: number; length: number }> = [];
+  for (let index = 0; index < text.length;) {
     if (text[index] !== BACKTICK) {
       index += 1;
       continue;
     }
-
-    const runLength = countRun(text, index, BACKTICK);
-    if (runLength === delimiterLength) return index + runLength;
-    index += runLength;
+    const length = countRun(text, index, BACKTICK);
+    runs.push({ start: index, length });
+    index += length;
   }
 
-  return -1;
+  const nextByLength = new Map<number, number>();
+  const ends = new Map<number, number>();
+  for (let index = runs.length - 1; index >= 0; index -= 1) {
+    const run = runs[index];
+    const next = nextByLength.get(run.length);
+    if (next !== undefined) ends.set(run.start, next + run.length);
+    nextByLength.set(run.length, run.start);
+  }
+  return ends;
 }
 
 function containsCodeSpan(text: string): boolean {
-  let index = 0;
-
-  while (index < text.length) {
-    if (text[index] !== BACKTICK) {
-      index += 1;
-      continue;
-    }
-
-    const runLength = countRun(text, index, BACKTICK);
-    if (findCodeSpanEnd(text, index, runLength) !== -1) return true;
-    index += runLength;
-  }
-
-  return false;
+  return findAllCodeSpanEnds(text).size > 0;
 }
 
 function containsMathSyntax(text: string): boolean {
