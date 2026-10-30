@@ -10,7 +10,7 @@
 7. 关闭同步即撤销本机 Firebase 登录会话、停止后续上传，不删除本地数据或已上传的云端副本。
 
 ## 维护者 Firebase 配置
-1. 可使用 Spark 免费方案。Project settings → General → Your apps → 注册 Firebase Web App，获取真实 `projectId`、`apiKey`、`authDomain`。
+1. 可使用 Spark 免费方案。Project settings → General → Your apps → 注册 Firebase Web App，获取真实 `projectId`、`apiKey`、`authDomain`。自 2026-10-15 起新建项目不再自动创建默认 Hosting 站点；若 Web App Config 缺少 `authDomain`，按 Firebase 控制台提示先创建默认 Hosting 站点，再从 Config 读取实际域名，不能按 Project ID 猜测。
 2. Authentication → Sign-in method → 启用 **Email/Password**，关闭 **Email link (passwordless)**。Authentication → Settings → Password policy 建议强制至少 12 位；保留默认邮箱枚举防护。
 3. Authentication → Settings → Authorized domains：检查真实 `authDomain`，验证邮件中的 Firebase Action URL 应能打开。新建项目的默认 Hosting Site ID 不一定与 Project ID 完全相同。
 4. Build → Firestore Database → 创建默认数据库，选择正确区域。生产环境必须部署仓库的 **`firestore.rules`**。
