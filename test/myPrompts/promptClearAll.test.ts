@@ -47,7 +47,7 @@ describe('coordinated account prompt clearing', () => {
     expect(await writer.commit(clear())).toEqual({ ok: true });
     expect(box.state[PROMPT_STORAGE_KEY]).toEqual([]);
     expect(box.state[USAGE]).toEqual({});
-    expect(await writer.commit(clear())).toEqual({ ok: true });
+    expect(await writer.commit(clear([]))).toEqual({ ok: true });
   });
 
   it('clears only the active account and preserves other accounts and their usage', async () => {
