@@ -1,6 +1,6 @@
 /** Firebase Identity Toolkit / Firestore REST: user-initiated, quota-limited account sync. */
 import { isValidAccountOwnerId, ACCOUNT_SETTINGS_KEY } from '@/features/storage/accountSettings';
-import { createLocalBackup } from '@/features/backup/localBackup';
+import { createLocalBackup, storageValuesEqual } from '@/features/backup/localBackup';
 import { isPromptList, PROMPT_STORAGE_KEY } from '@/features/myPrompts/promptWriteCoordinator';
 import { TOC_ALIAS_PREFIX, TOC_ALIAS_DELETED_PREFIX, parseTocAliasRecord } from '@/features/conversationPrompts/tocAliasWriteCoordinator';
 import { CLOUD_MAX_BYTES, emptyCloudSnapshot, mergeAccountSnapshots, validateCloudSnapshot,
@@ -298,9 +298,15 @@ export function createCloudController(
       await local.set(values);
       if (removed.size) await local.remove([...removed]);
       const actual = await local.get(changedKeys) as Record<string, unknown>;
-      if (Object.entries(values).some(([key, value]) => JSON.stringify(actual[key]) !== JSON.stringify(value)) ||
-          [...removed].some((key) => Object.hasOwn(actual, key))) {
-        throw new Error('本地同步写入后核验失败');
+      // chrome.storage.local may return object properties in another order.
+      // Compare the persisted data recursively instead of comparing JSON strings.
+      const mismatchedWrites = Object.entries(values)
+        .filter(([key, expected]) => !storageValuesEqual(expected, actual[key]));
+      const failedRemovals = [...removed].filter((key) => Object.hasOwn(actual, key));
+      if (mismatchedWrites.length || failedRemovals.length) {
+        // Expose counts only: alias keys can contain private conversation identifiers.
+        throw new Error('本地同步写入后核验失败（写入不一致 ' + mismatchedWrites.length +
+          ' 项，删除未完成 ' + failedRemovals.length + ' 项）');
       }
     } catch (cause) {
       const previous = Object.fromEntries(changedKeys
