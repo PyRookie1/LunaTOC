@@ -381,11 +381,15 @@ describe('LunaTOC local backup', () => {
     await queue.run(() => restoreLocalBackup(backup, 'replace', box.storage));
     expect(box.state[PROMPTS]).toEqual([prompt('restored')]);
 
-    // The single-tab editor must read the restored collection before making
-    // a subsequent change. Cross-tab stale-write rejection is unsupported.
+    // A stale tab cannot erase prompts that were restored from backup.
+    expect(await promptWriter.commit({
+      type: PROMPT_COMMIT_TYPE, action: 'replace-account', ownerId: 'account-1',
+      expected: [original], next: [original, prompt('added')],
+    })).toEqual({ ok: false, conflict: true });
+    expect(box.state[PROMPTS]).toEqual([prompt('restored')]);
     const subsequent = await promptWriter.commit({
       type: PROMPT_COMMIT_TYPE, action: 'replace-account', ownerId: 'account-1',
-      next: [prompt('restored'), prompt('added')],
+      expected: [prompt('restored')], next: [prompt('restored'), prompt('added')],
     });
     expect(subsequent).toEqual({ ok: true });
     expect(box.state[PROMPTS]).toEqual([prompt('restored'), prompt('added')]);
