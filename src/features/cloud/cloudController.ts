@@ -249,7 +249,7 @@ export function createCloudController(
     await sessionStorage.set({ [SESSION_KEY]: { ...active, emailVerified: info.verified,
       email: info.email ?? active.email } });
     return { ok: true, uid: active.uid, email: info.email ?? active.email, emailVerified: info.verified,
-      message: verified ? '邮箱已验证，可以开启云同步' : '邮箱尚未验证，请先打开验证邮件完成确认' };
+      message: info.verified ? '邮箱已验证，可以开启云同步' : '邮箱尚未验证，请先打开验证邮件完成确认' };
   }
   async function currentLocal(ownerId: string, base: CloudSnapshot): Promise<CloudSnapshot> {
     const backup = await createLocalBackup(local as Parameters<typeof createLocalBackup>[0]);
