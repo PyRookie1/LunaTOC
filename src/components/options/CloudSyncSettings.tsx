@@ -1,5 +1,6 @@
 /** Opt-in automatic sync authenticated with verified LunaTOC email/password accounts. */
 import { useEffect, useState } from 'react';
+import { SettingsHelp } from './SettingsHelp';
 import {
   CLOUD_AUTO_SYNC_STATUS_KEY, CLOUD_MESSAGE_TYPE,
   type CloudAutoSyncStatus, type CloudResult,
@@ -124,12 +125,23 @@ export function CloudSyncSettings({ accountId }: { accountId: string }): React.J
   }
 
   return (
-    <section className="settings-section" aria-labelledby="cloud-sync-heading">
-      <div className="settings-section-heading">
-        <h2 id="cloud-sync-heading">LunaTOC 云同步（可选）</h2>
-        <p>默认关闭。首次需注册 LunaTOC 邮箱＋密码账号并验证邮箱，之后凭密码登录并同步已验证 ChatGPT 账号的数据。</p>
+    <div className="settings-cloud-panel">
+      <div className="settings-choice settings-no-border">
+        <span className="settings-choice-info settings-inline-title">
+          <label htmlFor="cloud-auto-sync-toggle"><strong>自动云同步</strong></label>
+          <SettingsHelp id="cloud-sync-help"
+            text="首次需使用邮箱+密码注册 LunaTOC 账号并验证邮箱。" />
+        </span>
+        <label className="settings-switch-control">
+          <input id="cloud-auto-sync-toggle"
+            aria-label="开启自动云同步" className="settings-switch-input" type="checkbox"
+            checked={enabled || requesting} disabled={busy || !statusLoaded || !configured || !accountId}
+            onChange={(event) => void changeEnabled(event.currentTarget.checked)}
+          />
+          <span className="settings-switch-track" aria-hidden="true" />
+        </label>
       </div>
-      <div className="settings-card">
+      <div className="settings-cloud-details">
         {!statusLoaded && <p role="status" className="settings-backup-description">正在检查官方云同步配置…</p>}
         {statusLoaded && !configured && (
           <p role="status" className="settings-backup-description">官方云同步尚未完成配置。当前所有功能仍保存在本地，不会上传数据。</p>
@@ -141,35 +153,10 @@ export function CloudSyncSettings({ accountId }: { accountId: string }): React.J
           <p role="status" className="settings-backup-description">请先打开已登录的 ChatGPT 页面，等待 LunaTOC 识别账号。</p>
         )}
         {statusLoaded && (
-          <div className="settings-cloud-identity" aria-label="云账号与 ChatGPT 绑定详情">
+          <div className="settings-cloud-identity" aria-label="LunaTOC 云账号信息">
             <p><strong>LunaTOC 云账号：</strong>{uid ? (cloudEmail || '邮箱尚未读取') : '未登录'}</p>
-            {uid && <p><strong>Firebase UID：</strong><code>{uid}</code></p>}
-            <p><strong>当前所选 ChatGPT 账号：</strong>{accountId || '未选择'}</p>
-            <p><strong>该 ChatGPT 账号的云端绑定：</strong>
-              {!accountId ? '请选择账号'
-                : !boundUid ? '未绑定，数据仅保留本地'
-                  : boundUid === uid ? '已绑定当前 LunaTOC 云账号'
-                    : '绑定其他 LunaTOC 云账号（UID：' + boundUid + '）'}
-            </p>
-            {uid && (
-              <p><strong>此云账号已绑定的 ChatGPT 账号：</strong>
-                {boundOwners.length ? boundOwners.join('、') : '暂无'}
-              </p>
-            )}
           </div>
         )}
-        <label className="settings-choice settings-no-border">
-          <span className="settings-choice-info">
-            <strong>自动云同步</strong>
-            <small>开启前需完成 LunaTOC 邮箱＋密码登录和邮箱验证；关闭后停止上传，不删除本地或已有云端副本。</small>
-          </span>
-          <input
-            aria-label="开启自动云同步" className="settings-switch-input" type="checkbox"
-            checked={enabled || requesting} disabled={busy || !statusLoaded || !configured || !accountId}
-            onChange={(event) => void changeEnabled(event.currentTarget.checked)}
-          />
-          <span className="settings-switch-track" aria-hidden="true" />
-        </label>
         {(requesting || enabled) && (
           <div className="settings-backup-block">
             {uid && !emailVerified ? (
@@ -292,6 +279,6 @@ export function CloudSyncSettings({ accountId }: { accountId: string }): React.J
           关闭同步会清理本地登录凭据，但不删除已经上传的数据。
         </p>
       </div>
-    </section>
+    </div>
   );
 }
