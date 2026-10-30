@@ -9,7 +9,8 @@ import type { SavedPrompt } from '@/features/myPrompts/promptStore';
 const USAGE = 'lunatoc:promptUsage:v1';
 const prompt: SavedPrompt = { id: 'saved', ownerId: 'account-1', title: 'Saved', content: 'Text', createdAt: 1, updatedAt: 1 };
 const clone = <T>(x: T): T => JSON.parse(JSON.stringify(x)) as T;
-const clear = () => ({ type: PROMPT_COMMIT_TYPE, action: 'clear-account' as const, ownerId: 'account-1' });
+const clear = (expected: SavedPrompt[] = [prompt]) =>
+  ({ type: PROMPT_COMMIT_TYPE, action: 'clear-account' as const, ownerId: 'account-1', expected });
 
 function harness() {
   const state: Record<string, unknown> = {
