@@ -252,6 +252,59 @@ describe('Firebase REST account sync', () => {
     expect(await service.execute(request('sync', { ownerId: owner }))).toMatchObject({ ok: true });
     expect(remote.writes()).toBe(1);
   });
+  it('accepts equivalent Chrome storage readback with different nested property ordering', async () => {
+    const other = { ...item, id: 'tip-b', ownerId: 'account-2', title: 'Other account' };
+    const local = storage({
+      [PROMPT_STORAGE_KEY]: [item, other],
+      [ACCOUNT_SETTINGS_KEY]: { [owner]: settings, 'account-2': settings },
+    });
+    const remote = firebaseHarness();
+    const { service } = await ready(local, remote);
+    const originalGet = local.get.getMockImplementation()!;
+    const reorder = <T>(value: T): T => {
+      if (Array.isArray(value)) return value.map(reorder) as T;
+      if (value && typeof value === 'object') {
+        return Object.fromEntries(Object.entries(value).reverse()
+          .map(([key, entry]) => [key, reorder(entry)])) as T;
+      }
+      return value;
+    };
+    // Simulate Chrome's readback normalization of object key ordering.
+    local.get.mockImplementation(async (keys?: string | string[] | null) =>
+      reorder(await originalGet(keys)));
+    expect(await service.execute(request('sync', { ownerId: owner })))
+      .toMatchObject({ ok: true });
+    expect(local.state[PROMPT_STORAGE_KEY]).toEqual([item, other]);
+    expect(local.state[ACCOUNT_SETTINGS_KEY]).toEqual({ [owner]: settings, 'account-2': settings });
+    expect(remote.writes()).toBe(1);
+    expect(await service.execute(request('sync', { ownerId: owner })))
+      .toMatchObject({ ok: true });
+    expect(remote.writes()).toBe(1);
+  });
+
+  it('still rejects a genuinely corrupted local write and rolls it back', async () => {
+    const local = storage(initialLocal());
+    const remote = firebaseHarness();
+    const { service } = await ready(local, remote);
+    const before = structuredClone(local.state);
+    const originalSet = local.set.getMockImplementation()!;
+    let corruptOnce = true;
+    local.set.mockImplementation(async (values: Record<string, unknown>) => {
+      await originalSet(values);
+      if (corruptOnce && Object.hasOwn(values, PROMPT_STORAGE_KEY)) {
+        corruptOnce = false;
+        local.state[PROMPT_STORAGE_KEY] = [{ ...item, title: 'Damaged write' }];
+      }
+    });
+    const result = await service.execute(request('sync', { ownerId: owner }));
+    expect(result).toMatchObject({
+      ok: false, error: expect.stringContaining('本地同步写入后核验失败'),
+    });
+    expect(local.state).toEqual(before);
+    expect(remote.writes()).toBe(1);
+    expect(Object.keys(local.state).some((key) => key.startsWith('lunatoc:cloud:baseline:'))).toBe(false);
+  });
+
   it('downloads onto another device without modifying a separate ChatGPT account', async () => {
     const cloud = firebaseHarness();
     const first = storage(initialLocal());
