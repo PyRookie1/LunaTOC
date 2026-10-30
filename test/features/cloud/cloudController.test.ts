@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createCloudController, CLOUD_MESSAGE_TYPE, CLOUD_AUTO_SYNC_KEY } from '@/features/cloud/cloudController';
+import { createCloudController, CLOUD_MESSAGE_TYPE, CLOUD_AUTO_SYNC_KEY, CLOUD_ACCOUNT_BINDINGS_KEY } from '@/features/cloud/cloudController';
 import { createSerialWriteQueue } from '@/features/storage/serialWriteQueue';
 import { PROMPT_STORAGE_KEY } from '@/features/myPrompts/promptWriteCoordinator';
 import { ACCOUNT_SETTINGS_KEY } from '@/features/storage/accountSettings';
@@ -91,9 +91,62 @@ async function ready(local: ReturnType<typeof storage>, cloud: ReturnType<typeof
     email: 'test@example.com', password: 'a-secure-test-password',
   }));
   expect(login).toMatchObject({ ok: true, uid: 'firebase-user' });
+  expect(await service.execute(request('bind-account', { ownerId: owner })))
+    .toMatchObject({ ok: true, boundUid: 'firebase-user' });
   return { service, sessions };
 }
 describe('Firebase REST account sync', () => {
+  it('requires explicit binding and never syncs all local ChatGPT accounts on login', async () => {
+    const local = storage(initialLocal()), remote = firebaseHarness(), sessions = storage();
+    const service = createCloudController(local.api, sessions.api, createSerialWriteQueue(),
+      async () => true, remote.fetcher as unknown as typeof fetch,
+      { apiKey: 'AIzaSy-Test-api-key-public', projectId: 'lunatoc-demo', authDomain: 'lunatoc-demo.firebaseapp.com' });
+    expect((await service.execute(request('login', {
+      email: 'test@example.com', password: 'a-secure-test-password',
+    }))).ok).toBe(true);
+    expect(await service.execute(request('sync', { ownerId: owner })))
+      .toMatchObject({ ok: false, error: expect.stringContaining('未绑定') });
+    expect(remote.writes()).toBe(0);
+    expect(await service.execute(request('bind-account', { ownerId: owner })))
+      .toMatchObject({ ok: true, boundUid: 'firebase-user' });
+    expect(await service.execute(request('status', { ownerId: owner })))
+      .toMatchObject({ ok: true, boundUid: 'firebase-user', boundOwners: [owner] });
+    expect((await service.execute(request('sync', { ownerId: owner }))).ok).toBe(true);
+  });
+
+  it('keeps the former cloud owner binding when LunaTOC UID changes until explicitly unbound', async () => {
+    const local = storage(initialLocal()), remote = firebaseHarness();
+    const { service, sessions } = await ready(local, remote);
+    const stored = sessions.state['lunatoc:cloud:auth:session:v1'] as Record<string, unknown>;
+    sessions.state['lunatoc:cloud:auth:session:v1'] = {
+      ...stored, uid: 'firebase-second', idToken: 'token-second', refreshToken: 'refresh-second',
+    };
+    expect(await service.execute(request('status', { ownerId: owner })))
+      .toMatchObject({ ok: true, boundUid: 'firebase-user', boundOwners: [] });
+    expect(await service.execute(request('sync', { ownerId: owner })))
+      .toMatchObject({ ok: false, error: expect.stringContaining('未绑定') });
+    expect(await service.execute(request('bind-account', { ownerId: owner })))
+      .toMatchObject({ ok: false, error: expect.stringContaining('另一个') });
+    expect(remote.writes()).toBe(0);
+    expect(await service.execute(request('unbind-account', { ownerId: owner })))
+      .toMatchObject({ ok: true });
+    expect(local.state[PROMPT_STORAGE_KEY]).toEqual([item]);
+    expect(await service.execute(request('bind-account', { ownerId: owner })))
+      .toMatchObject({ ok: true, boundUid: 'firebase-second' });
+    expect((await service.execute(request('sync', { ownerId: owner }))).ok).toBe(true);
+    expect([...remote.documents.keys()].some((key) => key.includes('/users/firebase-second/accounts/'))).toBe(true);
+  });
+
+  it('fails closed on malformed local cloud binding records', async () => {
+    const local = storage({ ...initialLocal(), [CLOUD_ACCOUNT_BINDINGS_KEY]: { [owner]: null } });
+    const cloud = firebaseHarness(), sessions = storage();
+    const service = createCloudController(local.api, sessions.api, createSerialWriteQueue(),
+      async () => true, cloud.fetcher as unknown as typeof fetch,
+      { apiKey: 'AIzaSy-Test-api-key-public', projectId: 'lunatoc-demo', authDomain: 'lunatoc-demo.firebaseapp.com' });
+    expect(await service.execute(request('status'))).toMatchObject({
+      ok: false, error: expect.stringContaining('绑定记录无效'),
+    });
+  });
   it('rejects user-specified Firebase backend without a managed project configuration', async () => {
     const local = storage({ 'lunatoc:cloud:config:v1': {
       projectId: 'attacker-project', apiKey: 'AIzaSy-Attacker-public-key',
