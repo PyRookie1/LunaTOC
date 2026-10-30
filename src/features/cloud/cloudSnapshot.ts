@@ -104,9 +104,37 @@ export function mergeAccountSnapshots(
     if ('deleted' in value) deletedRoutes.push(route);
     else aliases[route] = value;
   }
-  const settingsValue = mergeKeys(
-    { settings: before.settings }, { settings: here.settings }, { settings: there.settings }, '账号偏好'
-  ).settings ?? null;
+  // Reconcile independent setting fields, while rejecting delete-versus-edit conflicts.
+  function mergeSettings(): AccountSettingsRecord | null {
+    if (here.settings === null || there.settings === null) {
+      return mergeKeys(
+        { settings: before.settings }, { settings: here.settings },
+        { settings: there.settings }, '账号偏好'
+      ).settings ?? null;
+    }
+    const defaults: AccountSettingsRecord = {
+      theme: { followChatGPT: true, manualTheme: 'dark' },
+      sidebar: { layoutMode: 'overlay', backgroundColor: 'default', revealTint: false },
+    };
+    const original = before.settings ?? defaults;
+    function fields<T extends object>(base: T, local: T, remote: T, label: string): T {
+      const result: Record<string, unknown> = {};
+      for (const key of Object.keys(local) as Array<keyof T & string>) {
+        const previous = base[key], ours = local[key], theirs = remote[key];
+        const localChanged = !same(ours, previous), remoteChanged = !same(theirs, previous);
+        if (localChanged && remoteChanged && !same(ours, theirs)) {
+          throw new Error('云端与本地同时修改了' + label + '「' + key + '」，已停止同步');
+        }
+        result[key] = localChanged ? ours : theirs;
+      }
+      return result as T;
+    }
+    return {
+      theme: fields(original.theme, here.settings.theme, there.settings.theme, '主题设置'),
+      sidebar: fields(original.sidebar, here.settings.sidebar, there.settings.sidebar, '侧边栏设置'),
+    };
+  }
+  const settingsValue = mergeSettings();
   return validateCloudSnapshot({
     version: 1, prompts: prompts.sort((x, y) => x.id.localeCompare(y.id)),
     aliases, settings: settingsValue, deletedRoutes,
