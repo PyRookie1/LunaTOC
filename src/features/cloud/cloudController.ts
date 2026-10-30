@@ -259,8 +259,14 @@ export function createCloudController(
       active.emailVerified = info.verified;
       if (info.email) active.email = info.email;
     }
+    // Reauthentication as the same Firebase UID must not interrupt an enabled sync.
+    // Registration or switching Firebase UID must not inherit a different account's sync.
+    const previousAuth = await sessionStorage.get(SESSION_KEY);
+    if (mode === 'register' || !validSession(previousAuth[SESSION_KEY]) ||
+        previousAuth[SESSION_KEY].uid !== active.uid) {
+      await local.set({ [CLOUD_AUTO_SYNC_KEY]: false });
+    }
     // Only the Firebase ID/refresh tokens are persisted. Never save the password.
-    await local.set({ [CLOUD_AUTO_SYNC_KEY]: false });
     await sessionStorage.set({ [SESSION_KEY]: active });
     if (mode === 'register') {
       await sendVerification(active);
