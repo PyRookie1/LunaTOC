@@ -67,6 +67,30 @@ function hasOverlappingChanges(
   return !touched && !equalPromptLists(expected, desired);
 }
 
+/** Apply only the IDs changed by this editor, preserving other tabs' additions. */
+function rebasePromptEdits(
+  expected: SavedPrompt[],
+  desired: SavedPrompt[],
+  current: SavedPrompt[]
+): SavedPrompt[] {
+  const oldById = new Map(expected.map((item) => [item.id, item]));
+  const desiredById = new Map(desired.map((item) => [item.id, item]));
+  const merged = current
+    .filter((item) => !oldById.has(item.id) || desiredById.has(item.id))
+    .map((item) => {
+      const previous = oldById.get(item.id);
+      const updated = desiredById.get(item.id);
+      return previous && updated && !equalPromptLists([previous], [updated])
+        ? { ...updated }
+        : item;
+    });
+  // Newly created records are appended without deleting unrelated new records.
+  for (const item of desired) {
+    if (!oldById.has(item.id)) merged.push({ ...item });
+  }
+  return merged;
+}
+
 function isContextValid(): boolean {
   return typeof chrome !== 'undefined' && !!chrome.runtime?.id;
 }
@@ -279,8 +303,8 @@ export function createPromptStore(): PromptStore {
             if (ownerId !== getActiveConversationOwner()) {
               throw new Error('ChatGPT account changed; prompts were not saved');
             }
+            nextOwned = rebasePromptEdits(expected, nextOwned, freshOwned);
             expected = freshOwned;
-            nextOwned = transform(clone(expected));
           }
         }
       });
