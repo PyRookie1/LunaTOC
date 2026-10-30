@@ -78,16 +78,18 @@ body {
 .settings-backup-block { padding: 17px 0; }
 .settings-backup-block .settings-setting-title { padding-top: 0; display: block; }
 .settings-backup-description { color: var(--o-muted); font-size: 12px; line-height: 1.65; margin: 8px 0 13px; }
-.settings-backup-button, .settings-backup-upload {
+.settings-backup-button {
   border: 1px solid var(--o-accent); border-radius: 8px; background: var(--o-accent-soft);
   color: var(--o-text); font: inherit; font-size: 13px; font-weight: 600;
   cursor: pointer; padding: 9px 12px; display: inline-block;
 }
-.settings-backup-button:focus-visible, .settings-backup-upload:focus-within {
+.settings-backup-button:focus-visible {
   outline: 2px solid var(--o-accent); outline-offset: 2px;
 }
 .settings-backup-button:disabled { cursor: not-allowed; opacity: .55; }
-.settings-backup-upload input { display: block; margin-top: 8px; font-size: 12px; max-width: 100%; }
+.settings-backup-file-row { display: flex; align-items: center; gap: 12px; padding: 12px 0; font-size: 13px; cursor: pointer; }
+.settings-backup-file-row span { flex-shrink: 0; }
+.settings-backup-file-row input { min-width: 0; max-width: 100%; font-size: 12px; }
 .settings-backup-preview {
   margin-top: 15px; padding: 12px; border: 1px solid var(--o-border);
   border-radius: 10px; overflow-wrap: anywhere; font-size: 12px; line-height: 1.6;
@@ -112,6 +114,10 @@ body {
   padding: 7px 10px;
   font: inherit;
 }
+
+.settings-account-row { gap: 12px; }
+.settings-inline-section-title { margin: 0; font-size: 16px; font-weight: 650; white-space: nowrap; }
+.settings-account-row .settings-account-select { min-width: 0; }
 
 /* Cloud login uses explicit rows instead of inline label/input flow. */
 .settings-cloud-credentials {
@@ -156,10 +162,10 @@ body {
 .settings-inline-title label { cursor: pointer; }
 .settings-help { display: inline-flex; align-items: center; position: relative; flex-shrink: 0; }
 .settings-help-button {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 18px; height: 18px; padding: 0; border: 1px solid var(--o-muted);
+  display: grid; place-items: center;
+  width: 16px; height: 16px; padding: 0; border: 1px solid var(--o-muted);
   border-radius: 50%; background: transparent; color: var(--o-muted);
-  font: inherit; font-size: 11px; font-weight: 700; cursor: help;
+  font-family: Arial, sans-serif; font-size: 10px; font-weight: 700; line-height: 1; cursor: help;
 }
 .settings-help-button:hover, .settings-help-button:focus-visible {
   color: var(--o-text); border-color: var(--o-text);
