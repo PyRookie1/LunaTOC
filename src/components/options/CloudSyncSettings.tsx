@@ -1,5 +1,6 @@
 /** Opt-in automatic sync authenticated with verified LunaTOC email/password accounts. */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { SettingsHelp } from './SettingsHelp';
 import {
   CLOUD_AUTO_SYNC_STATUS_KEY, CLOUD_MESSAGE_TYPE,
   type CloudAutoSyncStatus, type CloudResult,
@@ -21,6 +22,8 @@ const firebaseOrigins = [
 export function CloudSyncSettings({ accountId }: { accountId: string }): React.JSX.Element {
   const [configured, setConfigured] = useState(false);
   const [statusLoaded, setStatusLoaded] = useState(false);
+  const [statusAccountId, setStatusAccountId] = useState('');
+  const autoStartAttempt = useRef('');
   const [uid, setUid] = useState('');
   const [cloudEmail, setCloudEmail] = useState('');
   const [boundOwners, setBoundOwners] = useState<string[]>([]);
@@ -49,6 +52,7 @@ export function CloudSyncSettings({ accountId }: { accountId: string }): React.J
       setLastSyncStatus(status.autoSyncStatus ?? null);
       setEmailVerified(status.emailVerified === true);
       setRequesting(Boolean(status.uid) && status.autoSyncEnabled !== true);
+      setStatusAccountId(accountId);
       setStatusLoaded(true);
     }).catch((cause: unknown) => {
       if (live) {
@@ -89,13 +93,25 @@ export function CloudSyncSettings({ accountId }: { accountId: string }): React.J
     const binding = await command({ action: 'bind-account', ownerId: accountId });
     setBoundUid(binding.boundUid ?? uid);
     setBoundOwners((owners) => [...new Set([...owners, accountId])].sort());
-    await command({ action: 'sync', ownerId: accountId });
-    const result = await command({ action: 'set-auto-sync', enabled: true });
+    // Let the background service perform the first sync, avoiding concurrent manual and automatic requests.
+    setLastSyncStatus(null);
+    await command({ action: 'set-auto-sync', enabled: true });
     setEnabled(true);
     setRequesting(false);
     setEmailVerified(true);
-    setMessage('同步成功。');
+    setMessage('自动云同步已开启，正在同步数据。');
   }
+
+  // Login resumes background sync without requiring another click; never auto-transfer a foreign binding.
+  useEffect(() => {
+    if (!statusLoaded || statusAccountId !== accountId || busy || enabled || !requesting ||
+        !uid || !emailVerified || !configured || !accountId || (boundUid && boundUid !== uid)) return;
+    const key = accountId + ':' + uid;
+    if (autoStartAttempt.current === key) return;
+    autoStartAttempt.current = key;
+    void run(initialSync);
+  }, [accountId, statusAccountId, statusLoaded, busy, enabled, requesting,
+    uid, emailVerified, configured, boundUid]);
 
   async function changeEnabled(next: boolean): Promise<void> {
     await run(async () => {
@@ -104,6 +120,7 @@ export function CloudSyncSettings({ accountId }: { accountId: string }): React.J
         try { await chrome.permissions.remove({ origins: firebaseOrigins }); } catch { /* Already absent. */ }
         setEnabled(false);
         setRequesting(false);
+        autoStartAttempt.current = '';
         setUid('');
         setCloudEmail('');
         setBoundOwners([]);
@@ -127,6 +144,8 @@ export function CloudSyncSettings({ accountId }: { accountId: string }): React.J
       <div className="settings-choice settings-no-border">
         <span className="settings-choice-info settings-inline-title">
           <label htmlFor="cloud-auto-sync-toggle"><strong>自动云同步</strong></label>
+          <SettingsHelp id="cloud-auto-sync-help"
+            text="用户数据默认保存在本地，使用邮箱+密码创建、验证并登录LuanTOC账号后自动云同步。" />
         </span>
         <label className="settings-switch-control">
           <input id="cloud-auto-sync-toggle"
@@ -159,7 +178,7 @@ export function CloudSyncSettings({ accountId }: { accountId: string }): React.J
                     const result = await command({ action: 'check-verification' });
                     setEmailVerified(result.emailVerified === true);
                     setMessage(result.emailVerified
-                      ? '邮箱已验证。'
+                      ? '邮箱已验证，正在开启自动云同步。'
                       : '邮箱还没验证，请先去邮箱点确认链接。');
                   })}>我已完成邮箱验证，检查并开启同步</button>
                 <button type="button" className="settings-backup-button" disabled={busy}
@@ -194,13 +213,9 @@ export function CloudSyncSettings({ accountId }: { accountId: string }): React.J
                     setBoundOwners(result.boundOwners ?? []);
                     setEmailVerified(result.emailVerified === true);
                     setMessage(result.emailVerified
-                      ? '登录成功。'
+                      ? '登录成功，正在开启自动云同步。'
                       : '邮箱还没验证，请去邮箱查看验证邮件。');
                   })}>{registering ? '注册 LunaTOC 账号' : '登录 LunaTOC 账号'}</button>
-                <button type="button" className="settings-backup-button" disabled={busy}
-                  onClick={() => { setRegistering(!registering); setPassword(''); }}>
-                  {registering ? '已有账号？返回登录' : '没有账号？注册 LunaTOC'}
-                </button>
                 {!registering && (
                   <button type="button" className="settings-backup-button"
                     disabled={busy || !email}
@@ -209,6 +224,10 @@ export function CloudSyncSettings({ accountId }: { accountId: string }): React.J
                       setMessage(result.message);
                     })}>忘记密码？发送重置邮件</button>
                 )}
+                <button type="button" className="settings-backup-button" disabled={busy}
+                  onClick={() => { setRegistering(!registering); setPassword(''); }}>
+                  {registering ? '已有账号？返回登录' : '没有账号？注册 LunaTOC'}
+                </button>
               </>
             ) : null}
             {uid && emailVerified && (
@@ -226,10 +245,10 @@ export function CloudSyncSettings({ accountId }: { accountId: string }): React.J
                       setMessage(result.message);
                     })}>解除当前 ChatGPT 账号原有云端绑定</button>
                 )}
-                {(!boundUid || boundUid === uid) && (
+                {!boundUid && (
                   <button type="button" className="settings-backup-button" disabled={busy}
                     onClick={() => void run(initialSync)}>
-                    {boundUid === uid ? '同步当前已绑定的 ChatGPT 账号' : '绑定当前 ChatGPT 账号并同步到此云空间'}
+                    绑定当前 ChatGPT 账号并同步到此云空间
                   </button>
                 )}
               </>
@@ -240,12 +259,16 @@ export function CloudSyncSettings({ accountId }: { accountId: string }): React.J
                   const result = await command({ action: 'sign-out' });
                   setUid(''); setCloudEmail(''); setBoundOwners([]);
                   setEmailVerified(false); setRequesting(false); setPassword('');
+                  autoStartAttempt.current = '';
                   setMessage(result.message);
                 })}>退出当前 LunaTOC 云账号</button>
             )}
           </div>
         )}
         {message && <p role="status" className="settings-backup-status">{message}</p>}
+        {lastSyncStatus?.state === 'success' && enabled && (
+          <p role="status" className="settings-backup-status">自动同步成功：{lastSyncStatus.message}</p>
+        )}
         {lastSyncStatus?.state === 'error' && enabled && (
           <p role="alert" className="settings-error">自动同步失败：{lastSyncStatus.message}</p>
         )}
