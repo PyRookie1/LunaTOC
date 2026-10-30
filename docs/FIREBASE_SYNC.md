@@ -31,6 +31,18 @@
 - Firebase Spark 额度（以官网为准）：邮件链接登录 **5 封/项目/天**，本方案不使用；首次邮箱验证 **1,000 封/项目/天**，密码重置 **150 封/项目/天**；正常密码登录不消耗邮件发送额度。依然受注册、认证速率和 Firestore 免费读写额度约束。
 - 不要未经维护者确认升级 Blaze，也不要关闭邮箱验证或弱化安全规则来规避限额。
 
+## 登录失败：Failed to fetch / 无法连接 Firebase
+- 这属于浏览器网络请求失败，不是密码错误，也不能据此判断 Firebase Authentication 配置正确。扩展现在提示具体 Firebase 域名及权限状态。
+- 在 Chrome 的 `chrome://extensions` → LunaTOC → 详细信息 → 网站访问权限，检查已允许访问 `identitytoolkit.googleapis.com`、`securetoken.googleapis.com`、`firestore.googleapis.com`。也可以在设置里关闭再开启自动云同步，以重新触发网站访问授权。
+- 如已授权但仍报网络失败，在相同 Chrome 配置文件中确认网络、DNS、代理、系统防火墙、广告拦截/隐私扩展或企业策略是否阻断上述 Google API 域名。网络环境无法访问这些域名时，扩展无法直接登录 Firebase。
+- 打开 `chrome://extensions` → LunaTOC → Service worker → 检查（Inspect），在 DevTools Network 中确认失败请求的域名和网络错误码；不要向他人分享请求体、密码、ID token 或 refresh token。
+- 需要区分：HTTP `INVALID_LOGIN_CREDENTIALS` 是 Firebase 返回的账号凭据错误；`Failed to fetch` 是浏览器没有收到可用的 HTTP 响应；`PERMISSION_DENIED` 来自 Firestore 规则。不要为了修复连接问题把 Firestore 规则改为公开。
+- 未登录成功前不启用云同步，不会自动绑定其他本地 ChatGPT 账号。
+
+## 主题行为
+- LunaTOC 不再读取或监测 ChatGPT 页面深浅色；新安装和旧版“跟随 ChatGPT”设置均采用浅色作为默认。
+- 弹窗内可以手动切换浅色/深色，并按 ChatGPT 账号保存。旧版已明确选择的手动深色偏好继续保留，备份及云端快照支持兼容读取。
+
 ## 自动化与真实验收
 CI 使用仓库的真实 `firestore.rules` 运行 Firestore Emulator，测试邮箱已验证的 A/B UID、未验证邮箱、匿名访问、异常文档和越权。Vitest 覆盖密码登录、注册验证、凭据错误、账号同步、网络故障；Chromium E2E 使用模拟 ChatGPT，不等于真实 ChatGPT/生产 Firebase 验收。
 
