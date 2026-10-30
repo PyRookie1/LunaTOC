@@ -221,11 +221,11 @@ test('Chromium MV3: TOC, search, layout, SPA and failure paths',{timeout:150000}
       try{
         const optionsPage=await worker.evaluate(()=>chrome.runtime.getManifest().options_ui.page);
         await settings.goto('chrome-extension://'+extensionId+'/'+optionsPage);
-        const cloud=settings.locator('section[aria-labelledby="cloud-sync-heading"]');
+        const cloud=settings.locator('section[aria-labelledby="account-settings-heading"] .settings-cloud-panel');
         const waitForManagedConfigState=async()=>{
           // Wait for the component to report whether the maintainer config is present.
           await settings.waitForFunction(()=>{
-            const section=document.querySelector('section[aria-labelledby="cloud-sync-heading"]');
+            const section=document.querySelector('section[aria-labelledby="account-settings-heading"] .settings-cloud-panel');
             const text=section?.textContent??'';
             return Boolean(section?.querySelector('input[aria-label="开启自动云同步"]') &&
               (text.includes('官方云同步尚未完成配置') || text.includes('官方云同步配置已就绪')));
