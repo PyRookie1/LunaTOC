@@ -22,6 +22,8 @@ export function CloudSyncSettings({ accountId }: { accountId: string }): React.J
   const [configured, setConfigured] = useState(false);
   const [statusLoaded, setStatusLoaded] = useState(false);
   const [uid, setUid] = useState('');
+  const [cloudEmail, setCloudEmail] = useState('');
+  const [boundOwners, setBoundOwners] = useState<string[]>([]);
   const [boundUid, setBoundUid] = useState('');
   const [enabled, setEnabled] = useState(false);
   const [requesting, setRequesting] = useState(false);
@@ -40,7 +42,9 @@ export function CloudSyncSettings({ accountId }: { accountId: string }): React.J
       if (!live) return;
       setConfigured(status.configured === true);
       setUid(status.uid ?? '');
+      setCloudEmail(status.email ?? '');
       setBoundUid(status.boundUid ?? '');
+      setBoundOwners(status.boundOwners ?? []);
       setEnabled(status.autoSyncEnabled === true);
       setLastSyncStatus(status.autoSyncStatus ?? null);
       setEmailVerified(status.emailVerified === true);
@@ -84,6 +88,7 @@ export function CloudSyncSettings({ accountId }: { accountId: string }): React.J
     if (!accountId) throw new Error('请先打开已登录的 ChatGPT 页面');
     const binding = await command({ action: 'bind-account', ownerId: accountId });
     setBoundUid(binding.boundUid ?? uid);
+    setBoundOwners((owners) => [...new Set([...owners, accountId])].sort());
     await command({ action: 'sync', ownerId: accountId });
     const result = await command({ action: 'set-auto-sync', enabled: true });
     setEnabled(true);
@@ -100,6 +105,8 @@ export function CloudSyncSettings({ accountId }: { accountId: string }): React.J
         setEnabled(false);
         setRequesting(false);
         setUid('');
+        setCloudEmail('');
+        setBoundOwners([]);
         setPassword('');
         setEmailVerified(false);
         setMessage(result.message);
@@ -132,6 +139,24 @@ export function CloudSyncSettings({ accountId }: { accountId: string }): React.J
         )}
         {!accountId && (
           <p role="status" className="settings-backup-description">请先打开已登录的 ChatGPT 页面，等待 LunaTOC 识别账号。</p>
+        )}
+        {statusLoaded && (
+          <div className="settings-cloud-identity" aria-label="云账号与 ChatGPT 绑定详情">
+            <p><strong>LunaTOC 云账号：</strong>{uid ? (cloudEmail || '邮箱尚未读取') : '未登录'}</p>
+            {uid && <p><strong>Firebase UID：</strong><code>{uid}</code></p>}
+            <p><strong>当前所选 ChatGPT 账号：</strong>{accountId || '未选择'}</p>
+            <p><strong>该 ChatGPT 账号的云端绑定：</strong>
+              {!accountId ? '请选择账号'
+                : !boundUid ? '未绑定，数据仅保留本地'
+                  : boundUid === uid ? '已绑定当前 LunaTOC 云账号'
+                    : '绑定其他 LunaTOC 云账号（UID：' + boundUid + '）'}
+            </p>
+            {uid && (
+              <p><strong>此云账号已绑定的 ChatGPT 账号：</strong>
+                {boundOwners.length ? boundOwners.join('、') : '暂无'}
+              </p>
+            )}
+          </div>
         )}
         <label className="settings-choice settings-no-border">
           <span className="settings-choice-info">
@@ -172,6 +197,7 @@ export function CloudSyncSettings({ accountId }: { accountId: string }): React.J
                   {registering ? '注册 LunaTOC 云账号（首次需要确认邮箱）。' : '使用已有 LunaTOC 云账号登录。'}
                   密码仅发送给 Firebase Authentication 进行验证，不保存在扩展设置中。
                 </p>
+                <div className="settings-cloud-credentials">
                 <label>LunaTOC 账号邮箱
                   <input className="settings-account-select" type="email" autoComplete="email"
                     value={email} disabled={busy}
@@ -183,6 +209,7 @@ export function CloudSyncSettings({ accountId }: { accountId: string }): React.J
                     value={password} disabled={busy}
                     onChange={(event) => setPassword(event.currentTarget.value)} />
                 </label>
+                </div>
                 <button type="button" className="settings-backup-button"
                   disabled={busy || !email || password.length < 12}
                   onClick={() => void run(async () => {
@@ -190,6 +217,8 @@ export function CloudSyncSettings({ accountId }: { accountId: string }): React.J
                     const result = await command({ action, email, password });
                     setPassword('');
                     setUid(result.uid ?? '');
+                    setCloudEmail(result.email ?? email);
+                    setBoundOwners(result.boundOwners ?? []);
                     setEmailVerified(result.emailVerified === true);
                     setMessage(result.emailVerified
                       ? '已登录。请确认当前 ChatGPT 账号的云端绑定后开启同步。'
@@ -224,6 +253,7 @@ export function CloudSyncSettings({ accountId }: { accountId: string }): React.J
                       if (!window.confirm('解除当前 ChatGPT 账号原有的 LunaTOC 云端绑定？本地和远端数据保留。解除后可选择新的云账号。')) return;
                       const result = await command({ action: 'unbind-account', ownerId: accountId });
                       setBoundUid('');
+                      setBoundOwners((owners) => owners.filter((owner) => owner !== accountId));
                       setMessage(result.message);
                     })}>解除当前 ChatGPT 账号原有云端绑定</button>
                 )}
@@ -239,7 +269,8 @@ export function CloudSyncSettings({ accountId }: { accountId: string }): React.J
               <button type="button" className="settings-backup-button" disabled={busy}
                 onClick={() => void run(async () => {
                   const result = await command({ action: 'sign-out' });
-                  setUid(''); setEmailVerified(false); setRequesting(false); setPassword('');
+                  setUid(''); setCloudEmail(''); setBoundOwners([]);
+                  setEmailVerified(false); setRequesting(false); setPassword('');
                   setMessage(result.message);
                 })}>退出当前 LunaTOC 云账号</button>
             )}
