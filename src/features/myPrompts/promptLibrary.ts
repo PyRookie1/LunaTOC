@@ -482,6 +482,14 @@ async function savePromptEditorValues(
       } else {
         const existingPrompt = prompts.find((prompt) => prompt.id === item.id);
         if (!existingPrompt) throw new Error('提示词已不存在，请重新打开编辑器。');
+        if (existingPrompt.title === title && existingPrompt.content === content) {
+          return prompts; // A successful save may be retried after an uncertain acknowledgement.
+        }
+        if ((item.title !== undefined && item.title !== existingPrompt.title) ||
+            (item.content !== undefined && item.content !== existingPrompt.content) ||
+            (item.updatedAt !== undefined && item.updatedAt !== existingPrompt.updatedAt)) {
+          throw new Error('此提示词已在其他标签页被修改，请重新打开编辑器。');
+        }
         existingPrompt.title = title;
         existingPrompt.content = content;
         existingPrompt.updatedAt = Date.now();
@@ -634,6 +642,11 @@ export async function renderMyPrompts(
       if (shouldDelete) {
         try {
           await requirePromptStore().update((prompts) => {
+            const latest = prompts.find((p) => p.id === item.id);
+            if (latest && (latest.title !== item.title ||
+                latest.content !== item.content || latest.updatedAt !== item.updatedAt)) {
+              throw new Error('此提示词已在其他标签页被修改，请刷新列表后重试。');
+            }
             return prompts.filter((p) => p.id !== item.id);
           });
           void requirePromptUsageStore().remove(item.id).catch(() => {
@@ -643,7 +656,7 @@ export async function renderMyPrompts(
         } catch (error) {
           await showPromptModal({
             title: '删除提示词',
-            message: '无法删除此提示词。',
+            message: error instanceof Error ? error.message : '无法删除此提示词。',
           });
         }
       }
