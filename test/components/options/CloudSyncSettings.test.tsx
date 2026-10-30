@@ -17,8 +17,8 @@ beforeEach(() => {
   mocks.sendMessage.mockReset().mockImplementation(async (message: { action: string }) => {
     if (message.action === 'status') return { ok: true, configured: true, autoSyncEnabled: false };
     if (message.action === 'register') return { ok: true, uid: 'firebase-user', emailVerified: false, message: '请验证邮箱' };
-    if (message.action === 'login') return { ok: true, uid: 'firebase-user', emailVerified: true, message: '登录成功' };
-    if (message.action === 'check-verification') return { ok: true, uid: 'firebase-user', emailVerified: true, message: '邮箱已验证' };
+    if (message.action === 'login') return { ok: true, uid: 'firebase-user', email: 'user@example.com', emailVerified: true, boundOwners: [], message: '登录成功' };
+    if (message.action === 'check-verification') return { ok: true, uid: 'firebase-user', email: 'user@example.com', emailVerified: true, message: '邮箱已验证' };
     if (message.action === 'resend-verification') return { ok: true, message: '验证邮件已发送' };
     if (message.action === 'bind-account') return { ok: true, boundUid: 'firebase-user', message: '绑定成功' };
     if (message.action === 'unbind-account') return { ok: true, message: '已解除绑定' };
@@ -79,6 +79,11 @@ describe('CloudSyncSettings verified LunaTOC password accounts', () => {
     await enableForm();
     expect(mocks.requestPermissions).toHaveBeenCalledTimes(1);
     expect(host.textContent).toContain('等待 LunaTOC 登录');
+    const fields = element<HTMLDivElement>('.settings-cloud-credentials');
+    expect(fields.querySelectorAll('label')).toHaveLength(2);
+    expect(fields.querySelectorAll('input')).toHaveLength(2);
+    expect(fields.children[0]).toContain(element<HTMLInputElement>('input[type="email"]'));
+    expect(fields.children[1]).toContain(element<HTMLInputElement>('input[type="password"]'));
     await typeInto(element<HTMLInputElement>('input[type="email"]'), 'user@example.com');
     await typeInto(element<HTMLInputElement>('input[type="password"]'), 'a-secure-test-password');
     await act(async () => Array.from(host.querySelectorAll('button'))
@@ -86,12 +91,16 @@ describe('CloudSyncSettings verified LunaTOC password accounts', () => {
     expect(mocks.sendMessage.mock.calls.map(([arg]) => arg.action))
       .toEqual(['status', 'login']);
     expect(host.textContent).toContain('绑定当前 ChatGPT 账号');
+    expect(host.textContent).toContain('user@example.com');
+    expect(host.textContent).toContain('firebase-user');
+    expect(host.textContent).toContain('account-1');
     await act(async () => Array.from(host.querySelectorAll('button'))
       .find(b => b.textContent?.includes('绑定当前 ChatGPT 账号并同步'))?.click());
     expect(mocks.sendMessage.mock.calls.map(([arg]) => arg.action))
       .toEqual(['status', 'login', 'bind-account', 'sync', 'set-auto-sync']);
     expect(element<HTMLInputElement>('input[aria-label="开启自动云同步"]').checked).toBe(true);
     expect(host.querySelector('input[type="password"]')).toBeNull();
+    expect(host.textContent).toContain('此云账号已绑定的 ChatGPT 账号：account-1');
   });
 
   it('registers an account, waits for verified email, then starts syncing', async () => {
@@ -156,6 +165,34 @@ describe('CloudSyncSettings verified LunaTOC password accounts', () => {
       .find(b => b.textContent?.includes('绑定当前 ChatGPT 账号并同步'))?.click());
     expect(mocks.sendMessage.mock.calls.map(([arg]) => arg.action))
       .toEqual(['status', 'bind-account', 'sync', 'set-auto-sync']);
+  });
+
+  it('shows the existing cloud login email, UID and account-specific binding on reload', async () => {
+    mocks.sendMessage.mockImplementation(async ({ action }: { action: string }) => {
+      if (action === 'status') return { ok: true, configured: true,
+        uid: 'existing-uid', email: 'persisted@example.com', emailVerified: true,
+        boundUid: 'existing-uid', boundOwners: ['account-1', 'account-2'], autoSyncEnabled: true };
+      return { ok: false, error: 'unexpected action' };
+    });
+    await render();
+    const details = element<HTMLDivElement>('[aria-label="云账号与 ChatGPT 绑定详情"]');
+    expect(details.textContent).toContain('persisted@example.com');
+    expect(details.textContent).toContain('existing-uid');
+    expect(details.textContent).toContain('已绑定当前 LunaTOC 云账号');
+    expect(details.textContent).toContain('account-1、account-2');
+  });
+
+  it('shows an existing foreign-cloud binding instead of silently transferring local data', async () => {
+    mocks.sendMessage.mockImplementation(async ({ action }: { action: string }) => {
+      if (action === 'status') return { ok: true, configured: true,
+        uid: 'current-uid', email: 'current@example.com', emailVerified: true,
+        boundUid: 'other-uid', boundOwners: [], autoSyncEnabled: false };
+      return { ok: false, error: 'unexpected action' };
+    });
+    await render();
+    expect(host.textContent).toContain('绑定其他 LunaTOC 云账号（UID：other-uid）');
+    expect(host.textContent).toContain('current@example.com');
+    expect(host.textContent).not.toContain('绑定当前 ChatGPT 账号并同步到此云空间');
   });
 
   it('cannot enable without Firebase permissions', async () => {

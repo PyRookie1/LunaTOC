@@ -96,6 +96,23 @@ async function ready(local: ReturnType<typeof storage>, cloud: ReturnType<typeof
   return { service, sessions };
 }
 describe('Firebase REST account sync', () => {
+  it('returns the authenticated email and per-UID bindings without persisting any password', async () => {
+    const local = storage(initialLocal()), remote = firebaseHarness();
+    const { service, sessions } = await ready(local, remote);
+    expect(await service.execute(request('status', { ownerId: owner })))
+      .toMatchObject({ ok: true, email: 'test@example.com', uid: 'firebase-user',
+        boundUid: 'firebase-user', boundOwners: [owner] });
+    const stored = sessions.state['lunatoc:cloud:auth:session:v1'] as Record<string, unknown>;
+    expect(stored.email).toBe('test@example.com');
+    expect(JSON.stringify(sessions.state)).not.toContain('a-secure-test-password');
+    // An older stored session without email may be restored by Firebase lookup.
+    delete stored.email;
+    expect(await service.execute(request('status', { ownerId: owner })))
+      .toMatchObject({ ok: true, email: 'test@example.com', boundOwners: [owner] });
+    expect((sessions.state['lunatoc:cloud:auth:session:v1'] as Record<string, unknown>).email)
+      .toBe('test@example.com');
+  });
+
   it('requires explicit binding and never syncs all local ChatGPT accounts on login', async () => {
     const local = storage(initialLocal()), remote = firebaseHarness(), sessions = storage();
     const service = createCloudController(local.api, sessions.api, createSerialWriteQueue(),

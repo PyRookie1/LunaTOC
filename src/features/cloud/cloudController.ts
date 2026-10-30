@@ -18,7 +18,7 @@ const BASE_PREFIX = 'lunatoc:cloud:baseline:v1:';
 const PROJECT_PATTERN = /^[a-z][a-z0-9-]{4,62}$/;
 const AUTH_KEY_PATTERN = /^[A-Za-z0-9_-]{16,200}$/;
 interface Config { apiKey: string; projectId: string; authDomain: string }
-interface Session { idToken: string; refreshToken: string; uid: string; expiresAt: number; emailVerified: boolean }
+interface Session { idToken: string; refreshToken: string; uid: string; expiresAt: number; emailVerified: boolean; email?: string }
 interface FirestoreDocument { fields?: { json?: { stringValue?: string } }; updateTime?: string }
 type LocalStorage = Pick<chrome.storage.StorageArea, 'get' | 'set' | 'remove'>;
 type Fetcher = typeof fetch;
@@ -29,7 +29,7 @@ export type CloudAction =
   | { type: typeof CLOUD_MESSAGE_TYPE; action: 'set-auto-sync'; enabled: boolean }
   | { type: typeof CLOUD_MESSAGE_TYPE; action: 'sign-out' | 'status'; ownerId?: string }
   | { type: typeof CLOUD_MESSAGE_TYPE; action: 'bind-account' | 'unbind-account' | 'sync'; ownerId: string };
-export type CloudResult = { ok: true; message: string; uid?: string; configured?: boolean; autoSyncEnabled?: boolean; autoSyncStatus?: CloudAutoSyncStatus; emailVerified?: boolean; boundUid?: string; boundOwners?: string[] }
+export type CloudResult = { ok: true; message: string; uid?: string; configured?: boolean; autoSyncEnabled?: boolean; autoSyncStatus?: CloudAutoSyncStatus; emailVerified?: boolean; email?: string; boundUid?: string; boundOwners?: string[] }
   | { ok: false; error: string };
 
 function validConfig(value: unknown): value is Config {
@@ -146,7 +146,7 @@ export function createCloudController(
     const renewed: Session = {
       idToken: payload.id_token, refreshToken: payload.refresh_token,
       uid: existing.uid, expiresAt: Date.now() + Number(payload.expires_in) * 1000,
-      emailVerified: existing.emailVerified,
+      emailVerified: existing.emailVerified, email: existing.email,
     };
     await sessionStorage.set({ [SESSION_KEY]: renewed });
     return renewed;
@@ -164,7 +164,7 @@ export function createCloudController(
     }
     return value;
   }
-  async function emailVerified(user: Session): Promise<boolean> {
+  async function lookupIdentity(user: Session): Promise<{ verified: boolean; email?: string }> {
     const cfg = await config();
     const response = await fetcher(
       'https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=' + encodeURIComponent(cfg.apiKey),
@@ -176,7 +176,11 @@ export function createCloudController(
     if (!info || info.localId !== user.uid || typeof info.emailVerified !== 'boolean') {
       throw new Error('Firebase 用户身份验证失败');
     }
-    return info.emailVerified;
+    return {
+      verified: info.emailVerified,
+      ...(typeof info.email === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(info.email)
+        ? { email: info.email } : {}),
+    };
   }
   async function sendVerification(user: Session): Promise<void> {
     const cfg = await config();
@@ -219,26 +223,33 @@ export function createCloudController(
     const active: Session = {
       idToken: payload.idToken, refreshToken: payload.refreshToken,
       uid: payload.localId, expiresAt: Date.now() + expiresIn * 1000,
-      emailVerified: false,
+      emailVerified: false, email,
     };
-    if (mode === 'login') active.emailVerified = await emailVerified(active);
+    if (mode === 'login') {
+      const info = await lookupIdentity(active);
+      active.emailVerified = info.verified;
+      if (info.email) active.email = info.email;
+    }
     // Only the Firebase ID/refresh tokens are persisted. Never save the password.
     await local.set({ [CLOUD_AUTO_SYNC_KEY]: false });
     await sessionStorage.set({ [SESSION_KEY]: active });
     if (mode === 'register') {
       await sendVerification(active);
-      return { ok: true, uid: active.uid, emailVerified: false,
+      return { ok: true, uid: active.uid, email: active.email, emailVerified: false,
         message: 'LunaTOC 账号已创建。请打开 Firebase 验证邮件完成邮箱确认，再返回这里检查验证状态。' };
     }
-    return { ok: true, uid: active.uid, emailVerified: active.emailVerified,
+    return { ok: true, uid: active.uid, email: active.email, emailVerified: active.emailVerified,
+      boundOwners: Object.entries(await accountBindings()).filter(([, uid]) =>
+        uid === active.uid).map(([owner]) => owner).sort(),
       message: active.emailVerified ? 'LunaTOC 账号密码登录成功' : '登录成功，但邮箱未验证。请先验证邮箱。' };
   }
   async function checkVerification(): Promise<CloudResult> {
     const active = await token(true);
-    const verified = await emailVerified(active);
-    await sessionStorage.set({ [SESSION_KEY]: { ...active, emailVerified: verified } });
-    return { ok: true, uid: active.uid, emailVerified: verified,
-      message: verified ? '邮箱已验证，可以开启云同步' : '邮箱尚未验证，请先打开验证邮件完成确认' };
+    const info = await lookupIdentity(active);
+    await sessionStorage.set({ [SESSION_KEY]: { ...active, emailVerified: info.verified,
+      email: info.email ?? active.email } });
+    return { ok: true, uid: active.uid, email: info.email ?? active.email, emailVerified: info.verified,
+      message: info.verified ? '邮箱已验证，可以开启云同步' : '邮箱尚未验证，请先打开验证邮件完成确认' };
   }
   async function currentLocal(ownerId: string, base: CloudSnapshot): Promise<CloudSnapshot> {
     const backup = await createLocalBackup(local as Parameters<typeof createLocalBackup>[0]);
@@ -444,14 +455,30 @@ export function createCloudController(
           const [auth, settings] = await Promise.all([
             sessionStorage.get(SESSION_KEY), local.get([CLOUD_AUTO_SYNC_KEY, CLOUD_AUTO_SYNC_STATUS_KEY]),
           ]);
-          const user = auth[SESSION_KEY];
+          const storedUser = auth[SESSION_KEY];
+          let user = validSession(storedUser) ? storedUser : null;
+          // Previously saved sessions did not persist the email. Resolve the
+          // identity once from Firebase; offline status can still show the UID.
+          if (user && !user.email && validConfig(managedConfig)) {
+            try {
+              const identity = await lookupIdentity(await token());
+              if (identity.email) {
+                const latest = await session();
+                if (latest.uid === user.uid) {
+                  user = { ...latest, email: identity.email };
+                  await sessionStorage.set({ [SESSION_KEY]: user });
+                }
+              }
+            } catch { /* Status stays available offline without the email. */ }
+          }
           return { ok: true, message: validSession(user) ? 'LunaTOC 云账号已登录' : 'LunaTOC 云账号未登录',
             configured: validConfig(managedConfig), autoSyncEnabled: settings[CLOUD_AUTO_SYNC_KEY] === true,
             ...(isValidAccountOwnerId(command.ownerId) && bindings[command.ownerId]
               ? { boundUid: bindings[command.ownerId] } : {}),
             boundOwners: validSession(user)
               ? Object.keys(bindings).filter((owner) => bindings[owner] === user.uid).sort() : [],
-            ...(validSession(user) ? { emailVerified: user.emailVerified } : {}),
+            ...(validSession(user) ? { emailVerified: user.emailVerified,
+              ...(user.email ? { email: user.email } : {}) } : {}),
             ...(settings[CLOUD_AUTO_SYNC_STATUS_KEY] && typeof settings[CLOUD_AUTO_SYNC_STATUS_KEY] === 'object'
               ? { autoSyncStatus: settings[CLOUD_AUTO_SYNC_STATUS_KEY] as CloudAutoSyncStatus } : {}),
             ...(validSession(user) ? { uid: user.uid } : {}) };
