@@ -1,9 +1,8 @@
 /* ============================================================
    LunaTOC Theme Tokens
-   Applied via [data-luna-toc-theme] on <html>. Default = dark.
+   Applied via [data-luna-toc-theme] on <html>. Default = light.
    ============================================================ */
 
-:root,
 html[data-luna-toc-theme='dark'] {
   /* Backgrounds */
   --ct-bg-sidebar: rgba(16, 24, 39, 0.85);
@@ -93,6 +92,7 @@ html[data-luna-toc-theme='dark'] {
   --ct-icon-header-hover-bg: rgba(255, 255, 255, 0.08);
 }
 
+:root,
 html[data-luna-toc-theme='light'] {
   /* Backgrounds */
   --ct-bg-sidebar: rgba(238, 245, 255, 0.85);
