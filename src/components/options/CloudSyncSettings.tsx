@@ -251,6 +251,12 @@ export function CloudSyncSettings({ accountId }: { accountId: string }): React.J
                     绑定当前 ChatGPT 账号并同步到此云空间
                   </button>
                 )}
+                {requesting && boundUid === uid && error && (
+                  <button type="button" className="settings-backup-button" disabled={busy}
+                    onClick={() => void run(initialSync)}>
+                    重试开启自动云同步
+                  </button>
+                )}
               </>
             )}
             {uid && (
