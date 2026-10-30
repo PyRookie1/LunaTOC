@@ -10,8 +10,8 @@ import type { SavedPrompt } from '@/features/myPrompts/promptStore';
 const make = (id: string): SavedPrompt => ({
   id, ownerId: 'account-1', title: id, content: id, createdAt: 1, updatedAt: 1,
 });
-const request = (next: SavedPrompt[]): PromptCommitRequest =>
-  ({ type: PROMPT_COMMIT_TYPE, action: 'replace-account', ownerId: 'account-1', next });
+const request = (next: SavedPrompt[], expected: SavedPrompt[] = []): PromptCommitRequest =>
+  ({ type: PROMPT_COMMIT_TYPE, action: 'replace-account', ownerId: 'account-1', expected, next });
 
 function backing(initial: SavedPrompt[] = []) {
   let current = initial.map((item) => ({ ...item }));
@@ -33,15 +33,15 @@ describe('background single-tab prompt writer', () => {
   it('writes validated replacements in order', async () => {
     const box = backing([make('initial')]);
     const writer = createPromptWriteCoordinator(box.storage);
-    expect(await writer.commit(request([make('initial'), make('a')]))).toEqual({ ok: true });
-    expect(await writer.commit(request([make('initial'), make('a'), make('b')]))).toEqual({ ok: true });
+    expect(await writer.commit(request([make('initial'), make('a')], [make('initial')]))).toEqual({ ok: true });
+    expect(await writer.commit(request([make('initial'), make('a'), make('b')], [make('initial'), make('a')]))).toEqual({ ok: true });
     expect(box.current().map((p) => p.id)).toEqual(['initial', 'a', 'b']);
   });
 
   it('a restarted worker reads persisted storage', async () => {
     const box = backing([make('initial')]);
-    await createPromptWriteCoordinator(box.storage).commit(request([make('first')]));
-    expect(await createPromptWriteCoordinator(box.storage).commit(request([make('second')])))
+    await createPromptWriteCoordinator(box.storage).commit(request([make('first')], [make('initial')]));
+    expect(await createPromptWriteCoordinator(box.storage).commit(request([make('second')], [make('first')])))
       .toEqual({ ok: true });
     expect(box.current()).toEqual([make('second')]);
   });
@@ -62,10 +62,10 @@ describe('background single-tab prompt writer', () => {
     const other = { ...make('other'), ownerId: 'account-2' };
     const box = backing([make('initial'), other]);
     const writer = createPromptWriteCoordinator(box.storage);
-    expect(await writer.commit(request([make('updated')]))).toEqual({ ok: true });
+    expect(await writer.commit(request([make('updated')], [make('initial')]))).toEqual({ ok: true });
     expect(box.current()).toEqual([other, make('updated')]);
     const collision = { ...make('other'), ownerId: 'account-1' };
-    expect(await writer.commit(request([collision]))).toEqual({
+    expect(await writer.commit(request([collision], [make('updated')]))).toEqual({
       ok: false, error: '提示词 ID 与其他账号的数据冲突，未保存。',
     });
     expect(box.current()).toEqual([other, make('updated')]);
@@ -84,18 +84,41 @@ describe('background single-tab prompt writer', () => {
     const box = backing([make('original')]);
     const writer = createPromptWriteCoordinator(box.storage);
     box.failOnce();
-    expect(await writer.commit(request([]))).toMatchObject({
+    expect(await writer.commit(request([], [make('original')]))).toMatchObject({
       ok: false, error: expect.stringContaining('quota exceeded'),
     });
     expect(box.current()).toEqual([make('original')]);
-    expect(await writer.commit(request([make('original'), make('new')]))).toEqual({ ok: true });
+    expect(await writer.commit(request([make('original'), make('new')], [make('original')]))).toEqual({ ok: true });
     expect(box.current().map((p) => p.id)).toEqual(['original', 'new']);
   });
 
   it('avoids redundant storage writes for identical data', async () => {
     const box = backing([make('original')]);
-    expect(await createPromptWriteCoordinator(box.storage).commit(request([make('original')])))
+    expect(await createPromptWriteCoordinator(box.storage).commit(request([make('original')], [make('original')])))
       .toEqual({ ok: true });
     expect(box.set).not.toHaveBeenCalled();
   });
+  it('rejects a stale tab snapshot instead of erasing a newer prompt', async () => {
+    const box = backing([make('initial')]);
+    const writer = createPromptWriteCoordinator(box.storage);
+    const expected = [make('initial')];
+    const stale = request([...expected, make('from-b')], expected);
+    expect(await writer.commit(request([...expected, make('from-a')], expected)))
+      .toEqual({ ok: true });
+    expect(await writer.commit(stale)).toEqual({ ok: false, conflict: true });
+    expect(box.current().map((item) => item.id)).toEqual(['initial', 'from-a']);
+  });
+
+  it('refuses a stale clear that would erase a newly created prompt', async () => {
+    const box = backing([make('initial')]);
+    const writer = createPromptWriteCoordinator(box.storage);
+    expect(await writer.commit(request([make('initial'), make('new')], [make('initial')])))
+      .toEqual({ ok: true });
+    expect(await writer.commit({
+      type: PROMPT_COMMIT_TYPE, action: 'clear-account', ownerId: 'account-1',
+      expected: [make('initial')],
+    })).toEqual({ ok: false, conflict: true });
+    expect(box.current().map((item) => item.id)).toEqual(['initial', 'new']);
+  });
+
 });
