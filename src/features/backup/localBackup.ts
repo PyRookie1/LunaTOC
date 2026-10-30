@@ -139,7 +139,10 @@ function validateTheme(value: unknown): ThemeSettings {
       (raw.manualTheme !== 'dark' && raw.manualTheme !== 'light')) {
     throw new Error('主题设置无效。');
   }
-  return { followChatGPT: raw.followChatGPT, manualTheme: raw.manualTheme };
+  // Keep legacy backups readable; obsolete automatic theme tracking maps to light.
+  return raw.followChatGPT
+    ? { followChatGPT: false, manualTheme: 'light' }
+    : { followChatGPT: false, manualTheme: raw.manualTheme };
 }
 
 function validateSidebar(value: unknown): SidebarPreferences {
