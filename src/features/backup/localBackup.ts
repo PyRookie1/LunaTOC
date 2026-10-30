@@ -236,7 +236,7 @@ export async function createLocalBackup(
 }
 
 /** Compare JSON-like storage values without relying on Chrome's object-key order. */
-function storageValuesEqual(left: unknown, right: unknown): boolean {
+export function storageValuesEqual(left: unknown, right: unknown): boolean {
   if (Object.is(left, right)) return true;
   if (left === null || right === null ||
       typeof left !== 'object' || typeof right !== 'object') return false;
