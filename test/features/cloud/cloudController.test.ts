@@ -185,6 +185,10 @@ describe('Firebase REST account sync', () => {
     expect(await service.execute(request('check-verification')))
       .toMatchObject({ ok: true, emailVerified: true });
     expect(await service.execute(request('set-auto-sync', { enabled: true })))
+      .toMatchObject({ ok: false, error: expect.stringContaining('绑定') });
+    expect(await service.execute(request('bind-account', { ownerId: owner })))
+      .toMatchObject({ ok: true, boundUid: 'firebase-user' });
+    expect(await service.execute(request('set-auto-sync', { enabled: true })))
       .toMatchObject({ ok: true, autoSyncEnabled: true });
   });
 
