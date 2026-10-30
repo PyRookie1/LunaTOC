@@ -187,6 +187,17 @@ describe('single-tab My Prompts storage', () => {
       .toEqual(['from-a', 'from-b', 'saved']);
   });
 
+  it('preserves a concurrent new prompt when another tab deletes a different one', async () => {
+    const tabA = createPromptStore();
+    const tabB = createPromptStore();
+    await Promise.all([
+      tabA.update((prompts) => prompts.filter((item) => item.id !== 'saved')),
+      tabB.update((prompts) => [...prompts, make('from-b')]),
+    ]);
+    expect((data[PROMPT_STORAGE_KEY] as SavedPrompt[]).map((item) => item.id))
+      .toEqual(['from-b']);
+  });
+
   it('does not overwrite a prompt edited by another tab at the same time', async () => {
     const tabA = createPromptStore();
     const tabB = createPromptStore();
