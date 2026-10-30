@@ -19,7 +19,15 @@ describe('isolated LunaTOC theme marker', () => {
     expect(getLunaTocTheme()).toBe('light');
   });
 
-  it('defaults to dark before LunaTOC theme initialization', () => {
+  it('supports explicit dark mode regardless of the ChatGPT host marker', () => {
+    document.documentElement.classList.add('dark');
+    expect(getLunaTocTheme()).toBe('light');
+    setLunaTocTheme('dark');
     expect(getLunaTocTheme()).toBe('dark');
+    document.documentElement.classList.remove('dark');
+  });
+
+  it('defaults to light before LunaTOC theme initialization', () => {
+    expect(getLunaTocTheme()).toBe('light');
   });
 });
