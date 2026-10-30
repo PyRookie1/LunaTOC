@@ -47,6 +47,9 @@ export function LocalAliasCleanupSettings(): React.JSX.Element {
     setStatus('');
     try {
       await requestManualTocAliasCleanup(item);
+      // The backup acknowledgment authorizes one destructive operation only.
+      // Reset it even if the subsequent inventory refresh fails.
+      setHasBackup(false);
       await refresh();
       setStatus('已清理所选会话的本地目录别名。旧标签页无法重新写入；可通过备份恢复。');
     } catch (cause) {
