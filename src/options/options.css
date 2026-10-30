@@ -87,9 +87,14 @@ body {
   outline: 2px solid var(--o-accent); outline-offset: 2px;
 }
 .settings-backup-button:disabled { cursor: not-allowed; opacity: .55; }
-.settings-backup-file-row { display: flex; align-items: center; gap: 12px; padding: 12px 0; font-size: 13px; cursor: pointer; }
-.settings-backup-file-row span { flex-shrink: 0; }
-.settings-backup-file-row input { min-width: 0; max-width: 100%; font-size: 12px; }
+.settings-backup-import { position: relative; overflow: hidden; }
+.settings-backup-import:has(input:disabled) { cursor: not-allowed; opacity: .55; }
+.settings-backup-import:focus-within { outline: 2px solid var(--o-accent); outline-offset: 2px; }
+.settings-backup-import input {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  opacity: 0; cursor: pointer; font-size: 0;
+}
+.settings-backup-import input:disabled { cursor: not-allowed; }
 .settings-backup-preview {
   margin-top: 15px; padding: 12px; border: 1px solid var(--o-border);
   border-radius: 10px; overflow-wrap: anywhere; font-size: 12px; line-height: 1.6;
@@ -157,16 +162,19 @@ body {
 
 /* Compact help buttons reveal explanatory copy on hover or keyboard focus. */
 .settings-heading-row, .settings-inline-title { display: flex; align-items: center; gap: 8px; }
+.settings-heading-row h2, .settings-inline-title strong { line-height: 20px; }
 .settings-heading-row h2 { margin-bottom: 0; }
 .settings-choice-info.settings-inline-title { flex-direction: row; flex-wrap: wrap; }
 .settings-inline-title label { cursor: pointer; }
-.settings-help { display: inline-flex; align-items: center; position: relative; flex-shrink: 0; }
+.settings-help { display: inline-flex; align-items: center; justify-content: center; position: relative; flex: 0 0 16px; vertical-align: middle; }
 .settings-help-button {
-  display: grid; place-items: center;
-  width: 16px; height: 16px; padding: 0; border: 1px solid var(--o-muted);
+  display: inline-flex; align-items: center; justify-content: center;
+  flex: 0 0 16px; width: 16px; height: 16px; padding: 0; margin: 0;
+  border: 1px solid var(--o-muted);
   border-radius: 50%; background: transparent; color: var(--o-muted);
   font-family: Arial, sans-serif; font-size: 10px; font-weight: 700; line-height: 1; cursor: help;
 }
+.settings-help-glyph { display: block; line-height: 1; transform: translateY(-.5px); }
 .settings-help-button:hover, .settings-help-button:focus-visible {
   color: var(--o-text); border-color: var(--o-text);
 }
