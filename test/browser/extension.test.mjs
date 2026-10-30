@@ -116,13 +116,14 @@ test('Chromium MV3: TOC, search, layout, SPA and failure paths',{timeout:150000}
       assert.match(await page.locator('#navigator-list').innerText(),/第一条测试问题/);
       assert.match(await page.locator('#navigator-list').innerText(),/第二条测试问题/);
       assert.equal(await page.locator('#native-nav').count(),1);
-      await page.waitForFunction(() => document.documentElement.hasAttribute('data-luna-toc-theme'));
+      await page.waitForFunction(() => document.documentElement.dataset.lunaTocTheme === 'light');
       assert.equal(await page.evaluate(() => document.documentElement.hasAttribute('data-theme')), false);
+      // The host's dark class must no longer affect LunaTOC.
       await page.evaluate(() => document.documentElement.classList.add('dark'));
-      await page.waitForFunction(() => document.documentElement.dataset.lunaTocTheme === 'dark');
+      assert.equal(await page.evaluate(() => document.documentElement.dataset.lunaTocTheme), 'light');
       assert.equal(await page.evaluate(() => document.documentElement.hasAttribute('data-theme')), false);
       await page.evaluate(() => document.documentElement.classList.remove('dark'));
-      await page.waitForFunction(() => document.documentElement.dataset.lunaTocTheme === 'light');
+      assert.equal(await page.evaluate(() => document.documentElement.dataset.lunaTocTheme), 'light');
     });
 
     await t.test('repairs raw Markdown bold in dynamically mounted assistant answers only',async()=>{
