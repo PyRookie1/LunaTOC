@@ -42,6 +42,51 @@ describe('cloud snapshots and three-way merge', () => {
     expect(merged.deletedRoutes).toEqual(['conversation-123']);
     expect(merged.aliases).toEqual({});
   });
+  it('merges independent theme and sidebar fields from two devices', () => {
+    const baseSettings = {
+      theme: { followChatGPT: true, manualTheme: 'dark' as const },
+      sidebar: { layoutMode: 'overlay' as const, backgroundColor: 'default' as const, revealTint: false },
+    };
+    const base = { ...snapshot(), settings: baseSettings };
+    const local = { ...snapshot(), settings: {
+      ...baseSettings, theme: { ...baseSettings.theme, manualTheme: 'light' as const },
+    } };
+    const remote = { ...snapshot(), settings: {
+      ...baseSettings, sidebar: { ...baseSettings.sidebar, revealTint: true },
+    } };
+    const merged = mergeAccountSnapshots(base, local, remote, owner);
+    expect(merged.settings?.theme.manualTheme).toBe('light');
+    expect(merged.settings?.sidebar.revealTint).toBe(true);
+  });
+
+  it('rejects concurrent divergent edits to the same settings field', () => {
+    const base = { ...snapshot(), settings: {
+      theme: { followChatGPT: true, manualTheme: 'dark' as const },
+      sidebar: { layoutMode: 'overlay' as const, backgroundColor: 'default' as const, revealTint: false },
+    } };
+    const local = { ...snapshot(), settings: {
+      ...base.settings, sidebar: { ...base.settings.sidebar, backgroundColor: 'blue' as const },
+    } };
+    const remote = { ...snapshot(), settings: {
+      ...base.settings, sidebar: { ...base.settings.sidebar, backgroundColor: 'green' as const },
+    } };
+    expect(() => mergeAccountSnapshots(base, local, remote, owner)).toThrow('同时修改');
+  });
+
+  it('preserves remote custom preferences when local defaults are unchanged', () => {
+    const base = { ...snapshot(), settings: null };
+    const local = { ...snapshot(), settings: {
+      theme: { followChatGPT: true, manualTheme: 'dark' as const },
+      sidebar: { layoutMode: 'overlay' as const, backgroundColor: 'default' as const, revealTint: false },
+    } };
+    const remote = { ...snapshot(), settings: {
+      theme: { followChatGPT: false, manualTheme: 'light' as const },
+      sidebar: { layoutMode: 'overlay' as const, backgroundColor: 'default' as const, revealTint: true },
+    } };
+    const merged = mergeAccountSnapshots(base, local, remote, owner);
+    expect(merged.settings).toEqual(remote.settings);
+  });
+
   it('refuses diverging edits to the same directory record or settings object', () => {
     const b = snapshot();
     const left = { ...snapshot(), aliases: {

@@ -12,6 +12,7 @@ export const CLOUD_MESSAGE_TYPE = 'LUNATOC_CLOUD_V1';
 const SESSION_KEY = 'lunatoc:cloud:auth:session:v1';
 export const CLOUD_AUTO_SYNC_KEY = 'lunatoc:cloud:auto-sync:v1';
 export const CLOUD_AUTO_SYNC_STATUS_KEY = 'lunatoc:cloud:auto-sync-status:v1';
+export const CLOUD_ACCOUNT_BINDINGS_KEY = 'lunatoc:cloud:account-bindings:v1';
 export interface CloudAutoSyncStatus { state: 'success' | 'error'; message: string; updatedAt: number }
 const BASE_PREFIX = 'lunatoc:cloud:baseline:v1:';
 const PROJECT_PATTERN = /^[a-z][a-z0-9-]{4,62}$/;
@@ -26,9 +27,9 @@ export type CloudAction =
   | { type: typeof CLOUD_MESSAGE_TYPE; action: 'resend-verification' | 'check-verification' }
   | { type: typeof CLOUD_MESSAGE_TYPE; action: 'reset-password'; email: string }
   | { type: typeof CLOUD_MESSAGE_TYPE; action: 'set-auto-sync'; enabled: boolean }
-  | { type: typeof CLOUD_MESSAGE_TYPE; action: 'sign-out' | 'status' }
-  | { type: typeof CLOUD_MESSAGE_TYPE; action: 'sync'; ownerId: string };
-export type CloudResult = { ok: true; message: string; uid?: string; configured?: boolean; autoSyncEnabled?: boolean; autoSyncStatus?: CloudAutoSyncStatus; emailVerified?: boolean }
+  | { type: typeof CLOUD_MESSAGE_TYPE; action: 'sign-out' | 'status'; ownerId?: string }
+  | { type: typeof CLOUD_MESSAGE_TYPE; action: 'bind-account' | 'unbind-account' | 'sync'; ownerId: string };
+export type CloudResult = { ok: true; message: string; uid?: string; configured?: boolean; autoSyncEnabled?: boolean; autoSyncStatus?: CloudAutoSyncStatus; emailVerified?: boolean; boundUid?: string; boundOwners?: string[] }
   | { ok: false; error: string };
 
 function validConfig(value: unknown): value is Config {
@@ -80,6 +81,49 @@ export function createCloudController(
       throw new Error('LunaTOC 官方 Firebase 服务尚未配置；本地功能可继续使用');
     }
     return managedConfig;
+  }
+  /** Local cloud bindings are explicit, account-scoped and excluded from cloud snapshots. */
+  async function accountBindings(): Promise<Record<string, string>> {
+    const raw = (await local.get(CLOUD_ACCOUNT_BINDINGS_KEY))[CLOUD_ACCOUNT_BINDINGS_KEY];
+    if (raw === undefined) return Object.create(null) as Record<string, string>;
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      throw new Error('LunaTOC 云账号绑定记录无效，已停止同步');
+    }
+    const bindings = Object.create(null) as Record<string, string>;
+    for (const [ownerId, uid] of Object.entries(raw as Record<string, unknown>)) {
+      if (!isValidAccountOwnerId(ownerId) || typeof uid !== 'string' ||
+          !/^[a-zA-Z0-9_-]{1,128}$/.test(uid)) {
+        throw new Error('LunaTOC 云账号绑定记录无效，已停止同步');
+      }
+      bindings[ownerId] = uid;
+    }
+    return bindings;
+  }
+  async function changeBinding(ownerId: string, action: 'bind-account' | 'unbind-account'): Promise<CloudResult> {
+    if (!isValidAccountOwnerId(ownerId) || !(await verifyOwner(ownerId))) {
+      throw new Error('当前 ChatGPT 账号未经验证，不能修改云账号绑定');
+    }
+    const currentUser = action === 'bind-account' ? await token() : null;
+    if (currentUser && !currentUser.emailVerified) throw new Error('请先验证 LunaTOC 注册邮箱');
+    return queue.run(async () => {
+      if (!(await verifyOwner(ownerId))) throw new Error('ChatGPT 账号已切换，绑定操作取消');
+      const bindings = await accountBindings();
+      if (action === 'unbind-account') {
+        if (!Object.hasOwn(bindings, ownerId)) return { ok: true, message: '当前 ChatGPT 账号没有云端绑定' };
+        delete bindings[ownerId];
+        await local.set({ [CLOUD_ACCOUNT_BINDINGS_KEY]: bindings });
+        return { ok: true, message: '已解除该 ChatGPT 账号的云端绑定，本地和云端数据均保留' };
+      }
+      const active = await session();
+      if (!currentUser || active.uid !== currentUser.uid) throw new Error('LunaTOC 登录账号已切换，绑定操作取消');
+      if (bindings[ownerId] && bindings[ownerId] !== active.uid) {
+        throw new Error('该 ChatGPT 账号已经绑定另一个 LunaTOC 云账号。请先明确解除原绑定，避免数据意外上传');
+      }
+      if (bindings[ownerId] === active.uid) return { ok: true, boundUid: active.uid, message: '当前账号已绑定' };
+      bindings[ownerId] = active.uid;
+      await local.set({ [CLOUD_ACCOUNT_BINDINGS_KEY]: bindings });
+      return { ok: true, boundUid: active.uid, message: '已将当前 ChatGPT 账号绑定到此 LunaTOC 云账号' };
+    });
   }
   async function session(): Promise<Session> {
     const values = await sessionStorage.get(SESSION_KEY);
@@ -278,10 +322,14 @@ export function createCloudController(
     const cfg = await config();
     const user = await token();
     if (!user.emailVerified) throw new Error('请先验证 LunaTOC 注册邮箱，未验证账号禁止访问云数据');
+    if ((await accountBindings())[ownerId] !== user.uid) {
+      throw new Error('该 ChatGPT 账号未绑定当前 LunaTOC 云账号，禁止上传或下载');
+    }
     const ownerHash = await hashOwner(ownerId);
     const baselineKey = BASE_PREFIX + cfg.projectId + ':' + user.uid + ':' + ownerHash;
     return queue.run(async () => {
       if (!(await verifyOwner(ownerId))) throw new Error('ChatGPT 账号验证已失效，同步已取消');
+      if ((await accountBindings())[ownerId] !== user.uid) throw new Error('云账号绑定已变化，同步已取消');
       const baselineValues = await local.get(baselineKey);
       const base = baselineValues[baselineKey] === undefined
         ? emptyCloudSnapshot() : validateCloudSnapshot(baselineValues[baselineKey], ownerId);
@@ -368,6 +416,9 @@ export function createCloudController(
           if (command.enabled) {
             const active = await session();
             if (!active.emailVerified) throw new Error('请先验证 LunaTOC 注册邮箱');
+            if (!Object.values(await accountBindings()).includes(active.uid)) {
+              throw new Error('请先将当前 ChatGPT 账号明确绑定到 LunaTOC 云账号');
+            }
             await local.set({ [CLOUD_AUTO_SYNC_KEY]: true });
             return { ok: true, message: '云同步已开启；后续本地更改会自动同步', uid: active.uid, autoSyncEnabled: true };
           }
@@ -379,13 +430,21 @@ export function createCloudController(
           await local.set({ [CLOUD_AUTO_SYNC_KEY]: false });
           await sessionStorage.remove(SESSION_KEY);
           return { ok: true, message: '云同步已关闭；本地和云端数据均未删除', autoSyncEnabled: false };
+        case 'bind-account':
+        case 'unbind-account':
+          return await changeBinding(command.ownerId as string, command.action);
         case 'status': {
+          const bindings = await accountBindings();
           const [auth, settings] = await Promise.all([
             sessionStorage.get(SESSION_KEY), local.get([CLOUD_AUTO_SYNC_KEY, CLOUD_AUTO_SYNC_STATUS_KEY]),
           ]);
           const user = auth[SESSION_KEY];
           return { ok: true, message: validSession(user) ? 'LunaTOC 云账号已登录' : 'LunaTOC 云账号未登录',
             configured: validConfig(managedConfig), autoSyncEnabled: settings[CLOUD_AUTO_SYNC_KEY] === true,
+            ...(isValidAccountOwnerId(command.ownerId) && bindings[command.ownerId]
+              ? { boundUid: bindings[command.ownerId] } : {}),
+            boundOwners: validSession(user)
+              ? Object.keys(bindings).filter((owner) => bindings[owner] === user.uid).sort() : [],
             ...(validSession(user) ? { emailVerified: user.emailVerified } : {}),
             ...(settings[CLOUD_AUTO_SYNC_STATUS_KEY] && typeof settings[CLOUD_AUTO_SYNC_STATUS_KEY] === 'object'
               ? { autoSyncStatus: settings[CLOUD_AUTO_SYNC_STATUS_KEY] as CloudAutoSyncStatus } : {}),

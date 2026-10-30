@@ -10,7 +10,7 @@
 - [ ] Firebase Emulator 实际加载仓库的 firestore.rules，并验证双 UID、匿名访问、越权、异常文档。
 - [ ] 邮箱＋密码注册/登录、邮箱验证、错误密码、未验证邮箱访问拒绝和失败保护的自动测试通过。
 - [ ] main 发布门禁核对 Project ID、Web API Key 和 Firebase Hosting authDomain 三项公开 GitHub Variables。
-- [ ] 集成分支、main 的相应 CI 全部通过。
+- [ ] 集成分支、main 的相应 CI 全部通过，ZIP Artifact 名称为 `lunatoc-v1.0.0`，内容包含 `lunatoc-v1.0.0.zip` 及对应 SHA-256 文件。
 
 ## 真实 Firebase（阻断发布）
 
@@ -18,7 +18,9 @@
 - [ ] 已注册 Firebase Web App，使用其真实 `authDomain`，确认在 Authentication 授权域名中。
 - [ ] 已在生产默认 Firestore 发布仓库的 firestore.rules；用户 A、B、匿名隔离校验通过。
 - [ ] 使用真实邮箱注册密码账号 → 收到地址验证邮件并点击 → 返回设置页核验 → Firestore 首次上传；验证前 Firestore 应拒绝访问。
-- [ ] 两台 Chrome 配置文件使用**相同的 LunaTOC 邮箱＋密码**和**相同 ChatGPT 账号**，验证自动上传/下载；不同 ChatGPT 账号互不覆盖。
+- [ ] 两台 Chrome 配置文件使用**相同的 LunaTOC 邮箱＋密码**和**相同 ChatGPT 账号**，分别确认本机绑定后验证自动上传/下载；不同 ChatGPT 账号互不覆盖。
+- [ ] 同一浏览器保留 ChatGPT A/B，本机仅绑定 A 到 Firebase UID 1；登录 UID 2 时既不自动上传 A，也不上传未绑定的 B。重新绑定需明确解除旧绑定并再次确认。
+- [ ] 两设备分别修改主题和布局字段可合并；同一字段发生不同更改、删除与修改冲突时停止同步并保留数据。
 - [ ] 验证浏览器重启后自动同步、关闭后停止上传并清除本地凭据。
 - [ ] 验证 Chrome MV3 Worker 休眠、网络恢复后的持久化重试，及每 60 分钟云端轮询；核对 Firestore 配额影响。
 - [ ] 验证错误密码、邮箱未验证、令牌失效、离线、权限拒绝、远端文档缺失、冲突和配额问题时不会静默删除本地数据。

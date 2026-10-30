@@ -100,8 +100,10 @@ export async function refreshTrustedConversationOwner(
     : null;
   const ownerId = identity?.ownerId ?? null;
   if (generation !== current) return;
+  // A fresh authenticated session authorizes the background to revalidate this
+  // very tab before the first account record is persisted.
+  setActiveConversationOwner(ownerId);
   if (identity) await registerVerifiedAccount(identity.ownerId, identity.email);
-  if (generation === current) setActiveConversationOwner(ownerId);
 }
 
 /**
