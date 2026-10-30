@@ -113,7 +113,7 @@ export function mergeAccountSnapshots(
       ).settings ?? null;
     }
     const defaults: AccountSettingsRecord = {
-      theme: { followChatGPT: true, manualTheme: 'dark' },
+      theme: { followChatGPT: false, manualTheme: 'light' },
       sidebar: { layoutMode: 'overlay', backgroundColor: 'default', revealTint: false },
     };
     const original = before.settings ?? defaults;
