@@ -84,7 +84,7 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
   }
   void (async () => {
     const ownerId = (message as { ownerId?: unknown }).ownerId;
-    if (!isValidAccountOwnerId(ownerId) || !(await hasVerifiedChatGptOwner(ownerId, sender.tab?.id))) {
+    if (!isValidAccountOwnerId(ownerId) || !(await hasVerifiedChatGptOwner(ownerId, chatGptSourceTabId(sender)))) {
       return { ok: false, error: 'ChatGPT account not verified; prompt write refused' };
     }
     return promptCoordinator.commit(message);
@@ -107,7 +107,7 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
     const request = message as { ownerId?: unknown; action?: unknown; expected?: { ownerId?: unknown } };
     const ownerId = request.action === 'cleanup-conversation'
       ? request.expected?.ownerId : request.ownerId;
-    if (!isValidAccountOwnerId(ownerId) || !(await hasVerifiedChatGptOwner(ownerId, sender.tab?.id))) {
+    if (!isValidAccountOwnerId(ownerId) || !(await hasVerifiedChatGptOwner(ownerId, chatGptSourceTabId(sender)))) {
       return { ok: false, error: 'ChatGPT account not verified; alias update refused' };
     }
     return tocAliasCoordinator.commit(message);
@@ -128,7 +128,7 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
   }
   void (async () => {
     const ownerId = (message as { ownerId?: unknown }).ownerId;
-    if (!isValidAccountOwnerId(ownerId) || !(await hasVerifiedChatGptOwner(ownerId, sender.tab?.id))) {
+    if (!isValidAccountOwnerId(ownerId) || !(await hasVerifiedChatGptOwner(ownerId, chatGptSourceTabId(sender)))) {
       return { ok: false, error: 'ChatGPT account not verified; usage update refused' };
     }
     return promptUsageCoordinator.commit(message);
@@ -156,7 +156,7 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
   }
   void (async () => {
     const ownerId = (message as { ownerId?: unknown }).ownerId;
-    if (!isValidAccountOwnerId(ownerId) || !(await hasVerifiedChatGptOwner(ownerId, sender.tab?.id))) {
+    if (!isValidAccountOwnerId(ownerId) || !(await hasVerifiedChatGptOwner(ownerId, chatGptSourceTabId(sender)))) {
       return { ok: false, error: 'ChatGPT account not verified; settings update refused' };
     }
     return settingsCoordinator.commit(message);
@@ -190,6 +190,12 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
   return true;
 });
 
+
+/** Extension options tabs have tab IDs too; only scope verification to a ChatGPT-origin tab. */
+function chatGptSourceTabId(sender: chrome.runtime.MessageSender): number | undefined {
+  return /^https:\/\/(?:chatgpt\.com|chat\.openai\.com)(?:\/|$)/.test(sender.url ?? '')
+    ? sender.tab?.id : undefined;
+}
 
 /** Only an extension options document may submit email verification or sync commands. */
 async function hasVerifiedChatGptOwner(ownerId: string, sourceTabId?: number): Promise<boolean> {
