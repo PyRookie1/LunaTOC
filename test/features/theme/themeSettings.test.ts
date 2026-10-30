@@ -5,7 +5,7 @@ import {
 import { ACCOUNT_SETTINGS_KEY } from '@/features/storage/accountSettings';
 import { setActiveConversationOwner } from '@/navigation/lifecycle/conversationOwner';
 
-const defaultTheme = { followChatGPT: true, manualTheme: 'dark' as const };
+const defaultTheme = { followChatGPT: false, manualTheme: 'light' as const };
 const defaultSidebar = { layoutMode: 'overlay' as const, backgroundColor: 'default' as const, revealTint: false };
 const values: Record<string, unknown> = {};
 const listeners = new Set<(changes: Record<string, { newValue?: unknown }>, area: string) => void>();
@@ -37,7 +37,7 @@ beforeEach(() => {
   for (const key of Object.keys(values)) delete values[key];
   values[ACCOUNT_SETTINGS_KEY] = {
     'account-1': { theme: defaultTheme, sidebar: defaultSidebar },
-    'account-2': { theme: { followChatGPT: false, manualTheme: 'light' }, sidebar: defaultSidebar },
+    'account-2': { theme: { followChatGPT: false, manualTheme: 'dark' }, sidebar: defaultSidebar },
   };
   listeners.clear();
   get.mockClear();
@@ -59,19 +59,33 @@ afterEach(() => { vi.unstubAllGlobals(); setActiveConversationOwner(null); });
 describe('account-scoped theme settings', () => {
   it('reads the selected account rather than a global theme', async () => {
     expect(await readThemeSettings('account-1')).toEqual(defaultTheme);
-    expect(await readThemeSettings('account-2')).toEqual({ followChatGPT: false, manualTheme: 'light' });
+    expect(await readThemeSettings('account-2')).toEqual({ followChatGPT: false, manualTheme: 'dark' });
   });
 
   it('writes only the selected account and publishes the matching preference', async () => {
     const changed = vi.fn();
     const unsubscribe = subscribeThemeSettings(changed, 'account-1');
-    const next = { followChatGPT: false, manualTheme: 'light' as const };
+    const next = { followChatGPT: false, manualTheme: 'dark' as const };
     await writeThemeSettings(next, 'account-1');
     expect((values[ACCOUNT_SETTINGS_KEY] as Record<string, { theme: unknown }>)['account-1'].theme).toEqual(next);
     expect((values[ACCOUNT_SETTINGS_KEY] as Record<string, { theme: unknown }>)['account-2'].theme)
-      .toEqual({ followChatGPT: false, manualTheme: 'light' });
+      .toEqual({ followChatGPT: false, manualTheme: 'dark' });
     expect(changed).toHaveBeenCalledWith(next);
     unsubscribe();
+  });
+
+  it('migrates old follow-ChatGPT settings to the new light manual default', async () => {
+    const map = values[ACCOUNT_SETTINGS_KEY] as Record<string, { theme: unknown; sidebar: unknown }>;
+    map['account-1'].theme = { followChatGPT: true, manualTheme: 'dark' };
+    expect(await readThemeSettings('account-1'))
+      .toEqual({ followChatGPT: false, manualTheme: 'light' });
+    const next = vi.fn();
+    const unsub = subscribeThemeSettings(next, 'account-1');
+    listeners.forEach((listener) => listener({
+      [ACCOUNT_SETTINGS_KEY]: { newValue: clone(map) },
+    }, 'local'));
+    expect(next).toHaveBeenCalledWith({ followChatGPT: false, manualTheme: 'light' });
+    unsub();
   });
 
   it('refuses to write without a verified account', async () => {
