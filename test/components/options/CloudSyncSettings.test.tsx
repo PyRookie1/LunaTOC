@@ -120,6 +120,26 @@ describe('CloudSyncSettings verified LunaTOC password accounts', () => {
     expect(element<HTMLInputElement>('input[aria-label="开启自动云同步"]').checked).toBe(true);
   });
 
+  it('provides a retry if enabling background sync fails after account binding', async () => {
+    let attempts = 0;
+    mocks.sendMessage.mockImplementation(async ({ action }: { action: string }) => {
+      if (action === 'status') return { ok: true, configured: true, uid: 'firebase-user',
+        emailVerified: true, boundUid: 'firebase-user', autoSyncEnabled: false };
+      if (action === 'bind-account') return { ok: true, boundUid: 'firebase-user' };
+      if (action === 'set-auto-sync') return ++attempts === 1
+        ? { ok: false, error: '网络暂不可用' }
+        : { ok: true, autoSyncEnabled: true };
+      return { ok: false, error: 'unexpected action' };
+    });
+    await render();
+    expect(attempts).toBe(1);
+    expect(host.textContent).toContain('重试开启自动云同步');
+    await act(async () => Array.from(host.querySelectorAll('button'))
+      .find(b => b.textContent?.includes('重试开启自动云同步'))?.click());
+    expect(attempts).toBe(2);
+    expect(element<HTMLInputElement>('input[aria-label="开启自动云同步"]').checked).toBe(true);
+  });
+
   it('registers an account, waits for verified email, then starts syncing', async () => {
     await render();
     await enableForm();
