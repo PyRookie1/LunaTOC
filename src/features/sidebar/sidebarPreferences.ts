@@ -16,7 +16,7 @@ import {
 } from '@/features/storage/accountSettings';
 import { getActiveConversationOwner, subscribeActiveConversationOwner } from '@/navigation/lifecycle/conversationOwner';
 
-/** Compatibility export: account preferences are stored together under one key. */
+/** Shared storage key for account-scoped sidebar preferences. */
 export const SIDEBAR_SETTINGS_KEY = ACCOUNT_SETTINGS_KEY;
 export const SIDEBAR_COLORS: ReadonlyArray<{
   id: SidebarColor;
