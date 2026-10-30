@@ -3,7 +3,9 @@ export function SettingsHelp({ id, text }: { id: string; text: string }): React.
   return (
     <span className="settings-help">
       <button type="button" className="settings-help-button"
-        aria-label={`查看说明：${text}`} aria-describedby={id}>?</button>
+        aria-label={`查看说明：${text}`} aria-describedby={id}>
+        <span className="settings-help-glyph" aria-hidden="true">?</span>
+      </button>
       <span id={id} className="settings-help-tooltip" role="tooltip">{text}</span>
     </span>
   );
