@@ -145,7 +145,7 @@ export function CloudSyncSettings({ accountId }: { accountId: string }): React.J
           />
           <span className="settings-switch-track" aria-hidden="true" />
         </label>
-        {requesting && !enabled && (
+        {(requesting || enabled) && (
           <div className="settings-backup-block">
             {uid && !emailVerified ? (
               <>
@@ -166,7 +166,7 @@ export function CloudSyncSettings({ accountId }: { accountId: string }): React.J
                     setMessage(result.message);
                   })}>重新发送验证邮件</button>
               </>
-            ) : (
+            ) : !uid ? (
               <>
                 <p className="settings-backup-description">
                   {registering ? '注册 LunaTOC 云账号（首次需要确认邮箱）。' : '使用已有 LunaTOC 云账号登录。'}
@@ -208,7 +208,7 @@ export function CloudSyncSettings({ accountId }: { accountId: string }): React.J
                     })}>忘记密码？发送重置邮件</button>
                 )}
               </>
-            )}
+            ) : null}
             {uid && emailVerified && (
               <>
                 <p className="settings-backup-description">
