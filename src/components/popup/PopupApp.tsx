@@ -2,14 +2,9 @@
 import { Info, Settings, TriangleAlert } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import {
-  readResolvedChatGPTTheme,
-  subscribeResolvedChatGPTTheme,
-} from '@/features/theme/chatGptTheme';
-import {
   readThemeSettings,
   subscribeThemeSettings,
   writeThemeSettings,
-  type ResolvedTheme,
   type ThemeSettings as ThemeSettingsValue,
 } from '@/features/theme/themeSettings';
 import { resolveAccountSettingsOwner } from '@/features/storage/accountSettings';
@@ -18,8 +13,8 @@ import { parseToolbarWarning, toolbarWarningKey, type ToolbarCompatibilityWarnin
 const PROJECT_URL = 'https://github.com/PyRookie1/LunaTOC';
 
 const INITIAL_SETTINGS: ThemeSettingsValue = {
-  followChatGPT: true,
-  manualTheme: 'dark',
+  followChatGPT: false,
+  manualTheme: 'light',
 };
 
 /** Displays theme controls and the existing usage guidance. */
@@ -27,7 +22,6 @@ export function PopupApp(): React.JSX.Element {
   const [settings, setSettings] = useState(INITIAL_SETTINGS);
   const [settingsOwnerId, setSettingsOwnerId] = useState<string | null>(null);
   const [settingsError, setSettingsError] = useState('');
-  const [chatGPTTheme, setChatGPTTheme] = useState<ResolvedTheme>('dark');
   const [themeReady, setThemeReady] = useState(false);
   const [compatibilityWarning, setCompatibilityWarning] =
     useState<ToolbarCompatibilityWarning | null>(null);
@@ -63,28 +57,20 @@ export function PopupApp(): React.JSX.Element {
   useEffect(() => {
     let active = true;
     let unsubscribeSettings = () => {};
-    let unsubscribeResolvedTheme = () => {};
     const initialize = async (): Promise<void> => {
       const ownerId = await resolveAccountSettingsOwner();
       if (!active) return;
       setSettingsOwnerId(ownerId);
       if (!ownerId) {
-        const resolvedTheme = await readResolvedChatGPTTheme();
-        if (!active) return;
-        setChatGPTTheme(resolvedTheme);
         setSettingsError('请先打开并登录 ChatGPT；主题偏好按账号保存。');
         setThemeReady(true);
         return;
       }
-      const [savedSettings, resolvedTheme] = await Promise.all([
-        readThemeSettings(ownerId), readResolvedChatGPTTheme(),
-      ]);
+      const savedSettings = await readThemeSettings(ownerId);
       if (!active) return;
       setSettings(savedSettings);
-      setChatGPTTheme(resolvedTheme);
       setThemeReady(true);
       unsubscribeSettings = subscribeThemeSettings(setSettings, ownerId);
-      unsubscribeResolvedTheme = subscribeResolvedChatGPTTheme(setChatGPTTheme);
     };
     void initialize().catch((error: unknown) => {
       if (active) {
@@ -96,13 +82,10 @@ export function PopupApp(): React.JSX.Element {
     return () => {
       active = false;
       unsubscribeSettings();
-      unsubscribeResolvedTheme();
     };
   }, []);
 
-  const resolvedTheme = settings.followChatGPT
-    ? chatGPTTheme
-    : settings.manualTheme;
+  const resolvedTheme = settings.manualTheme;
 
   useEffect(() => {
     if (!themeReady) return;
