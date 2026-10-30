@@ -96,17 +96,16 @@ export function LocalBackupSettings(): React.JSX.Element {
       </div>
       <div className="settings-card">
         <div className="settings-backup-block">
-          <strong className="settings-setting-title">导出</strong>
           <button type="button" className="settings-backup-button" onClick={() => void exportBackup()} disabled={busy}>
-            导出本地数据
+            备份数据
           </button>
         </div>
         <div className="settings-divider" />
         <div className="settings-backup-block">
-          <strong className="settings-setting-title">导入</strong>
-          <label className="settings-backup-file-row">
-            <span>选择备份文件</span>
-            <input type="file" accept=".json,application/json" onChange={(event) => void selectFile(event)} disabled={busy} />
+          <label className="settings-backup-button settings-backup-import">
+            导入备份
+            <input type="file" aria-label="导入备份" accept=".json,application/json"
+              onChange={(event) => void selectFile(event)} disabled={busy} />
           </label>
           {preview && summary && (
             <div className="settings-backup-preview" aria-label="恢复数据预览">
