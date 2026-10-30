@@ -200,9 +200,9 @@ export function OptionsApp(): React.JSX.Element {
           <div className="settings-setting-title">侧边栏背景颜色</div>
           <div className="settings-palette" role="radiogroup" aria-label="侧边栏背景颜色">
             {SIDEBAR_COLORS.map((color) => (
-              <label className="settings-swatch-label" key={color.id}
-                aria-label={color.label}>
+              <label className="settings-swatch-label" key={color.id}>
                 <input type="radio" name="sidebar-color" value={color.id}
+                  aria-label={color.label}
                   checked={preferences.backgroundColor === color.id}
                   disabled={!settingsLoaded || savingSettings}
                   onChange={() => updatePreferences({ backgroundColor: color.id })} />
