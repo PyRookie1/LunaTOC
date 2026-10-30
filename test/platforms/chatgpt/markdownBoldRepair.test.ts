@@ -59,6 +59,20 @@ describe('parseUnrenderedBoldMarkdown', () => {
   it('does not interpret malformed nested double-star markers as bold', () => {
     expect(parseUnrenderedBoldMarkdown('**outer ** inner**')).toBeNull();
   });
+
+  it('scans many unmatched delimiters without repeatedly searching the remaining text', () => {
+    const malformed = '**x '.repeat(20_000);
+    const start = performance.now();
+    expect(parseUnrenderedBoldMarkdown(malformed)).toBeNull();
+    expect(performance.now() - start).toBeLessThan(2_000);
+  });
+
+  it('can recover a valid pair after an invalid outer opening marker', () => {
+    expect(parseUnrenderedBoldMarkdown('**outer **inner**')).toEqual([
+      { text: '**outer ', bold: false },
+      { text: 'inner', bold: true },
+    ]);
+  });
 });
 
 describe('startMarkdownBoldRepair', () => {
