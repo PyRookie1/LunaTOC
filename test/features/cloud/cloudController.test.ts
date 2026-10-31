@@ -96,6 +96,26 @@ async function ready(local: ReturnType<typeof storage>, cloud: ReturnType<typeof
   return { service, sessions };
 }
 describe('Firebase REST account sync', () => {
+  it('does not reuse old success after cloud sync is re-enabled', async () => {
+    const local = storage({ ...initialLocal(),
+      'lunatoc:cloud:auto-sync-status:v1': {
+        state: 'success', message: '旧的成功结果', updatedAt: 1,
+      },
+    });
+    const remote = firebaseHarness();
+    const { service } = await ready(local, remote);
+    const enabled = await service.execute(request('set-auto-sync', { enabled: true }));
+    expect(enabled).toMatchObject({ ok: true, autoSyncEnabled: true });
+    expect(local.state['lunatoc:cloud:auto-sync-status:v1']).toMatchObject({
+      state: 'pending', message: expect.stringContaining('等待首次同步'),
+    });
+    expect(await service.execute(request('status'))).toMatchObject({
+      ok: true, autoSyncEnabled: true, autoSyncStatus: {
+        state: 'pending', message: expect.stringContaining('等待首次同步'),
+      },
+    });
+  });
+
   it('keeps Firebase ID and refresh tokens only in Chrome session storage', async () => {
     const local = storage(initialLocal()), remote = firebaseHarness();
     const { service, sessions } = await ready(local, remote);
