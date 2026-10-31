@@ -31,6 +31,11 @@
 - Firebase Spark 额度（以官网为准）：邮件链接登录 **5 封/项目/天**，本方案不使用；首次邮箱验证 **1,000 封/项目/天**，密码重置 **150 封/项目/天**；正常密码登录不消耗邮件发送额度。依然受注册、认证速率和 Firestore 免费读写额度约束。
 - 不要未经维护者确认升级 Blaze，也不要关闭邮箱验证或弱化安全规则来规避限额。
 
+## 请求超时与重试
+- Firebase 单次请求（包括接收完整响应内容）最长等待 20 秒；超时会取消网络请求，并返回明确错误，不会无限卡住扩展后台任务。
+- 开启自动同步时，超时属于可以重试的网络故障：本轮显示失败，Chrome 会按现有逐步延长的间隔重新尝试；提示词、别名和偏好不会仅因超时被删除。
+- 重新尝试时应确保 Chrome 可以访问 Firebase API；如果账号已退出登录，需要重新登录并开启自动同步。连续出现超时时检查网络、代理及拦截扩展。
+
 ## 登录失败：Failed to fetch / 无法连接 Firebase
 - 这属于浏览器网络请求失败，不是密码错误，也不能据此判断 Firebase Authentication 配置正确。扩展现在提示具体 Firebase 域名及权限状态。
 - 在 Chrome 的 `chrome://extensions` → LunaTOC → 详细信息 → 网站访问权限，检查已允许访问 `identitytoolkit.googleapis.com`、`securetoken.googleapis.com`、`firestore.googleapis.com`。也可以在设置里关闭再开启自动云同步，以重新触发网站访问授权。
