@@ -18,7 +18,9 @@ export { getReactPortalContainer };
 
 const REACT_HOST_ID = 'luna-toc-react-host';
 const REACT_ROOT_ID = 'luna-toc-react-root';
-const PORTAL_ROOT_ID = 'luna-toc-react-portals';
+const PRIVATE_HOST_ID = 'luna-toc-private-react-host';
+const PRIVATE_ROOT_ID = 'luna-toc-private-react-root';
+const PORTAL_ROOT_ID = 'luna-toc-private-react-portals';
 
 /**
  * Creates the isolated React host once the document body is available.
@@ -32,36 +34,51 @@ export async function initializeReactHost(): Promise<void> {
 
   if (document.getElementById(REACT_HOST_ID)) return;
 
+  // Keep ordinary menus in a public shadow tree for compatibility with
+  // existing browser interactions and accessibility tooling.
   const host = document.createElement('div');
   host.id = REACT_HOST_ID;
   host.style.display = 'contents';
   synchronizeTheme(host);
+  const publicShadowRoot = host.attachShadow({ mode: 'open' });
+  const publicStyle = document.createElement('style');
+  publicStyle.textContent = tailwindCss;
+  const publicContainer = document.createElement('div');
+  publicContainer.id = REACT_ROOT_ID;
+  publicContainer.className = 'luna-toc-ui';
+  publicShadowRoot.append(publicStyle, publicContainer);
 
-  // The host page must not be able to walk the saved-prompt editor and
-  // autocomplete DOM via host.shadowRoot. Keep the portal reference inside
-  // the isolated extension script instead of exposing an open shadow root.
-  const shadowRoot = host.attachShadow({ mode: 'closed' });
-  const style = document.createElement('style');
-  style.textContent = tailwindCss;
-
-  const reactContainer = document.createElement('div');
-  reactContainer.id = REACT_ROOT_ID;
-  reactContainer.className = 'luna-toc-ui';
-
+  // Saved prompt bodies only appear inside this separate closed tree.
+  // Neither the editor's textarea nor autocomplete suggestions are placed
+  // into the page-traversable public root.
+  const privateHost = document.createElement('div');
+  privateHost.id = PRIVATE_HOST_ID;
+  privateHost.style.display = 'contents';
+  synchronizeTheme(privateHost);
+  const privateShadowRoot = privateHost.attachShadow({ mode: 'closed' });
+  const privateStyle = document.createElement('style');
+  privateStyle.textContent = tailwindCss;
+  const privateContainer = document.createElement('div');
+  privateContainer.id = PRIVATE_ROOT_ID;
+  privateContainer.className = 'luna-toc-ui';
   const portalContainer = document.createElement('div');
   portalContainer.id = PORTAL_ROOT_ID;
   portalContainer.className = 'luna-toc-ui';
   setReactPortalContainer(portalContainer);
+  privateShadowRoot.append(privateStyle, privateContainer, portalContainer);
 
-  shadowRoot.append(style, reactContainer, portalContainer);
-  document.body.append(host);
+  document.body.append(host, privateHost);
 
-  createRoot(reactContainer).render(
+  createRoot(publicContainer).render(
+    <>
+      <PromptContextMenuHost />
+      <ContractAlert />
+    </>
+  );
+  createRoot(privateContainer).render(
     <>
       <PromptAutocompleteHost />
-      <PromptContextMenuHost />
       <PromptEditorDialogHost />
-      <ContractAlert />
     </>
   );
 }
