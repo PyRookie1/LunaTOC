@@ -7,14 +7,19 @@
  */
 import { PAGE_HOOK_PORT_READY, PAGE_HOOK_PORT_REQUEST } from '@/pageHook/messageTransport';
 
-type Listener = (message: Record<string, unknown>) => void;
+type Listener = (event: MessageEvent) => void;
 const subscribers = new Set<Listener>();
 let connected = false;
 let started = false;
 
 export function dispatchTrustedPageHookMessage(message: unknown): void {
   if (!message || typeof message !== 'object' || Array.isArray(message)) return;
-  for (const subscriber of subscribers) subscriber(message as Record<string, unknown>);
+  const event = new MessageEvent('message', {
+    data: message,
+    origin: location.origin,
+    source: window,
+  });
+  for (const subscriber of subscribers) subscriber(event);
 }
 
 export function subscribeTrustedPageHookMessage(subscriber: Listener): () => void {
