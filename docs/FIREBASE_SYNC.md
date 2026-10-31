@@ -23,7 +23,7 @@
 8. 完成真实双用户、未验证邮箱、断网、双设备、同步冲突测试后，才可合并发布 PR。
 
 ## 安全、配额和数据隔离
-- Firebase Authentication 保管密码。扩展仅在 Chrome 的临时会话存储中保存 Firebase ID/Refresh Token，不写入长期本地存储；关闭同步或完全退出浏览器后清理登录会话。更新到本版本时也会删除旧版本留在长期本地存储中的凭据，要求重新登录。
+- Firebase Authentication 保管密码。扩展仅在 Chrome 的临时会话存储中保存 Firebase ID/Refresh Token，不写入长期本地存储；关闭同步或完全退出浏览器后清理登录会话。本次更新也会删除此前保存在长期本地存储中的登录凭据，要求重新登录。
 - **没有自定义用户名登录**；“LunaTOC 账号”是与 ChatGPT 账号独立的邮箱密码账号。若要自定义用户名，需要独立认证后端。
 - 数据路径为 `users/{firebaseUid}/accounts/acct_{sha256(chatgptOwnerId)}`，每份快照最多约 240 KB。同步 Tips、目录别名与偏好，不上传聊天正文；云端不是端到端加密，项目维护者有能力查看存储明文。
 - 未验证邮箱的账号无权访问 Firestore，包含 `get` 和 `create/update`；不同 Firebase UID 之间也互相拒绝。
