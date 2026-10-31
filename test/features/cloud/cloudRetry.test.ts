@@ -19,7 +19,8 @@ describe('MV3 automatic cloud-sync recovery policy', () => {
   });
   it('retries temporary network/quota failures, not access or conflict errors', () => {
     for (const message of ['fetch failed', 'offline', 'Firebase 请求失败：HTTP 503',
-      'Firebase 请求失败：RESOURCE_EXHAUSTED', 'Firebase 请求失败：HTTP 429']) {
+      'Firebase 请求失败：RESOURCE_EXHAUSTED', 'Firebase 请求失败：HTTP 429',
+      'Firebase 网络请求超时（20 秒），本轮操作已停止']) {
       expect(isTransientCloudError(message)).toBe(true);
     }
     for (const message of ['PERMISSION_DENIED', 'ChatGPT 账号已切换',

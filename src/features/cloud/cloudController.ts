@@ -10,6 +10,7 @@ import { bundledFirebaseConfig } from './managedFirebaseConfig';
 import { pendingCloudSyncStatus } from './cloudSyncStatus';
 
 export const CLOUD_MESSAGE_TYPE = 'LUNATOC_CLOUD_V1';
+export const FIREBASE_REQUEST_TIMEOUT_MS = 20_000;
 const SESSION_KEY = 'lunatoc:cloud:auth:session:v1';
 export const CLOUD_AUTO_SYNC_KEY = 'lunatoc:cloud:auto-sync:v1';
 export const CLOUD_AUTO_SYNC_STATUS_KEY = 'lunatoc:cloud:auto-sync-status:v1';
@@ -112,8 +113,27 @@ export function createCloudController(
   async function firebaseFetch(url: string, options: RequestInit): Promise<Response> {
     // Firebase calls run in the MV3 background worker, not the ChatGPT page.
     // Distinguish revoked optional host permissions from DNS/proxy/firewall failures.
+    // A stalled request must not hold the MV3 cloud write queue indefinitely.
+    // Abort the actual fetch and independently settle the caller even when a
+    // test adapter or unusual proxy ignores AbortSignal.
+    const controller = new AbortController();
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
     try {
-      return await fetcher(url, options);
+      const deadline = new Promise<never>((_resolve, reject) => {
+        timeoutId = setTimeout(() => {
+          reject(new Error('Firebase 网络请求超时（20 秒），本轮操作已停止；请检查网络后重试'));
+          controller.abort();
+        }, FIREBASE_REQUEST_TIMEOUT_MS);
+      });
+      // The deadline also covers a server that sends response headers but
+      // never finishes its JSON body. All LunaTOC Firebase endpoints return
+      // bounded JSON rather than streaming responses.
+      const completedResponse = (async (): Promise<Response> => {
+        const response = await fetcher(url, { ...options, signal: controller.signal });
+        await response.clone().arrayBuffer();
+        return response;
+      })();
+      return await Promise.race([completedResponse, deadline]);
     } catch (cause) {
       const detail = cause instanceof Error ? cause.message : String(cause);
       if (!(cause instanceof TypeError) && !/failed to fetch|fetch failed|network/i.test(detail)) {
@@ -136,6 +156,8 @@ export function createCloudController(
       }
       throw new Error('无法连接 Firebase（' + host +
         '）：网络请求失败。请检查 Chrome 网络/代理、DNS、防火墙及拦截扩展，并确认 Firebase API 可访问；云同步未开启。');
+    } finally {
+      if (timeoutId !== undefined) clearTimeout(timeoutId);
     }
   }
   /** Local cloud bindings are explicit, account-scoped and excluded from cloud snapshots. */
