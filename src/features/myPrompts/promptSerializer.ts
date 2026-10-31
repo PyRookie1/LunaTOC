@@ -103,7 +103,7 @@ export function parseMarkdownPrompts(
     while (current?.line === '') current = nextLine(current.next);
 
     const openingFence = current?.line.match(/^(`{3,})prompt\s*$/);
-    if (!title || !openingFence) {
+    if (!current || !title || !openingFence) {
       // Match the legacy parser's behavior: skip the first non-empty line
       // after a heading that does not introduce a supported prompt block.
       current = current ? nextLine(current.next) : null;
