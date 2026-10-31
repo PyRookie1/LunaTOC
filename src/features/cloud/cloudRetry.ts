@@ -28,5 +28,5 @@ export function parseCloudRetryState(value: unknown): CloudRetryState | null {
 
 /** Authentication, validation and data conflicts require intervention, not infinite retry. */
 export function isTransientCloudError(message: string): boolean {
-  return /network|failed to fetch|fetch failed|offline|timed? ?out|timeout|ECONN|ENOTFOUND|EAI_AGAIN|UNAVAILABLE|DEADLINE_EXCEEDED|RESOURCE_EXHAUSTED|TOO_MANY_REQUESTS|HTTP\s*(?:408|429|5\d\d)\b/i.test(message);
+  return /network|failed to fetch|fetch failed|offline|超时|timed? ?out|timeout|ECONN|ENOTFOUND|EAI_AGAIN|UNAVAILABLE|DEADLINE_EXCEEDED|RESOURCE_EXHAUSTED|TOO_MANY_REQUESTS|HTTP\s*(?:408|429|5\d\d)\b/i.test(message);
 }
