@@ -36,12 +36,14 @@ const READ_RETRIES = 3;
 const SAVE_ATTEMPTS = 3;
 
 class PromptWriteConflictError extends Error {
-  constructor() {
-    super('其他 ChatGPT 标签页已修改提示词，请刷新后重试。');
-  }
+  constructor() { super('其他 ChatGPT 标签页已修改提示词，请刷新后重试。'); }
 }
 
-/** Detect edits to the same IDs before retrying an unrelated-tab change. */
+function changedRecord(before: SavedPrompt | undefined, after: SavedPrompt | undefined): boolean {
+  return !equalPromptLists(before ? [before] : [], after ? [after] : []);
+}
+
+/** Conflict only when two writers touch the same prompt ID. */
 function hasOverlappingChanges(
   expected: SavedPrompt[],
   desired: SavedPrompt[],
@@ -51,23 +53,16 @@ function hasOverlappingChanges(
   const desiredById = new Map(desired.map((item) => [item.id, item]));
   const currentById = new Map(current.map((item) => [item.id, item]));
   let touched = false;
-
   for (const id of new Set([...oldById.keys(), ...desiredById.keys()])) {
-    const oldRecord = oldById.get(id);
-    const desiredRecord = desiredById.get(id);
-    if (equalPromptLists(oldRecord ? [oldRecord] : [], desiredRecord ? [desiredRecord] : [])) continue;
+    if (!changedRecord(oldById.get(id), desiredById.get(id))) continue;
     touched = true;
-    const currentRecord = currentById.get(id);
-    if (!equalPromptLists(oldRecord ? [oldRecord] : [], currentRecord ? [currentRecord] : [])) {
-      return true;
-    }
+    if (changedRecord(oldById.get(id), currentById.get(id))) return true;
   }
-
-  // A pure reorder cannot safely be replayed over another tab's reordering.
+  // Reorders cannot safely be replayed over another tab's changes.
   return !touched && !equalPromptLists(expected, desired);
 }
 
-/** Apply only the IDs changed by this editor, preserving other tabs' additions. */
+/** Keep unrelated adds/deletes from other tabs when rebasing an edit. */
 function rebasePromptEdits(
   expected: SavedPrompt[],
   desired: SavedPrompt[],
@@ -78,15 +73,12 @@ function rebasePromptEdits(
   const merged = current
     .filter((item) => !oldById.has(item.id) || desiredById.has(item.id))
     .map((item) => {
-      const previous = oldById.get(item.id);
-      const updated = desiredById.get(item.id);
-      return previous && updated && !equalPromptLists([previous], [updated])
-        ? { ...updated }
-        : item;
+      const old = oldById.get(item.id);
+      const next = desiredById.get(item.id);
+      return old && next && changedRecord(old, next) ? { ...next } : item;
     });
-  // Newly created records are appended without deleting unrelated new records.
-  for (const item of desired) {
-    if (!oldById.has(item.id)) merged.push({ ...item });
+  for (const next of desired) {
+    if (!oldById.has(next.id)) merged.push({ ...next });
   }
   return merged;
 }
@@ -165,7 +157,6 @@ export function createPromptStore(): PromptStore {
   let cache: SavedPrompt[] = [];
   let hydrated = false;
   let writeQueue: Promise<void> = Promise.resolve();
-  let cleanupPromise: Promise<void> | null = null;
   const listeners = new Set<PromptsChangedListener>();
 
   const snapshot = (): SavedPrompt[] => {
@@ -183,18 +174,6 @@ export function createPromptStore(): PromptStore {
     hydrated = true;
     notify();
   };
-  const ensureUnownedCleaned = (): Promise<void> => {
-    if (!cleanupPromise) {
-      cleanupPromise = backgroundCommit({
-        type: PROMPT_COMMIT_TYPE, action: 'cleanup-unowned',
-      }).catch((error) => {
-        cleanupPromise = null;
-        throw error;
-      });
-    }
-    return cleanupPromise;
-  };
-
   if (isContextValid()) {
     try {
       chrome.storage.onChanged.addListener((changes, areaName) => {
@@ -203,8 +182,10 @@ export function createPromptStore(): PromptStore {
         if (next === undefined) publish([]);
         else if (isPromptList(next)) publish(next);
         else {
-          cleanupPromise = null;
-          void ensureUnownedCleaned().catch(() => undefined);
+          // Invalid storage must not be shown or silently rewritten.
+          cache = [];
+          hydrated = false;
+          notify();
         }
       });
     } catch { /* Context might already have been invalidated. */ }
@@ -218,12 +199,10 @@ export function createPromptStore(): PromptStore {
   async function getAll(): Promise<SavedPrompt[]> {
     const ownerId = getActiveConversationOwner();
     if (!ownerId) {
-      try { await ensureUnownedCleaned(); } catch { /* Never expose unbound data. */ }
       return [];
     }
     await writeQueue;
     try {
-      await ensureUnownedCleaned();
       const latest = await readFresh();
       if (!hydrated || !equalPromptLists(cache, latest)) publish(latest);
       return snapshot();
@@ -249,8 +228,7 @@ export function createPromptStore(): PromptStore {
         if (ownerId !== getActiveConversationOwner()) {
           throw new Error('ChatGPT account changed; prompts were not cleared');
         }
-        await ensureUnownedCleaned();
-        const latest = await readFresh();
+          const latest = await readFresh();
         if (ownerId !== getActiveConversationOwner()) {
           throw new Error('ChatGPT account changed; prompts were not cleared');
         }
@@ -258,8 +236,6 @@ export function createPromptStore(): PromptStore {
           type: PROMPT_COMMIT_TYPE, action: 'clear-account', ownerId,
           expected: latest.filter((prompt) => prompt.ownerId === ownerId),
         });
-        // Read back instead of publishing a snapshot that another tab may have
-        // changed immediately after this commit finished.
         publish(await readFresh().catch(() => latest.filter((prompt) => prompt.ownerId !== ownerId)));
       });
     },
@@ -270,11 +246,9 @@ export function createPromptStore(): PromptStore {
         if (ownerId !== getActiveConversationOwner()) {
           throw new Error('ChatGPT account changed; prompts were not saved');
         }
-        await ensureUnownedCleaned();
         let latest = await readFresh();
         let expected = latest.filter((prompt) => prompt.ownerId === ownerId);
         let nextOwned = transform(clone(expected));
-
         for (let attempt = 0; attempt < SAVE_ATTEMPTS; attempt += 1) {
           if (!isPromptList(nextOwned) || nextOwned.some((prompt) => prompt.ownerId !== ownerId)) {
             throw new Error('Invalid prompt update');
@@ -284,7 +258,6 @@ export function createPromptStore(): PromptStore {
           if (ownerId !== getActiveConversationOwner()) {
             throw new Error('ChatGPT account changed; prompts were not saved');
           }
-
           try {
             await backgroundCommit({
               type: PROMPT_COMMIT_TYPE, action: 'replace-account', ownerId,
@@ -297,9 +270,7 @@ export function createPromptStore(): PromptStore {
                 attempt === SAVE_ATTEMPTS - 1) throw error;
             latest = await readFresh();
             const freshOwned = latest.filter((prompt) => prompt.ownerId === ownerId);
-            if (hasOverlappingChanges(expected, nextOwned, freshOwned)) {
-              throw error; // Two tabs modified the same prompt; never silently overwrite.
-            }
+            if (hasOverlappingChanges(expected, nextOwned, freshOwned)) throw error;
             if (ownerId !== getActiveConversationOwner()) {
               throw new Error('ChatGPT account changed; prompts were not saved');
             }
@@ -307,6 +278,7 @@ export function createPromptStore(): PromptStore {
             expected = freshOwned;
           }
         }
+
       });
     },
     subscribe(listener: PromptsChangedListener): () => void {

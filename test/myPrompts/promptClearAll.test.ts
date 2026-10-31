@@ -6,7 +6,7 @@ import { createPromptUsageWriteCoordinator, PROMPT_USAGE_COMMIT_TYPE } from '@/f
 import { createSerialWriteQueue } from '@/features/storage/serialWriteQueue';
 import type { SavedPrompt } from '@/features/myPrompts/promptStore';
 
-const USAGE = 'lunaToc:promptUsageV1';
+const USAGE = 'lunatoc:promptUsage:v1';
 const prompt: SavedPrompt = { id: 'saved', ownerId: 'account-1', title: 'Saved', content: 'Text', createdAt: 1, updatedAt: 1 };
 const clone = <T>(x: T): T => JSON.parse(JSON.stringify(x)) as T;
 const clear = (expected: SavedPrompt[] = [prompt]) =>
@@ -104,7 +104,7 @@ describe('coordinated account prompt clearing', () => {
     const usage = createPromptUsageWriteCoordinator(box.storage, queue);
     const [cleared, recorded] = await Promise.all([
       writer.commit(clear()),
-      usage.commit({ type: PROMPT_USAGE_COMMIT_TYPE, action: 'record-use', promptId: 'saved' }),
+      usage.commit({ type: PROMPT_USAGE_COMMIT_TYPE, action: 'record-use', promptId: 'saved', ownerId: 'account-1' }),
     ]);
     expect(cleared).toEqual({ ok: true });
     // The usage operation is serialized; it cannot restore the deleted prompt.

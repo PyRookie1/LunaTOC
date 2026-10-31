@@ -3,8 +3,7 @@ import { createSettingsWriteCoordinator, SETTINGS_COMMIT_TYPE } from '@/features
 import { ACCOUNT_EMAILS_KEY, ACCOUNT_SETTINGS_KEY } from '@/features/storage/accountSettings';
 import { createSerialWriteQueue } from '@/features/storage/serialWriteQueue';
 
-const MIGRATION_KEY = 'chatToc:accountSettings:migrated:v1';
-const DEFAULT_THEME = { followChatGPT: true, manualTheme: 'dark' as const };
+const DEFAULT_THEME = { followChatGPT: false, manualTheme: 'light' as const };
 const DEFAULT_SIDEBAR = { layoutMode: 'overlay' as const, backgroundColor: 'default' as const, revealTint: false };
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
@@ -25,31 +24,19 @@ function backing(initial: Record<string, unknown> = {}) {
 }
 
 describe('account-scoped background settings writer', () => {
-  it('migrates legacy global preferences to every account already represented in local data', async () => {
-    const legacyTheme = { followChatGPT: false, manualTheme: 'light' as const };
-    const legacySidebar = { layoutMode: 'side-by-side' as const, backgroundColor: 'green' as const, revealTint: true };
-    const box = backing({
-      'chatToc:themeSettings': legacyTheme,
-      'chatToc:sidebarPreferences': legacySidebar,
-      'lumaToc:myPromptsV1': [{ ownerId: 'account-2' }],
-      'chatToc:aliases:v1:conversation-123': { ownerId: 'account-3', aliases: {} },
-    });
+  it('initializes a new account with default preferences', async () => {
+    const box = backing();
     const writer = createSettingsWriteCoordinator(box.storage, createSerialWriteQueue());
     expect(await writer.commit({
       type: SETTINGS_COMMIT_TYPE, action: 'register-account', ownerId: 'account-1',
     })).toEqual({ ok: true });
     expect(box.data[ACCOUNT_SETTINGS_KEY]).toEqual({
-      'account-1': { theme: legacyTheme, sidebar: legacySidebar },
-      'account-2': { theme: legacyTheme, sidebar: legacySidebar },
-      'account-3': { theme: legacyTheme, sidebar: legacySidebar },
+      'account-1': { theme: DEFAULT_THEME, sidebar: DEFAULT_SIDEBAR },
     });
-    expect(box.data[MIGRATION_KEY]).toBe(true);
-    expect(box.data['chatToc:themeSettings']).toBeUndefined();
-    expect(box.data['chatToc:sidebarPreferences']).toBeUndefined();
   });
 
   it('stores a verified account email separately without resetting preferences', async () => {
-    const box = backing({ [MIGRATION_KEY]: true, [ACCOUNT_SETTINGS_KEY]: {
+    const box = backing({ [ACCOUNT_SETTINGS_KEY]: {
       'account-1': {
         theme: { followChatGPT: false, manualTheme: 'light' },
         sidebar: { ...DEFAULT_SIDEBAR },
@@ -82,7 +69,7 @@ describe('account-scoped background settings writer', () => {
     const writer = createSettingsWriteCoordinator(box.storage);
     await writer.commit({ type: SETTINGS_COMMIT_TYPE, action: 'register-account', ownerId: 'account-1' });
     await writer.commit({ type: SETTINGS_COMMIT_TYPE, action: 'register-account', ownerId: 'account-2' });
-    const nextTheme = { followChatGPT: false, manualTheme: 'light' as const };
+    const nextTheme = { followChatGPT: false, manualTheme: 'dark' as const };
     expect(await writer.commit({
       type: SETTINGS_COMMIT_TYPE, action: 'theme', ownerId: 'account-1', settings: nextTheme,
     })).toEqual({ ok: true });

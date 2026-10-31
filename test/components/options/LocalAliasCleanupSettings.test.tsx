@@ -47,6 +47,12 @@ function findButton(partial: string): HTMLButtonElement {
 }
 
 describe('Options manual TOC alias cleanup controls', () => {
+  it('hides the entire section when there are no local aliases to clean', async () => {
+    mocked.list.mockResolvedValueOnce({ candidates: [], unreadable: 0 });
+    await show();
+    expect(host.querySelector('#alias-cleanup-heading')).toBeNull();
+  });
+
   it('requires backup acknowledgment and a second confirmation before deleting', async () => {
     await show();
     const cleanButton = findButton('确认清理');
@@ -62,6 +68,10 @@ describe('Options manual TOC alias cleanup controls', () => {
     await act(async () => { cleanButton.click(); });
     expect(mocked.clean).toHaveBeenCalledWith(selection);
     expect(host.textContent).toContain('已清理所选会话');
+    expect(backup.checked).toBe(false);
+    expect(findButton('确认清理').disabled).toBe(true);
+    await act(async () => { backup.click(); });
+    expect(findButton('确认清理').disabled).toBe(false);
   });
 
   it('keeps records visible and reports a background preview conflict', async () => {

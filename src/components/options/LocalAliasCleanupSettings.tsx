@@ -9,7 +9,7 @@ const PAGE_SIZE = 20;
 const errorText = (error: unknown): string =>
   error instanceof Error ? error.message : '未知错误';
 
-export function LocalAliasCleanupSettings(): React.JSX.Element {
+export function LocalAliasCleanupSettings(): React.JSX.Element | null {
   const [inventory, setInventory] = useState<AliasCleanupInventory | null>(null);
   const [shown, setShown] = useState(PAGE_SIZE);
   const [hasBackup, setHasBackup] = useState(false);
@@ -38,7 +38,7 @@ export function LocalAliasCleanupSettings(): React.JSX.Element {
     if (!window.confirm(
       '仅清理浏览器本地目录别名，不会删除 ChatGPT 会话。\n' +
       '会话 ID：' + item.routeKey + '\n' +
-      '关联账号：' + (item.record.ownerId ?? '旧记录：未绑定账号') + '\n' +
+      '关联账号：' + (item.record.ownerId) + '\n' +
       '别名数量：' + item.aliasCount + '\n\n' +
       '确认已保存可恢复的本地备份，并确定这是不再需要的会话？'
     )) return;
@@ -47,6 +47,9 @@ export function LocalAliasCleanupSettings(): React.JSX.Element {
     setStatus('');
     try {
       await requestManualTocAliasCleanup(item);
+      // The backup acknowledgment authorizes one destructive operation only.
+      // Reset it even if the subsequent inventory refresh fails.
+      setHasBackup(false);
       await refresh();
       setStatus('已清理所选会话的本地目录别名。旧标签页无法重新写入；可通过备份恢复。');
     } catch (cause) {
@@ -56,6 +59,10 @@ export function LocalAliasCleanupSettings(): React.JSX.Element {
       setBusy(false);
     }
   };
+
+  // Keep cleanup accessible when aliases or unreadable records remain.
+  if (!inventory && !error) return null;
+  if (inventory?.candidates.length === 0 && inventory.unreadable === 0 && !status && !error) return null;
 
   return (
     <section className="settings-section" aria-labelledby="alias-cleanup-heading">
@@ -101,7 +108,7 @@ export function LocalAliasCleanupSettings(): React.JSX.Element {
                       <a href={`https://chatgpt.com/c/${encodeURIComponent(item.routeKey)}`}
                         target="_blank" rel="noopener noreferrer">{item.routeKey}</a>
                       {' · '}别名 {item.aliasCount} 条
-                      {' · '}账号 {item.record.ownerId ?? '未绑定（旧数据）'}
+                      {' · '}账号 {item.record.ownerId}
                     </p>
                     <button className="settings-backup-button" type="button"
                       disabled={busy || !hasBackup} onClick={() => void clean(item)}>

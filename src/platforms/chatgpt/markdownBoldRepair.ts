@@ -122,12 +122,18 @@ export function parseUnrenderedBoldMarkdown(
 ): MarkdownBoldSegment[] | null {
   const segments: MarkdownBoldSegment[] = [];
   const codeSpanEnds = findAllCodeSpanEnds(text);
+  const mathSpanEnds = indexMathSpanEnds(text);
   let plainStart = 0;
   let index = 0;
   let openingIndex = -1;
   let foundBold = false;
 
   while (index < text.length) {
+    const mathEnd = mathSpanEnds.get(index);
+    if (mathEnd !== undefined) {
+      index = mathEnd;
+      continue;
+    }
     if (text[index] === '\\') {
       index += Math.min(2, text.length - index);
       continue;
@@ -302,6 +308,65 @@ function isWithinOwnedMarkdown(node: Node, owner: HTMLElement): boolean {
   return false;
 }
 
+/**
+ * Keep paired inline or display math delimiters opaque to bold repair.
+ * Prose bold markers in the same text node can still be repaired.
+ */
+/**
+ * Find math delimiters once. Sorted lists and binary lookups avoid scanning
+ * an entire unfinished expression for every repeated '$' or '\\(' opener.
+ */
+function indexMathSpanEnds(text: string): Map<number, number> {
+  const inlineClosers: number[] = [];
+  const displayClosers: number[] = [];
+  const parenClosers: number[] = [];
+  const bracketClosers: number[] = [];
+  const linebreaks: number[] = [];
+  for (let index = 0; index < text.length; index += 1) {
+    if (text[index] === '\n') linebreaks.push(index);
+    if (text.startsWith('$$', index)) displayClosers.push(index);
+    if (text[index] === '$' && !isEscapedAt(text, index) &&
+        !isWhitespace(text[index - 1])) inlineClosers.push(index);
+    if (text.startsWith('\\)', index)) parenClosers.push(index);
+    if (text.startsWith('\\]', index)) bracketClosers.push(index);
+  }
+
+  const firstAfter = (indices: number[], minimum: number): number => {
+    let low = 0;
+    let high = indices.length;
+    while (low < high) {
+      const mid = (low + high) >>> 1;
+      if (indices[mid] < minimum) low = mid + 1;
+      else high = mid;
+    }
+    return low < indices.length ? indices[low] : -1;
+  };
+
+  const spans = new Map<number, number>();
+  for (let index = 0; index < text.length; index += 1) {
+    if (text.startsWith('\\(', index) || text.startsWith('\\[', index)) {
+      if (isEscapedAt(text, index)) continue;
+      const closes = text[index + 1] === '(' ? parenClosers : bracketClosers;
+      const end = firstAfter(closes, index + 3);
+      if (end !== -1) spans.set(index, end + 2);
+      continue;
+    }
+    if (text[index] !== '$' || isEscapedAt(text, index)) continue;
+    if (text.startsWith('$$', index)) {
+      const end = firstAfter(displayClosers, index + 2);
+      if (end > index + 2) spans.set(index, end + 2);
+      continue;
+    }
+    if (text[index + 1] === '$' || isWhitespace(text[index + 1])) continue;
+    const end = firstAfter(inlineClosers, index + 2);
+    const linebreak = firstAfter(linebreaks, index + 1);
+    if (end !== -1 && (linebreak === -1 || end < linebreak)) {
+      spans.set(index, end + 1);
+    }
+  }
+  return spans;
+}
+
 function isValidBoldContent(content: string): boolean {
   return (
     content.length > 0 &&
@@ -371,7 +436,5 @@ function containsCodeSpan(text: string): boolean {
 }
 
 function containsMathSyntax(text: string): boolean {
-  return /\$\$[\s\S]+?\$\$|\$(?!\s)[^$\n]+?\$|\\\([\s\S]+?\\\)|\\\[[\s\S]+?\\\]/.test(
-    text
-  );
+  return indexMathSpanEnds(text).size > 0;
 }

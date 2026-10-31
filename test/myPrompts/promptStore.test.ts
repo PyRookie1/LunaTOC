@@ -142,11 +142,11 @@ describe('single-tab My Prompts storage', () => {
   });
 
   it('clears prompts and usage together after confirmation', async () => {
-    data['lunaToc:promptUsageV1'] = { saved: { usageCount: 4, lastUsedAt: 1 } };
+    data['lunatoc:promptUsage:v1'] = { saved: { usageCount: 4, lastUsedAt: 1 } };
     const store = createPromptStore();
     await store.clearAll();
     expect(data[PROMPT_STORAGE_KEY]).toEqual([]);
-    expect(data['lunaToc:promptUsageV1']).toEqual({});
+    expect(data['lunatoc:promptUsage:v1']).toEqual({});
     expect(messages).toHaveBeenCalledWith(
       { type: PROMPT_COMMIT_TYPE, action: 'clear-account', ownerId: 'account-1', expected: [original] }, expect.any(Function)
     );
@@ -154,16 +154,27 @@ describe('single-tab My Prompts storage', () => {
 
   it('isolates prompt lists by verified account and preserves other accounts on edits', async () => {
     const otherAccount = { ...make('private-other'), ownerId: 'account-2' };
-    const unowned = { id: 'legacy', title: 'Legacy', content: 'Delete me', createdAt: 1, updatedAt: 1 };
-    const invalidOwner = { ...make('bad-owner'), ownerId: 123 };
-    data[PROMPT_STORAGE_KEY] = [original, otherAccount, unowned, invalidOwner];
+    data[PROMPT_STORAGE_KEY] = [original, otherAccount];
     const store = createPromptStore();
     expect((await store.getAll()).map((prompt) => prompt.id)).toEqual(['saved']);
-    expect(data[PROMPT_STORAGE_KEY]).toEqual([original, otherAccount]);
     await store.update((prompts) => [...prompts, make('added')]);
     expect(data[PROMPT_STORAGE_KEY]).toEqual([otherAccount, original, make('added')]);
     setActiveConversationOwner('account-2');
     expect((await store.getAll()).map((prompt) => prompt.id)).toEqual(['private-other']);
+    setActiveConversationOwner(null);
+    expect(await store.getAll()).toEqual([]);
+    expect(data[PROMPT_STORAGE_KEY]).toEqual([otherAccount, original, make('added')]);
+  });
+
+  it('rejects unowned prompt records without deleting or adopting them', async () => {
+    const unowned = { id: 'unknown', title: 'Unowned', content: 'Private', createdAt: 1, updatedAt: 1 };
+    data[PROMPT_STORAGE_KEY] = [original, unowned];
+    const store = createPromptStore();
+    await expect(store.getAll()).rejects.toThrow('invalid data');
+    await expect(store.update((prompts) => [...prompts, make('new')]))
+      .rejects.toThrow('invalid data');
+    expect(data[PROMPT_STORAGE_KEY]).toEqual([original, unowned]);
+    expect(writeSpy).not.toHaveBeenCalled();
   });
 
   it('reports a background interruption without pretending to save', async () => {
@@ -176,34 +187,33 @@ describe('single-tab My Prompts storage', () => {
     await store.update((prompts) => [...prompts, make('new')]);
     expect((await store.getAll()).length).toBe(2);
   });
-  it('automatically combines simultaneous additions from different tabs', async () => {
-    const tabA = createPromptStore();
-    const tabB = createPromptStore();
+  it('merges independent additions made by two tabs at once', async () => {
+    const a = createPromptStore();
+    const b = createPromptStore();
     await Promise.all([
-      tabA.update((prompts) => [...prompts, make('from-a')]),
-      tabB.update((prompts) => [...prompts, make('from-b')]),
+      a.update((prompts) => [...prompts, make('from-a')]),
+      b.update((prompts) => [...prompts, make('from-b')]),
     ]);
     expect((data[PROMPT_STORAGE_KEY] as SavedPrompt[]).map((item) => item.id).sort())
       .toEqual(['from-a', 'from-b', 'saved']);
   });
 
-  it('preserves a concurrent new prompt when another tab deletes a different one', async () => {
-    const tabA = createPromptStore();
-    const tabB = createPromptStore();
+  it('preserves a second tab addition while deleting a different prompt', async () => {
+    const a = createPromptStore();
+    const b = createPromptStore();
     await Promise.all([
-      tabA.update((prompts) => prompts.filter((item) => item.id !== 'saved')),
-      tabB.update((prompts) => [...prompts, make('from-b')]),
+      a.update((prompts) => prompts.filter((item) => item.id !== 'saved')),
+      b.update((prompts) => [...prompts, make('from-b')]),
     ]);
-    expect((data[PROMPT_STORAGE_KEY] as SavedPrompt[]).map((item) => item.id))
-      .toEqual(['from-b']);
+    expect((data[PROMPT_STORAGE_KEY] as SavedPrompt[]).map((item) => item.id)).toEqual(['from-b']);
   });
 
-  it('does not overwrite a prompt edited by another tab at the same time', async () => {
-    const tabA = createPromptStore();
-    const tabB = createPromptStore();
+  it('refuses two simultaneous edits to the same prompt', async () => {
+    const a = createPromptStore();
+    const b = createPromptStore();
     const results = await Promise.allSettled([
-      tabA.update((prompts) => prompts.map((item) => ({ ...item, title: 'From A' }))),
-      tabB.update((prompts) => prompts.map((item) => ({ ...item, title: 'From B' }))),
+      a.update((prompts) => prompts.map((item) => ({ ...item, title: 'From A' }))),
+      b.update((prompts) => prompts.map((item) => ({ ...item, title: 'From B' }))),
     ]);
     expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
     expect(['From A', 'From B']).toContain((data[PROMPT_STORAGE_KEY] as SavedPrompt[])[0].title);

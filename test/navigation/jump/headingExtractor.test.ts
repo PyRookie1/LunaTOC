@@ -132,6 +132,25 @@ describe('headingExtractor', () => {
       ]);
   });
 
+  it('excludes headings inside CSS-hidden ancestor wrappers', () => {
+    const user = renderUserMessage('prompt-css-hidden');
+    const assistant = renderAssistantMessage('answer-css-hidden', []);
+    assistant.innerHTML = [
+      '<section style="display:none"><h1>Hidden wrapper title</h1></section>',
+      '<div style="visibility:hidden"><h2>Invisible group title</h2></div>',
+      '<h3>Visible first</h3>',
+      '<h5>Visible second</h5>',
+      '<h6>Visible third</h6>',
+    ].join('');
+    document.body.append(user, assistant);
+    expect(getPromptOutline(0, 'prompt-css-hidden').map(({ headingLevel, level, text }) =>
+      ({ headingLevel, level, text }))).toEqual([
+      { headingLevel: 3, level: 1, text: 'Visible first' },
+      { headingLevel: 5, level: 2, text: 'Visible second' },
+      { headingLevel: 6, level: 3, text: 'Visible third' },
+    ]);
+  });
+
   it('returns empty array when user message or assistant message is missing', () => {
     const outline = getPromptOutline(0, 'nonexistent-prompt');
     expect(outline).toEqual([]);

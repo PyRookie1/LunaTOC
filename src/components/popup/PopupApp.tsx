@@ -2,24 +2,19 @@
 import { Info, Settings, TriangleAlert } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import {
-  readResolvedChatGPTTheme,
-  subscribeResolvedChatGPTTheme,
-} from '@/features/theme/chatGptTheme';
-import {
   readThemeSettings,
   subscribeThemeSettings,
   writeThemeSettings,
-  type ResolvedTheme,
   type ThemeSettings as ThemeSettingsValue,
 } from '@/features/theme/themeSettings';
 import { resolveAccountSettingsOwner } from '@/features/storage/accountSettings';
 import { ThemeSettings } from './ThemeSettings';
 import { parseToolbarWarning, toolbarWarningKey, type ToolbarCompatibilityWarning } from '@/features/contractAlert/toolbarWarning';
-const PROJECT_URL = 'https://github.com/PyRookie1/luna-toc-sc';
+const PROJECT_URL = 'https://github.com/PyRookie1/LunaTOC';
 
 const INITIAL_SETTINGS: ThemeSettingsValue = {
-  followChatGPT: true,
-  manualTheme: 'dark',
+  followChatGPT: false,
+  manualTheme: 'light',
 };
 
 /** Displays theme controls and the existing usage guidance. */
@@ -27,7 +22,7 @@ export function PopupApp(): React.JSX.Element {
   const [settings, setSettings] = useState(INITIAL_SETTINGS);
   const [settingsOwnerId, setSettingsOwnerId] = useState<string | null>(null);
   const [settingsError, setSettingsError] = useState('');
-  const [chatGPTTheme, setChatGPTTheme] = useState<ResolvedTheme>('dark');
+  const [themeReady, setThemeReady] = useState(false);
   const [compatibilityWarning, setCompatibilityWarning] =
     useState<ToolbarCompatibilityWarning | null>(null);
 
@@ -62,42 +57,41 @@ export function PopupApp(): React.JSX.Element {
   useEffect(() => {
     let active = true;
     let unsubscribeSettings = () => {};
-    let unsubscribeResolvedTheme = () => {};
     const initialize = async (): Promise<void> => {
       const ownerId = await resolveAccountSettingsOwner();
       if (!active) return;
       setSettingsOwnerId(ownerId);
       if (!ownerId) {
         setSettingsError('请先打开并登录 ChatGPT；主题偏好按账号保存。');
+        setThemeReady(true);
         return;
       }
-      const [savedSettings, resolvedTheme] = await Promise.all([
-        readThemeSettings(ownerId), readResolvedChatGPTTheme(),
-      ]);
+      const savedSettings = await readThemeSettings(ownerId);
       if (!active) return;
       setSettings(savedSettings);
-      setChatGPTTheme(resolvedTheme);
+      setThemeReady(true);
       unsubscribeSettings = subscribeThemeSettings(setSettings, ownerId);
-      unsubscribeResolvedTheme = subscribeResolvedChatGPTTheme(setChatGPTTheme);
     };
     void initialize().catch((error: unknown) => {
-      if (active) setSettingsError(error instanceof Error ? error.message : '无法读取主题设置。');
+      if (active) {
+        setSettingsError(error instanceof Error ? error.message : '无法读取主题设置。');
+        // Avoid a permanently hidden popup if settings cannot be read.
+        setThemeReady(true);
+      }
     });
     return () => {
       active = false;
       unsubscribeSettings();
-      unsubscribeResolvedTheme();
     };
   }, []);
 
-  const resolvedTheme = settings.followChatGPT
-    ? chatGPTTheme
-    : settings.manualTheme;
+  const resolvedTheme = settings.manualTheme;
 
   useEffect(() => {
+    if (!themeReady) return;
     document.documentElement.dataset.theme = resolvedTheme;
     document.body.dataset.theme = resolvedTheme;
-  }, [resolvedTheme]);
+  }, [resolvedTheme, themeReady]);
 
   const updateSettings = (nextSettings: ThemeSettingsValue): void => {
     if (!settingsOwnerId) return;
@@ -118,7 +112,7 @@ export function PopupApp(): React.JSX.Element {
             ChatGPT 兼容性异常
           </div>
           <p className="mt-2 mb-1 text-xs leading-relaxed">
-            检测到 ChatGPT 页面或接口变化，当前扩展可能无法正常工作。请升级 LunaTOC-SC 至最新版，并刷新 ChatGPT。
+            检测到 ChatGPT 页面或接口变化，当前扩展可能无法正常工作。请升级 LunaTOC 至最新版，并刷新 ChatGPT。
           </p>
           <p className="mt-1 mb-2 text-[11px] leading-relaxed opacity-80">
             {compatibilityWarning.detail}
@@ -177,7 +171,7 @@ export function PopupApp(): React.JSX.Element {
       <footer className="mt-2.5 flex items-center justify-between border-t border-(--p-toggle-border) pt-2">
         <button
           type="button"
-          title="打开 LunaTOC-SC 设置"
+          title="打开 LunaTOC 设置"
           className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border-0 bg-transparent px-1.5 py-1 text-[10px] font-medium text-(--p-toggle-text) outline-none transition duration-150 hover:bg-(--p-toggle-bg) hover:text-(--p-accent) focus-visible:ring-2 focus-visible:ring-(--p-accent)"
           onClick={() => void chrome.runtime.openOptionsPage()}
         >
@@ -189,7 +183,7 @@ export function PopupApp(): React.JSX.Element {
           target="_blank"
           rel="noopener noreferrer"
           className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[10px] font-medium text-(--p-toggle-text) no-underline hover:text-(--p-accent) focus-visible:ring-2 focus-visible:ring-(--p-accent)"
-          title="打开 LunaTOC-SC 的 GitHub 项目页面"
+          title="打开 LunaTOC 的 GitHub 项目页面"
         >
           项目源码
         </a>

@@ -3,8 +3,8 @@ import type { ThemeSettings } from '@/features/theme/themeSettings';
 import type { SidebarPreferences } from '@/features/sidebar/sidebarPreferences';
 import { getActiveConversationOwner } from '@/navigation/lifecycle/conversationOwner';
 
-export const ACCOUNT_SETTINGS_KEY = 'chatToc:accountSettings:v1';
-export const ACCOUNT_EMAILS_KEY = 'chatToc:accountEmails:v1';
+export const ACCOUNT_SETTINGS_KEY = 'lunatoc:accountSettings:v1';
+export const ACCOUNT_EMAILS_KEY = 'lunatoc:accountEmails:v1';
 export const GET_ACTIVE_ACCOUNT_OWNER_MESSAGE = 'LUNA_TOC_GET_ACTIVE_ACCOUNT_OWNER_V1';
 
 export interface AccountSettingsRecord {

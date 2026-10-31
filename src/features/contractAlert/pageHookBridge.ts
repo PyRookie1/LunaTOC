@@ -156,8 +156,7 @@ export function startChatGptConfigSync(
   ): void => {
     if (areaName !== 'local') return;
     const expectedKey = platformRuntimeConfigKey(platformId);
-    const legacyKey = 'chatGptRuntimeConfig';
-    if (!(expectedKey in changes) && !(legacyKey in changes)) return;
+    if (!(expectedKey in changes)) return;
     postUpdate();
   };
 

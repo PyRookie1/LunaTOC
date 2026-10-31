@@ -56,33 +56,53 @@ describe('parseUnrenderedBoldMarkdown', () => {
     expect(parseUnrenderedBoldMarkdown('**x = \\(a+b\\)**')).toBeNull();
   });
 
+  it('keeps inline and display math literal while repairing neighboring prose', () => {
+    expect(parseUnrenderedBoldMarkdown('$**formula**$ and **prose**')).toEqual([
+      { text: '$**formula**$ and ', bold: false },
+      { text: 'prose', bold: true },
+    ]);
+    expect(parseUnrenderedBoldMarkdown('$$**display**$$ **safe**')).toEqual([
+      { text: '$$**display**$$ ', bold: false },
+      { text: 'safe', bold: true },
+    ]);
+    expect(parseUnrenderedBoldMarkdown('\\(**inline**\\) **visible**')).toEqual([
+      { text: '\\(**inline**\\) ', bold: false },
+      { text: 'visible', bold: true },
+    ]);
+    expect(parseUnrenderedBoldMarkdown('\\[**display**\\] **visible**')).toEqual([
+      { text: '\\[**display**\\] ', bold: false },
+      { text: 'visible', bold: true },
+    ]);
+  });
+
   it('does not interpret malformed nested double-star markers as bold', () => {
     expect(parseUnrenderedBoldMarkdown('**outer ** inner**')).toBeNull();
   });
-
-  it('scans many unmatched delimiters without repeatedly searching the remaining text', () => {
+  it('handles thousands of unmatched bold markers promptly', () => {
     const malformed = '**x '.repeat(20_000);
     const start = performance.now();
     expect(parseUnrenderedBoldMarkdown(malformed)).toBeNull();
     expect(performance.now() - start).toBeLessThan(2_000);
   });
 
-  it('can recover a valid pair after an invalid outer opening marker', () => {
+  it('finds valid bold after a malformed opening marker', () => {
     expect(parseUnrenderedBoldMarkdown('**outer **inner**')).toEqual([
       { text: '**outer ', bold: false },
       { text: 'inner', bold: true },
     ]);
   });
 
-  it('does not repeatedly rescan unmatched backtick runs', () => {
-    const prefix = Array.from({ length: 500 }, (_, index) => '`'.repeat(index + 1)).join(' ');
+  it('bounds unmatched backticks and math openers', () => {
+    const ticks = Array.from({ length: 500 }, (_, index) => '`'.repeat(index + 1)).join(' ');
+    const brokenMath = '$x '.repeat(5_000);
     const start = performance.now();
-    expect(parseUnrenderedBoldMarkdown(prefix + ' **valid**')).toEqual([
-      { text: prefix + ' ', bold: false },
+    expect(parseUnrenderedBoldMarkdown(ticks + brokenMath + ' **valid**')).toEqual([
+      { text: ticks + brokenMath + ' ', bold: false },
       { text: 'valid', bold: true },
     ]);
     expect(performance.now() - start).toBeLessThan(2_000);
   });
+
 });
 
 describe('startMarkdownBoldRepair', () => {
@@ -132,6 +152,15 @@ describe('startMarkdownBoldRepair', () => {
     expect(assistant.querySelector('pre')?.textContent).toBe('**code block**');
     expect(assistant.querySelector('.katex')?.textContent).toBe('**math content**');
     expect(assistant.querySelectorAll('p')[1]?.textContent).toBe('**x = $a$**');
+  });
+
+  it('preserves math text and changes only adjacent complete bold pairs in the DOM', () => {
+    const assistant = mountAssistant('<p>$**math**$ then **readable** and $$**equation**$$</p>');
+    stopRepair = startMarkdownBoldRepair();
+    expect(assistant.querySelector('p')?.textContent)
+      .toBe('$**math**$ then readable and $$**equation**$$');
+    expect(Array.from(assistant.querySelectorAll('strong')).map((node) => node.textContent))
+      .toEqual(['readable']);
   });
 
   it('does not modify user text or ordinary page text outside assistant Markdown', () => {

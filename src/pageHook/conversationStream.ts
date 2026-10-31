@@ -1,3 +1,4 @@
+import { postPageHookMessage } from './messageTransport';
 /**
  * Reads the cloned send-message SSE response so newly submitted user prompts
  * can appear in the navigator before the next full conversation fetch
@@ -52,7 +53,7 @@ export function extractOutgoingMessage(
           (typeof data.parentMessageId === 'string' && data.parentMessageId) ||
           null;
 
-        window.postMessage(
+        postPageHookMessage(
           {
             type: messageType,
             routeKey,
@@ -63,8 +64,7 @@ export function extractOutgoingMessage(
               createTime: userMessage.create_time || Date.now(),
               parentMessageId,
             },
-          },
-          '*'
+          }
         );
 
         return { messageId: userMessage.id, parentMessageId };
@@ -154,7 +154,7 @@ function processStreamLine(
     if (data.type === 'input_message') {
       const message = data.input_message;
 
-      window.postMessage(
+      postPageHookMessage(
         {
           type: messageType,
           routeKey,
@@ -164,8 +164,7 @@ function processStreamLine(
             metadata: message.metadata,
             createTime: message.create_time || Date.now(),
           },
-        },
-        '*'
+        }
       );
     }
   } catch {}

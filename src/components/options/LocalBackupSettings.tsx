@@ -33,7 +33,7 @@ export function LocalBackupSettings(): React.JSX.Element {
       ));
       const link = document.createElement('a');
       link.href = url;
-      link.download = `luna-toc-backup-${backup.exportedAt.slice(0, 10)}.json`;
+      link.download = `lunatoc-backup-${backup.exportedAt.slice(0, 10)}.json`;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -73,7 +73,7 @@ export function LocalBackupSettings(): React.JSX.Element {
   const restore = async (): Promise<void> => {
     if (!preview || busy) return;
     const action = mode === 'replace' ? '覆盖本地提示词、设置和别名' : '合并提示词与别名，并采用备份中的设置';
-    if (!window.confirm(`确认${action}？新版扩展会协调本地写入；恢复前请刷新其他 ChatGPT 标签页，避免旧版本脚本继续写入。`)) return;
+    if (!window.confirm(`确认${action}？LunaTOC 会协调本地写入；恢复前请刷新其他已打开的 ChatGPT 标签页，避免旧页面缓存覆盖恢复结果。`)) return;
     setBusy(true);
     show('');
     try {
@@ -93,23 +93,19 @@ export function LocalBackupSettings(): React.JSX.Element {
     <section className="settings-section" aria-labelledby="backup-heading">
       <div className="settings-section-heading">
         <h2 id="backup-heading">本地数据备份与恢复</h2>
-        <p>备份提示词、使用统计、自定义目录名称、主题及侧边栏偏好。只在本机处理文件，不上传到服务器。</p>
       </div>
       <div className="settings-card">
         <div className="settings-backup-block">
-          <strong className="settings-setting-title">导出完整备份</strong>
-          <p className="settings-backup-description">生成带版本号的 JSON 文件；原有的 Markdown 提示词导入导出仍可继续使用。</p>
           <button type="button" className="settings-backup-button" onClick={() => void exportBackup()} disabled={busy}>
-            导出本地数据
+            备份数据
           </button>
         </div>
         <div className="settings-divider" />
         <div className="settings-backup-block">
-          <strong className="settings-setting-title">从备份恢复</strong>
-          <p className="settings-backup-description">先选择文件并预览，不会立即写入。文件可能包含私人提示词、账号标识及会话编号，请勿公开分享。</p>
-          <label className="settings-backup-upload">
-            选择 JSON 备份文件
-            <input type="file" accept=".json,application/json" onChange={(event) => void selectFile(event)} disabled={busy} />
+          <label className="settings-backup-button settings-backup-import">
+            导入备份
+            <input type="file" aria-label="导入备份" accept=".json,application/json"
+              onChange={(event) => void selectFile(event)} disabled={busy} />
           </label>
           {preview && summary && (
             <div className="settings-backup-preview" aria-label="恢复数据预览">

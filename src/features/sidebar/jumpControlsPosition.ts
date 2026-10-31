@@ -33,8 +33,6 @@ export function initializeJumpControlsPosition(sidebar: HTMLElement): () => void
     const center = (sidebar.clientHeight || window.innerHeight) / 2;
     placeJumpControlsAtPointer(sidebar, lastPointerBySidebar.get(sidebar) ?? center);
   };
-  // Remove the retired drag-position preference once.
-  try { sessionStorage.removeItem('chatToc:jumpControlsBottom'); } catch {}
   onResize();
   window.addEventListener('resize', onResize);
   return () => { window.removeEventListener('resize', onResize); };

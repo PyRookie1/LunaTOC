@@ -6,9 +6,9 @@ export function setLunaTocTheme(theme: ResolvedTheme): void {
   document.documentElement.dataset.lunaTocTheme = theme;
 }
 
-/** Returns LunaTOC's theme marker, defaulting to dark before initialization. */
+/** Returns LunaTOC's theme marker, defaulting to light before initialization. */
 export function getLunaTocTheme(
   root: HTMLElement = document.documentElement
 ): ResolvedTheme {
-  return root.dataset.lunaTocTheme === 'light' ? 'light' : 'dark';
+  return root.dataset.lunaTocTheme === 'dark' ? 'dark' : 'light';
 }

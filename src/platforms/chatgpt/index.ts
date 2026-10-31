@@ -54,7 +54,6 @@ import {
   observeVisibleUserMessages as observeChatGptVisibleUserMessages,
   getJumpTargetElement as getChatGptJumpTargetElement,
 } from './nativePromptNavigation';
-import { getResolvedTheme, observeTheme } from './theme';
 import {
   CHATGPT_CONTRACT_TABLE,
   resolveChatGptContractValue,
@@ -133,9 +132,7 @@ export const chatGptPlatform: Platform = {
     getConversationLinkSelector,
   },
   myPrompts: {
-    // ChatGPT's 2026 composer rewrite replaced the old
-    // `<textarea id="prompt-textarea">` with a contenteditable ProseMirror
-    // div. The autocomplete consumer reads this selector at runtime.
+    // Read the active ChatGPT contenteditable composer at runtime.
     composerTextareaSelector: '.ProseMirror[contenteditable="true"]',
   },
   config: {
@@ -169,9 +166,5 @@ export const chatGptPlatform: Platform = {
     logEvent: logChatGptNavigationEvent,
     isJumpVizDebugEnabled,
   },
-  runtimeConfigKey: 'luna:chatgpt:runtimeConfig',
-  theme: {
-    getResolvedTheme,
-    observe: observeTheme,
-  },
+  runtimeConfigKey: 'lunatoc:chatgpt:runtimeConfig:v1',
 };

@@ -3,6 +3,7 @@
  * prompt tracking for the LunaTOC sidebar.
  */
 import { createConversationStore } from './state/conversationStore';
+import { subscribeTrustedPageHookMessage } from './pageHookMessageTransport';
 import { createActivePromptTracker } from './tracking/activePromptTracker';
 import {
   createTocListRenderer,
@@ -573,7 +574,7 @@ export const navigatorController = (() => {
 
   function listenForRouteChanges(): void {
     window.addEventListener('popstate', syncRouteState);
-    window.addEventListener('message', (event) => {
+    subscribeTrustedPageHookMessage((event) => {
       if (event.source !== window) return;
       if (
         event.data?.type ===
@@ -601,7 +602,9 @@ export const navigatorController = (() => {
   }
 
   function listenForConversationData(): void {
-    window.addEventListener('message', (event) => {
+    // Only MessagePort-delivered events may update the conversation store.
+    // Page-authored window.postMessage messages are ignored.
+    subscribeTrustedPageHookMessage((event) => {
       if (event.source !== window) return;
       syncRouteState();
 

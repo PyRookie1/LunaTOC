@@ -10,7 +10,7 @@ import {join,resolve} from 'node:path';
 import {chromium} from 'playwright';
 
 const dist=resolve('dist');
-const conversationId='luna-stage-9-e2e';
+const conversationId='lunatoc-e2e';
 const url='https://chatgpt.com/c/'+conversationId;
 function createHtml(messageCount=2){
  const messages=Array.from({length:messageCount},(_,index)=>{const n=index+1;const question=n===1?'第一条测试问题':n===2?'第二条测试问题':`第${n}条测试问题`;return `<article data-turn="user" data-testid="conversation-turn-${n}" data-message-id="user-${n}" data-chatgpt-search-unit-key="turn-${n}:user" data-chatgpt-search-message-ids="user-${n}"><div data-message-author-role="user">${question}</div></article><article data-turn="assistant" data-message-id="answer-${n}" data-chatgpt-search-unit-key="turn-${n}:assistant" data-chatgpt-search-message-ids="answer-${n}"><h2>回答${n}</h2></article>`;}).join('');
@@ -61,10 +61,10 @@ async function installFixture(context){
     const p=new URL(route.request().url()).pathname;
     if(route.request().isNavigationRequest()){
       const path=new URL(route.request().url()).pathname;
-       await route.fulfill({status:200,contentType:'text/html; charset=utf-8',body:path.includes('luna-stage-10-large-e2e')?largeHtml:path.includes('luna-stage-10-virtual-e2e')?virtualHtml:html});
+       await route.fulfill({status:200,contentType:'text/html; charset=utf-8',body:path.includes('lunatoc-large-e2e')?largeHtml:path.includes('lunatoc-virtual-e2e')?virtualHtml:html});
     }else if(/^\/backend-api\/conversations\/[^/]+$/.test(p)){
       const id=p.split('/').pop();
-       await route.fulfill({status:200,contentType:'application/json',body:id.startsWith('luna-stage-10-')?largePayload:payload});
+       await route.fulfill({status:200,contentType:'application/json',body:(id.startsWith('lunatoc-large-')||id.startsWith('lunatoc-virtual-'))?largePayload:payload});
     }else if(p==='/api/auth/session'){
       await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({user:{id:fixtureOwner}})});
     }else if(p==='/backend-api/me'||p==='/backend-api/accounts/check'){
@@ -116,13 +116,50 @@ test('Chromium MV3: TOC, search, layout, SPA and failure paths',{timeout:150000}
       assert.match(await page.locator('#navigator-list').innerText(),/第一条测试问题/);
       assert.match(await page.locator('#navigator-list').innerText(),/第二条测试问题/);
       assert.equal(await page.locator('#native-nav').count(),1);
-      await page.waitForFunction(() => document.documentElement.hasAttribute('data-luna-toc-theme'));
+      await page.waitForFunction(() => document.documentElement.dataset.lunaTocTheme === 'light');
       assert.equal(await page.evaluate(() => document.documentElement.hasAttribute('data-theme')), false);
+      // The host's dark class must no longer affect LunaTOC.
       await page.evaluate(() => document.documentElement.classList.add('dark'));
-      await page.waitForFunction(() => document.documentElement.dataset.lunaTocTheme === 'dark');
+      assert.equal(await page.evaluate(() => document.documentElement.dataset.lunaTocTheme), 'light');
       assert.equal(await page.evaluate(() => document.documentElement.hasAttribute('data-theme')), false);
       await page.evaluate(() => document.documentElement.classList.remove('dark'));
-      await page.waitForFunction(() => document.documentElement.dataset.lunaTocTheme === 'light');
+      assert.equal(await page.evaluate(() => document.documentElement.dataset.lunaTocTheme), 'light');
+    });
+
+    await t.test('saved-prompt editor and suggestions use a separate closed shadow root',async()=>{
+      const result=await page.evaluate(()=>{
+        const publicHost=document.getElementById('luna-toc-react-host');
+        const privateHost=document.getElementById('luna-toc-private-react-host');
+        return {
+          publicMenuMounted: Boolean(publicHost?.shadowRoot),
+          privateHostMounted: Boolean(privateHost),
+          privateTreeAccessible: privateHost ? privateHost.shadowRoot !== null : true,
+        };
+      });
+      assert.equal(result.publicMenuMounted,true);
+      assert.equal(result.privateHostMounted,true);
+      assert.equal(result.privateTreeAccessible,false);
+    });
+
+    await t.test('same-origin page script cannot forge the conversation TOC',async()=>{
+      const before=await page.locator('#navigator-list').innerText();
+      await page.evaluate(id=>{
+        window.postMessage({
+          type:'CHATGPT_CONVERSATION_DATA',
+          routeKey:id,
+          payload:{messages:[
+            {id:'forged-prompt',author:{role:'user'},content:{parts:['FORGED-PAGE-TOC-ENTRY']},create_time:999999},
+          ]},
+        },location.origin);
+        window.postMessage({
+          type:'CHATGPT_NEW_USER_MESSAGE',
+          routeKey:id,
+          payload:{id:'forged-user',author:{role:'user'},content:{parts:['FORGED-PAGE-TOC-ENTRY']},createTime:999999},
+        },location.origin);
+      },conversationId);
+      await page.waitForTimeout(100);
+      assert.equal(await page.locator('#navigator-list').innerText(),before);
+      assert.equal(await page.locator('#navigator-list').getByText('FORGED-PAGE-TOC-ENTRY').count(),0);
     });
 
     await t.test('repairs raw Markdown bold in dynamically mounted assistant answers only',async()=>{
@@ -134,7 +171,7 @@ test('Chromium MV3: TOC, search, layout, SPA and failure paths',{timeout:150000}
         markdown.className='markdown';
         const paragraph=document.createElement('p');
         const tick=String.fromCharCode(96);
-        paragraph.textContent='动态 **粗体内容**，代码 '+tick+'**行内代码**'+tick;
+        paragraph.textContent='动态 **粗体内容**，代码 '+tick+'**行内代码**'+tick+'，公式 $**数学文本**$ 与 $$**块公式**$$';
         const code=document.createElement('code');
         code.textContent='**代码元素**';
         const pre=document.createElement('pre');
@@ -149,7 +186,7 @@ test('Chromium MV3: TOC, search, layout, SPA and failure paths',{timeout:150000}
       const answer=page.locator('[data-chatgpt-search-unit-key="dynamic-answer:assistant"]');
       await page.waitForFunction(()=>document.querySelector('[data-chatgpt-search-unit-key="dynamic-answer:assistant"] strong[data-luna-toc-markdown-bold="true"]')?.textContent==='粗体内容');
       assert.equal(await answer.locator('strong[data-luna-toc-markdown-bold="true"]').count(),1);
-      assert.equal(await answer.locator('p').textContent(),'动态 粗体内容，代码 '+String.fromCharCode(96)+'**行内代码**'+String.fromCharCode(96));
+      assert.equal(await answer.locator('p').textContent(),'动态 粗体内容，代码 '+String.fromCharCode(96)+'**行内代码**'+String.fromCharCode(96)+'，公式 $**数学文本**$ 与 $$**块公式**$$');
       assert.equal(await answer.locator('code').textContent(),'**代码元素**');
       assert.equal(await answer.locator('pre').textContent(),'**代码块**');
       assert.equal(await answer.locator('.katex strong').count(),0);
@@ -177,7 +214,7 @@ test('Chromium MV3: TOC, search, layout, SPA and failure paths',{timeout:150000}
     });
 
     await t.test('right-clicking a saved Tips item offers clear-all',async()=>{
-      const promptKey='lumaToc:myPromptsV1';
+      const promptKey='lunatoc:prompts:v1';
       await worker.evaluate(async key=>{
         const current=(await chrome.storage.local.get(key))[key]??[];
         await chrome.storage.local.set({[key]:[...current,{
@@ -215,6 +252,46 @@ test('Chromium MV3: TOC, search, layout, SPA and failure paths',{timeout:150000}
       }finally{await settings.close();}
     });
 
+    await t.test('opt-in cloud UI follows bundled config and ignores untrusted backend settings',async()=>{
+      const settings=await context.newPage();
+      try{
+        const optionsPage=await worker.evaluate(()=>chrome.runtime.getManifest().options_ui.page);
+        await settings.goto('chrome-extension://'+extensionId+'/'+optionsPage);
+        const cloud=settings.locator('section[aria-labelledby="account-settings-heading"] .settings-cloud-panel');
+        const waitForManagedConfigState=async()=>{
+          // Wait for the async status request, not visible UI copy.
+          await settings.waitForFunction(()=>{
+            const section=document.querySelector('section[aria-labelledby="account-settings-heading"] .settings-cloud-panel');
+            return section?.getAttribute('aria-busy')==='false' &&
+              Boolean(section.querySelector('input[aria-label="开启自动云同步"]'));
+          },null,{timeout:10000});
+          const unavailable=await cloud.getByText('云同步暂时用不了',{exact:false}).count()>0;
+          return !unavailable;
+        };
+        const configuredBeforeUntrustedSetting=await waitForManagedConfigState();
+        assert.equal(await cloud.locator('input[type="email"]').count(),0);
+        assert.equal(await cloud.locator('input[type="password"]').count(),0);
+        assert.equal(await cloud.getByRole('button',{name:'登录',exact:true}).count(),0);
+        assert.equal(await cloud.getByRole('button',{name:'立即同步',exact:true}).count(),0);
+        assert.equal(await cloud.getByRole('button',{name:'注册同步账号',exact:true}).count(),0);
+        assert.equal(await cloud.getByText('Firebase 项目 ID').count(),0);
+        assert.equal(await cloud.getByText('Firebase Web API Key').count(),0);
+        await worker.evaluate(async()=>chrome.storage.local.set({
+          'lunatoc:cloud:config:v1':{
+            projectId:'attacker-backend',apiKey:'AIzaSy-Public-attacker-key'
+          }
+        }));
+        await settings.reload();
+        const configuredAfterUntrustedSetting=await waitForManagedConfigState();
+        assert.equal(configuredAfterUntrustedSetting,configuredBeforeUntrustedSetting,
+          'untrusted storage must not override the maintainer-bundled Firebase config');
+        assert.equal(await cloud.getByText('Firebase 项目 ID').count(),0);
+        assert.equal(await cloud.getByText('Firebase Web API Key').count(),0);
+        assert.equal(await cloud.locator('input[type="email"]').count(),0);
+        assert.equal(await cloud.getByRole('button',{name:'注册同步账号',exact:true}).count(),0);
+      }finally{await settings.close();}
+    });
+
     await t.test('SPA route, API failure and reload preserve host controls',async()=>{
       await page.evaluate(()=>history.pushState({},'','/c/other-conversation'));
       await page.evaluate(()=>fetch('/backend-api/unsupported').catch(()=>{}));
@@ -227,7 +304,7 @@ test('Chromium MV3: TOC, search, layout, SPA and failure paths',{timeout:150000}
 
 
     await t.test('account-bound aliases ignore forged identity and hide across account changes',{timeout:25000},async()=>{
-      const aliasKey='chatToc:aliases:v1:'+conversationId;
+      const aliasKey='lunatoc:aliases:v1:'+conversationId;
       await worker.evaluate(async key=>chrome.storage.local.set({
         [key]:{ownerId:'fixture-account-a',aliases:{'user-1':'账号 A 私有标题'}}
       }),aliasKey);
@@ -250,10 +327,30 @@ test('Chromium MV3: TOC, search, layout, SPA and failure paths',{timeout:150000}
       await page.waitForFunction(()=>document.querySelector('#navigator-list')?.textContent?.includes('账号 A 私有标题'));
     });
 
-    await t.test('B026: forged page messages are ignored but Chrome-observed successful deletion cleans aliases',{timeout:20000},async()=>{
-      const routeKey='luna-stage-9-e2e';
-      const aliasKey='chatToc:aliases:v1:'+routeKey;
-      const fenceKey='chatToc:aliases:deleted:v1:'+routeKey;
+    await t.test('account writers reject unverified owner mutations',async()=>{
+      const routeKey='account-authorization-probe';
+      const aliasKey='lunatoc:aliases:v1:'+routeKey;
+      const ownerId='fixture-account-not-logged-in';
+      const before=await worker.evaluate(async key=>(await chrome.storage.local.get(key))[key],aliasKey);
+      const settings=await context.newPage();
+      try{
+        const optionsPage=await worker.evaluate(()=>chrome.runtime.getManifest().options_ui.page);
+        await settings.goto('chrome-extension://'+extensionId+'/'+optionsPage);
+        const result=await settings.evaluate(async({routeKey,ownerId})=>
+          chrome.runtime.sendMessage({
+            type:'LUNA_TOC_ALIAS_COMMIT_V1',action:'update',routeKey,
+            messageId:'probe',label:'unauthorized',ownerId
+          }),{routeKey,ownerId});
+        assert.equal(result.ok,false,'unverified account must not be allowed to write aliases');
+      }finally{await settings.close();}
+      const after=await worker.evaluate(async key=>(await chrome.storage.local.get(key))[key],aliasKey);
+      assert.deepEqual(after,before,'denied mutation must not create local records');
+    });
+
+    await t.test('Page-originated deletion messages are ignored; confirmed browser deletion cleans aliases',{timeout:20000},async()=>{
+      const routeKey='lunatoc-e2e';
+      const aliasKey='lunatoc:aliases:v1:'+routeKey;
+      const fenceKey='lunatoc:aliases:deleted:v1:'+routeKey;
       const record={ownerId:'fixture-account-a',aliases:{'user-1':'请保留此目录别名'}};
       await worker.evaluate(async({aliasKey,fenceKey,record})=>{
         await chrome.storage.local.remove(fenceKey);
@@ -286,9 +383,9 @@ test('Chromium MV3: TOC, search, layout, SPA and failure paths',{timeout:150000}
 
     await t.test('500-message fully mounted fixture builds a TOC and supports a far jump',{timeout:60000},async()=>{
       const started=Date.now();
-      await page.goto('https://chatgpt.com/c/luna-stage-10-large-e2e',{waitUntil:'domcontentloaded'});
+      await page.goto('https://chatgpt.com/c/lunatoc-large-e2e',{waitUntil:'domcontentloaded'});
       await page.locator('#luna-toc-sidebar.luna-toc-navigator-ready').waitFor({state:'attached',timeout:20000});
-      await page.evaluate(async()=>fetch('/backend-api/conversations/luna-stage-10-large-e2e?num_turns=500'));
+      await page.evaluate(async()=>fetch('/backend-api/conversations/lunatoc-large-e2e?num_turns=500'));
       await page.waitForFunction(()=>document.querySelectorAll('.navigator-item').length===500,undefined,{timeout:20000});
       const tocBuildMs=Date.now()-started,jumpStarted=Date.now();
       const sidebar=page.locator('#luna-toc-sidebar');
@@ -304,9 +401,9 @@ test('Chromium MV3: TOC, search, layout, SPA and failure paths',{timeout:150000}
     });
 
     await t.test('500-message virtualized fixture mounts and jumps to an offscreen target',{timeout:60000},async()=>{
-      await page.goto('https://chatgpt.com/c/luna-stage-10-virtual-e2e',{waitUntil:'domcontentloaded'});
+      await page.goto('https://chatgpt.com/c/lunatoc-virtual-e2e',{waitUntil:'domcontentloaded'});
       await page.locator('#luna-toc-sidebar.luna-toc-navigator-ready').waitFor({state:'attached',timeout:20000});
-      await page.evaluate(async()=>fetch('/backend-api/conversations/luna-stage-10-virtual-e2e?num_turns=500'));
+      await page.evaluate(async()=>fetch('/backend-api/conversations/lunatoc-virtual-e2e?num_turns=500'));
       await page.waitForFunction(()=>document.querySelectorAll('.navigator-item').length===500,undefined,{timeout:20000});
       const mountedBefore=await page.locator('[data-chatgpt-search-unit-key$=":user"]').count();
       assert.ok(mountedBefore<500,'fixture must not pre-mount the jump target');
@@ -334,9 +431,9 @@ test('Chromium MV3: TOC, search, layout, SPA and failure paths',{timeout:150000}
         const optionsPage=await worker.evaluate(()=>chrome.runtime.getManifest().options_ui.page);
         await settings.goto('chrome-extension://'+extensionId+'/'+optionsPage);
         await worker.evaluate(async()=>chrome.storage.local.set({
-          'lumaToc:myPromptsV1':[{id:'e2e-prompt',ownerId:'fixture-account-a',title:'恢复测试',content:'private test prompt',createdAt:1,updatedAt:2}],
-          'lunaToc:promptUsageV1':{'e2e-prompt':{usageCount:2,lastUsedAt:3}},
-          'chatToc:accountSettings:v1':{
+          'lunatoc:prompts:v1':[{id:'e2e-prompt',ownerId:'fixture-account-a',title:'恢复测试',content:'private test prompt',createdAt:1,updatedAt:2}],
+          'lunatoc:promptUsage:v1':{'e2e-prompt':{usageCount:2,lastUsedAt:3}},
+          'lunatoc:accountSettings:v1':{
             'fixture-account-a':{
               theme:{followChatGPT:false,manualTheme:'light'},
               sidebar:{layoutMode:'overlay',backgroundColor:'default',revealTint:false}
@@ -344,32 +441,32 @@ test('Chromium MV3: TOC, search, layout, SPA and failure paths',{timeout:150000}
           }
         }));
         const downloadPromise=settings.waitForEvent('download');
-        await settings.getByRole('button',{name:'导出本地数据'}).click();
+        await settings.getByRole('button',{name:'备份数据'}).click();
         const download=await downloadPromise,filePath=await download.path();
         assert.ok(filePath,'backup download should complete');
         const backup=JSON.parse(readFileSync(filePath,'utf8'));
         assert.equal(backup.data.prompts[0].id,'e2e-prompt');
         assert.equal(backup.data.promptUsage['e2e-prompt'].usageCount,2);
-        await worker.evaluate(async()=>chrome.storage.local.set({'lumaToc:myPromptsV1':[{id:'temporary',ownerId:'fixture-account-a',title:'temporary',content:'temporary',createdAt:1,updatedAt:2}], 'lunaToc:promptUsageV1':{temporary:{usageCount:1,lastUsedAt:3}}}));
+        await worker.evaluate(async()=>chrome.storage.local.set({'lunatoc:prompts:v1':[{id:'temporary',ownerId:'fixture-account-a',title:'temporary',content:'temporary',createdAt:1,updatedAt:2}], 'lunatoc:promptUsage:v1':{temporary:{usageCount:1,lastUsedAt:3}}}));
         await settings.locator('input[type="file"]').setInputFiles({name:'luna-toc-e2e-backup.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(backup))});
         await settings.locator('.settings-backup-preview').waitFor({state:'visible'});
         settings.on('dialog',dialog=>dialog.accept());
         await settings.getByRole('button',{name:'确认恢复'}).click();
-        const status=settings.locator('[role="status"]');
+        const status=settings.locator('section[aria-labelledby="backup-heading"] [role="status"]');
         const statusAppeared=await status.waitFor({state:'visible',timeout:15000}).then(()=>true).catch(()=>false);
         if(!statusAppeared){
           const bodyText=await settings.locator('body').innerText();
-          const currentPrompts=await worker.evaluate(async()=>chrome.storage.local.get('lumaToc:myPromptsV1'));
+          const currentPrompts=await worker.evaluate(async()=>chrome.storage.local.get('lunatoc:prompts:v1'));
           throw new Error('backup restore status missing; page='+bodyText.slice(-500)+'; storedPrompts='+JSON.stringify(currentPrompts));
         }
         const statusText=await status.innerText();
         assert.match(statusText,/恢复成功/, 'backup restore reported an error: '+statusText);
-        const restored=await worker.evaluate(async()=>chrome.storage.local.get(['lumaToc:myPromptsV1','lunaToc:promptUsageV1','chatToc:accountSettings:v1']));
-        assert.deepEqual(restored['lumaToc:myPromptsV1'].map(prompt=>prompt.id).sort(),['e2e-prompt','temporary']);
-        assert.equal(restored['lunaToc:promptUsageV1'].temporary.usageCount,1);
-        assert.equal(restored['lunaToc:promptUsageV1']['e2e-prompt'].usageCount,2);
-        assert.deepEqual(restored['chatToc:accountSettings:v1']['fixture-account-a'].theme,backup.data.settings['fixture-account-a'].theme);
-        assert.deepEqual(restored['chatToc:accountSettings:v1']['fixture-account-a'].sidebar,backup.data.settings['fixture-account-a'].sidebar);
+        const restored=await worker.evaluate(async()=>chrome.storage.local.get(['lunatoc:prompts:v1','lunatoc:promptUsage:v1','lunatoc:accountSettings:v1']));
+        assert.deepEqual(restored['lunatoc:prompts:v1'].map(prompt=>prompt.id).sort(),['e2e-prompt','temporary']);
+        assert.equal(restored['lunatoc:promptUsage:v1'].temporary.usageCount,1);
+        assert.equal(restored['lunatoc:promptUsage:v1']['e2e-prompt'].usageCount,2);
+        assert.deepEqual(restored['lunatoc:accountSettings:v1']['fixture-account-a'].theme,backup.data.settings['fixture-account-a'].theme);
+        assert.deepEqual(restored['lunatoc:accountSettings:v1']['fixture-account-a'].sidebar,backup.data.settings['fixture-account-a'].sidebar);
       }finally{await settings.close();}
     });
   }catch(error){

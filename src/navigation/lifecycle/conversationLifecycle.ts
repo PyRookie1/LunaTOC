@@ -71,6 +71,24 @@ async function registerVerifiedAccount(ownerId: string, email?: string): Promise
   });
 }
 
+/** A cloud transfer must not trust a cached identity on an inactive ChatGPT tab.
+ * Recheck the actual authenticated session even if no focus/navigation fired.
+ * Any mismatch invalidates the cached account until the next trusted refresh.
+ */
+export async function revalidateConversationOwnerForExtension(
+  trustedFetch: typeof fetch = globalThis.fetch
+): Promise<string | null> {
+  const previous = getActiveConversationOwner();
+  if (!previous || typeof trustedFetch !== 'function') return null;
+  const verified = await readTrustedConversationOwner(trustedFetch);
+  if (getActiveConversationOwner() !== previous) return null;
+  if (verified !== previous) {
+    setActiveConversationOwner(null);
+    return null;
+  }
+  return previous;
+}
+
 /** A new generation invalidates earlier replies, including delayed successful auth. */
 export async function refreshTrustedConversationOwner(
   trustedFetch: typeof fetch = globalThis.fetch
@@ -82,8 +100,10 @@ export async function refreshTrustedConversationOwner(
     : null;
   const ownerId = identity?.ownerId ?? null;
   if (generation !== current) return;
+  // A fresh authenticated session authorizes the background to revalidate this
+  // very tab before the first account record is persisted.
+  setActiveConversationOwner(ownerId);
   if (identity) await registerVerifiedAccount(identity.ownerId, identity.email);
-  if (generation === current) setActiveConversationOwner(ownerId);
 }
 
 /**
@@ -145,8 +165,11 @@ export function initializeConversationLifecycle(): void {
           sendResponse({ ownerId: null });
           return false;
         }
-        sendResponse({ ownerId: getActiveConversationOwner() });
-        return false;
+        void revalidateConversationOwnerForExtension().then(
+          (ownerId) => sendResponse({ ownerId }),
+          () => sendResponse({ ownerId: null })
+        );
+        return true;
       }
       if (payload.type !== TOC_TRUSTED_CONVERSATION_DELETED) return;
       // Only an extension runtime message can carry this authority; a page can

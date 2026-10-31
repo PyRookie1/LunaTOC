@@ -35,6 +35,7 @@ import { installConversationRefresh } from './conversationRefresh';
 import { TOC_EDIT_SUBMISSION } from '@/navigation/refresh/refreshProtocol';
 import { installConversationLifecycle } from './conversationLifecycle';
 import { installHistoryHook } from './historyHook';
+import { installPageHookMessageTransport, postPageHookMessage } from './messageTransport';
 import { installTitleObserver } from './titleObserver';
 import { PAGE_HOOK_HEALTH_PING, PAGE_HOOK_HEALTH_PONG } from '@/features/contractAlert/toolbarWarning';
 
@@ -48,6 +49,7 @@ import { PAGE_HOOK_HEALTH_PING, PAGE_HOOK_HEALTH_PONG } from '@/features/contrac
   }
 
   hookWindow[HOOK_FLAG] = true;
+  installPageHookMessageTransport();
 
   const originalFetch = window.fetch.bind(window);
 
@@ -141,13 +143,13 @@ import { PAGE_HOOK_HEALTH_PING, PAGE_HOOK_HEALTH_PONG } from '@/features/contrac
 
       if (requestMeta?.isSendMessage) {
         if (response.ok && outgoingMessageMeta?.parentMessageId) {
-          window.postMessage({
+          postPageHookMessage({
             type: TOC_EDIT_SUBMISSION,
             stage: 'accepted',
             routeKey: requestMeta.routeKey,
             messageId: outgoingMessageMeta.messageId,
             parentMessageId: outgoingMessageMeta.parentMessageId,
-          }, location.origin);
+          });
         }
 
         const streamInspection = inspectStream(
@@ -157,13 +159,13 @@ import { PAGE_HOOK_HEALTH_PING, PAGE_HOOK_HEALTH_PONG } from '@/features/contrac
         );
         if (outgoingMessageMeta?.parentMessageId) {
           const notifyStreamFinished = () => {
-            window.postMessage({
+            postPageHookMessage({
               type: TOC_EDIT_SUBMISSION,
               stage: 'finished',
               routeKey: requestMeta.routeKey,
               messageId: outgoingMessageMeta!.messageId,
               parentMessageId: outgoingMessageMeta!.parentMessageId,
-            }, location.origin);
+            });
           };
           void streamInspection.then(notifyStreamFinished, notifyStreamFinished).catch(() => {});
         } else {

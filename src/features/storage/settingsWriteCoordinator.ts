@@ -12,13 +12,7 @@ import {
 } from './accountSettings';
 
 export const SETTINGS_COMMIT_TYPE = 'LUNA_TOC_SETTINGS_COMMIT_V2';
-const MIGRATION_KEY = 'chatToc:accountSettings:migrated:v1';
-const LEGACY_THEME_SETTINGS_KEY = 'chatToc:themeSettings';
-const LEGACY_THEME_KEY = 'chatToc:theme';
-const LEGACY_SIDEBAR_KEY = 'chatToc:sidebarPreferences';
-const PROMPTS_KEY = 'lumaToc:myPromptsV1';
-const ALIAS_PREFIX = 'chatToc:aliases:v1:';
-const DEFAULT_THEME: ThemeSettings = { followChatGPT: true, manualTheme: 'dark' };
+const DEFAULT_THEME: ThemeSettings = { followChatGPT: false, manualTheme: 'light' };
 const DEFAULT_SIDEBAR: SidebarPreferences = {
   layoutMode: 'overlay', backgroundColor: 'default', revealTint: false,
 };
@@ -154,36 +148,6 @@ async function persistVerified(
     return { ok: false, error: label + '失败，原有设置已恢复：' + errorText(failure) };
   }
 }
-function legacyTheme(all: Record<string, unknown>): ThemeSettings {
-  const current = all[LEGACY_THEME_SETTINGS_KEY];
-  if (isTheme(current)) return { ...current };
-  const old = all[LEGACY_THEME_KEY];
-  if (old === 'dark' || old === 'light') return { followChatGPT: false, manualTheme: old };
-  return { ...DEFAULT_THEME };
-}
-function legacySidebar(all: Record<string, unknown>): SidebarPreferences {
-  const value = all[LEGACY_SIDEBAR_KEY];
-  return isSidebar(value) ? { ...value } : { ...DEFAULT_SIDEBAR };
-}
-function collectKnownOwners(all: Record<string, unknown>, activeOwner: string): Set<string> {
-  const owners = new Set<string>([activeOwner]);
-  const prompts = all[PROMPTS_KEY];
-  if (Array.isArray(prompts)) {
-    for (const item of prompts) {
-      if (item && typeof item === 'object' && !Array.isArray(item)) {
-        const ownerId = (item as Record<string, unknown>).ownerId;
-        if (isValidAccountOwnerId(ownerId)) owners.add(ownerId);
-      }
-    }
-  }
-  for (const [key, value] of Object.entries(all)) {
-    if (!key.startsWith(ALIAS_PREFIX) || !value || typeof value !== 'object' || Array.isArray(value)) continue;
-    const ownerId = (value as Record<string, unknown>).ownerId;
-    if (isValidAccountOwnerId(ownerId)) owners.add(ownerId);
-  }
-  return owners;
-}
-
 export function createSettingsWriteCoordinator(
   storage: Storage = chrome.storage.local,
   queue: SerialWriteQueue = createSerialWriteQueue()
@@ -194,37 +158,25 @@ export function createSettingsWriteCoordinator(
         if (!isRequest(request)) return { ok: false, error: 'Invalid settings update request' };
         try {
           if (request.action === 'register-account') {
-            const all = await storage.get(null) as Record<string, unknown>;
+            const all = await storage.get([ACCOUNT_SETTINGS_KEY, ACCOUNT_EMAILS_KEY]) as Record<string, unknown>;
             const settings = readSettingsMap(all[ACCOUNT_SETTINGS_KEY]);
             const emails = readAccountEmails(all[ACCOUNT_EMAILS_KEY]);
+            const hasSettings = Object.hasOwn(settings, request.ownerId);
             const emailChanged = !!request.email && emails[request.ownerId] !== request.email;
             if (request.email) emails[request.ownerId] = request.email;
-            const emailValues = emailChanged ? { [ACCOUNT_EMAILS_KEY]: emails } : {};
 
-            if (all[MIGRATION_KEY] === true && Object.hasOwn(settings, request.ownerId)) {
-              if (!emailChanged) return { ok: true };
-              return persistVerified(storage, all, emailValues, '保存账号邮箱');
+            const values: Record<string, unknown> = {};
+            if (!hasSettings) {
+              settings[request.ownerId] = {
+                theme: { ...DEFAULT_THEME },
+                sidebar: { ...DEFAULT_SIDEBAR },
+              };
+              values[ACCOUNT_SETTINGS_KEY] = settings;
             }
-            if (all[MIGRATION_KEY] === true) {
-              settings[request.ownerId] = { theme: { ...DEFAULT_THEME }, sidebar: { ...DEFAULT_SIDEBAR } };
-              return persistVerified(storage, all, {
-                [ACCOUNT_SETTINGS_KEY]: settings, ...emailValues,
-              }, '初始化账号设置');
-            }
-            const theme = legacyTheme(all);
-            const sidebar = legacySidebar(all);
-            for (const ownerId of collectKnownOwners(all, request.ownerId)) {
-              if (!Object.hasOwn(settings, ownerId)) settings[ownerId] = { theme: { ...theme }, sidebar: { ...sidebar } };
-            }
-            const result = await persistVerified(storage, all, {
-              [ACCOUNT_SETTINGS_KEY]: settings, [MIGRATION_KEY]: true, ...emailValues,
-            }, '迁移账号设置');
-            if (result.ok) {
-              await storage.remove([
-                LEGACY_THEME_SETTINGS_KEY, LEGACY_THEME_KEY, LEGACY_SIDEBAR_KEY,
-              ]).catch(() => undefined);
-            }
-            return result;
+            if (emailChanged) values[ACCOUNT_EMAILS_KEY] = emails;
+            if (!Object.keys(values).length) return { ok: true };
+            return persistVerified(storage, all, values,
+              hasSettings ? '保存账号邮箱' : '初始化账号设置');
           }
 
           const stored = await storage.get(ACCOUNT_SETTINGS_KEY) as Record<string, unknown>;

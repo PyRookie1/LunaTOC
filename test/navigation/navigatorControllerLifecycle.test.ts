@@ -3,6 +3,9 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { navigatorController } from '@/navigation/navigatorController';
+import { dispatchTrustedPageHookMessage } from '@/navigation/pageHookMessageTransport';
+
+let activePageHookDispatcher = dispatchTrustedPageHookMessage;
 import { getActivePlatform } from '@/platforms';
 import { isLoading, setLoading } from '@/navigation/loading/promptLoadingState';
 import * as promptNav from '@/navigation/jump/promptNavigation';
@@ -11,6 +14,17 @@ import * as outlineNavigation from '@/navigation/jump/outlineNavigation';
 describe('navigatorController lifecycle and coordination', () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    activePageHookDispatcher = dispatchTrustedPageHookMessage;
+    // Existing lifecycle fixtures simulate page-hook deliveries. Route those
+    // fixtures through the same isolated receiver used by the real port.
+    const nativeDispatchEvent = window.dispatchEvent.bind(window);
+    vi.spyOn(window, 'dispatchEvent').mockImplementation((event: Event) => {
+      if (event instanceof MessageEvent && event.type === 'message' &&
+          event.source === window && (!event.origin || event.origin === location.origin)) {
+        activePageHookDispatcher(event.data);
+      }
+      return nativeDispatchEvent(event);
+    });
     window.HTMLElement.prototype.scrollIntoView = vi.fn();
     Object.defineProperty(window, 'location', {
       writable: true,
@@ -499,6 +513,7 @@ describe('navigatorController lifecycle and coordination', () => {
 
   it('re-arms active prompt mutation tracking on route transition so new prompts are tracked', async () => {
     vi.resetModules();
+      activePageHookDispatcher = (await import('@/navigation/pageHookMessageTransport')).dispatchTrustedPageHookMessage;
     const platform = getActivePlatform();
 
     const mutationObserveSpy = vi.spyOn(MutationObserver.prototype, 'observe');
@@ -578,6 +593,7 @@ describe('navigatorController lifecycle and coordination', () => {
     // Other lifecycle tests reset modules; keep the spy and the controller
     // under test bound to the same module instance.
     vi.resetModules();
+      activePageHookDispatcher = (await import('@/navigation/pageHookMessageTransport')).dispatchTrustedPageHookMessage;
     const { navigatorController: freshController } = await import(
       '@/navigation/navigatorController'
     );
@@ -780,6 +796,7 @@ describe('navigatorController lifecycle and coordination', () => {
 
   it('completes loading immediately on initial attach when opening empty new chat route', async () => {
     vi.resetModules();
+      activePageHookDispatcher = (await import('@/navigation/pageHookMessageTransport')).dispatchTrustedPageHookMessage;
     Object.defineProperty(window, 'location', {
       writable: true,
       value: {
@@ -806,6 +823,7 @@ describe('navigatorController lifecycle and coordination', () => {
 
   it('transitions from existing conversation to new chat immediately without waiting for settle timer', async () => {
     vi.resetModules();
+      activePageHookDispatcher = (await import('@/navigation/pageHookMessageTransport')).dispatchTrustedPageHookMessage;
     const platform = getActivePlatform();
     Object.defineProperty(window, 'location', {
       writable: true,
@@ -864,6 +882,7 @@ describe('navigatorController lifecycle and coordination', () => {
 
   it('arms settle timer and sets loading state when transitioning from empty new chat to existing conversation', async () => {
     vi.resetModules();
+      activePageHookDispatcher = (await import('@/navigation/pageHookMessageTransport')).dispatchTrustedPageHookMessage;
     const platform = getActivePlatform();
     Object.defineProperty(window, 'location', {
       writable: true,
@@ -912,6 +931,7 @@ describe('navigatorController lifecycle and coordination', () => {
   describe('snapshot completeness and cached restoration lifecycle', () => {
     it('sets snapshot isComplete=true when conversationEnded carries complete: true', async () => {
       vi.resetModules();
+      activePageHookDispatcher = (await import('@/navigation/pageHookMessageTransport')).dispatchTrustedPageHookMessage;
       const platform = getActivePlatform('chatgpt.com');
       Object.defineProperty(window, 'location', {
         writable: true,
@@ -985,6 +1005,7 @@ describe('navigatorController lifecycle and coordination', () => {
 
     it('leaves snapshot incomplete when conversationEnded carries complete: false', async () => {
       vi.resetModules();
+      activePageHookDispatcher = (await import('@/navigation/pageHookMessageTransport')).dispatchTrustedPageHookMessage;
       const platform = getActivePlatform('chatgpt.com');
       Object.defineProperty(window, 'location', {
         writable: true,
@@ -1057,6 +1078,7 @@ describe('navigatorController lifecycle and coordination', () => {
 
     it('leaves snapshot incomplete when loading completes via fallback timeout', async () => {
       vi.resetModules();
+      activePageHookDispatcher = (await import('@/navigation/pageHookMessageTransport')).dispatchTrustedPageHookMessage;
       const platform = getActivePlatform('chatgpt.com');
       Object.defineProperty(window, 'location', {
         writable: true,
@@ -1122,6 +1144,7 @@ describe('navigatorController lifecycle and coordination', () => {
 
     it('restores complete cached conversation with immediate render, loading=false, and no settle timer', async () => {
       vi.resetModules();
+      activePageHookDispatcher = (await import('@/navigation/pageHookMessageTransport')).dispatchTrustedPageHookMessage;
       const platform = getActivePlatform('chatgpt.com');
       Object.defineProperty(window, 'location', {
         writable: true,
@@ -1225,6 +1248,7 @@ describe('navigatorController lifecycle and coordination', () => {
 
     it('restores incomplete cached conversation with prompts, loading=true, and arms settle timer', async () => {
       vi.resetModules();
+      activePageHookDispatcher = (await import('@/navigation/pageHookMessageTransport')).dispatchTrustedPageHookMessage;
       const platform = getActivePlatform('chatgpt.com');
       Object.defineProperty(window, 'location', {
         writable: true,
@@ -1327,6 +1351,7 @@ describe('navigatorController lifecycle and coordination', () => {
 
     it('recognizes complete snapshot with zero prompts without requiring cachedMessages.length > 0', async () => {
       vi.resetModules();
+      activePageHookDispatcher = (await import('@/navigation/pageHookMessageTransport')).dispatchTrustedPageHookMessage;
       const platform = getActivePlatform('chatgpt.com');
       Object.defineProperty(window, 'location', {
         writable: true,

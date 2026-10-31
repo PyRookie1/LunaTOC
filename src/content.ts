@@ -1,5 +1,5 @@
 /**
- * Starts LunaTOC's legacy DOM application and isolated React UI environment
+ * Starts LunaTOC's DOM application and isolated React UI environment
  * from the Chrome Content Script entry.
  */
 import { initializeApplication } from '@/app/applicationShell';
@@ -7,8 +7,12 @@ import { initializeConversationLifecycle } from '@/navigation/lifecycle/conversa
 import { observeExternalOverlays } from '@/features/externalOverlay';
 import { startPageHookMismatchBridge, startChatGptConfigSync } from '@/features/contractAlert/pageHookBridge';
 import { initializeReactHost } from '@/reactHost/reactHost';
+import { connectPageHookMessageTransport } from '@/navigation/pageHookMessageTransport';
 import { startToolbarCompatibilityMonitor } from '@/features/contractAlert/toolbarMonitor';
 import { startMarkdownBoldRepair } from '@/platforms/chatgpt/markdownBoldRepair';
+
+// Bind the isolated conversation receiver before the application starts.
+connectPageHookMessageTransport();
 
 // Start the one-time reconciliation listener before sidebar setup.
 initializeConversationLifecycle();

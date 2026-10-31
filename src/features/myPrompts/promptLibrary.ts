@@ -19,7 +19,7 @@ import { previewTooltip } from '@/features/tooltip';
 
 import {
   formatPromptsAsMarkdown,
-  parseMarkdownPrompts,
+  parseMarkdownImportFile,
 } from './promptSerializer';
 import {
   sortMyPrompts,
@@ -144,7 +144,7 @@ function importMyPrompts(onImport: VoidCallback): void {
     if (!file) return;
 
     try {
-      const promptsToImport = parseMarkdownPrompts(await file.text());
+      const promptsToImport = await parseMarkdownImportFile(file);
       if (!promptsToImport.length) {
         await showPromptModal({
           title: '导入提示词',
@@ -483,7 +483,7 @@ async function savePromptEditorValues(
         const existingPrompt = prompts.find((prompt) => prompt.id === item.id);
         if (!existingPrompt) throw new Error('提示词已不存在，请重新打开编辑器。');
         if (existingPrompt.title === title && existingPrompt.content === content) {
-          return prompts; // A successful save may be retried after an uncertain acknowledgement.
+          return prompts;
         }
         if ((item.title !== undefined && item.title !== existingPrompt.title) ||
             (item.content !== undefined && item.content !== existingPrompt.content) ||
