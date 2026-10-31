@@ -181,10 +181,10 @@ describe('promptSerializer', () => {
 
     it('rejects a file above 5 MiB before reading its contents', async () => {
       let read = false;
-      const file = {
+      const file: Pick<File, 'size' | 'text'> = {
         size: MAX_MARKDOWN_IMPORT_BYTES + 1,
         text: async () => { read = true; return '# Never read'; },
-      } as Pick<File, 'size' | 'text'>;
+      };
       await expect(parseMarkdownImportFile(file))
         .rejects.toThrow('5 MiB');
       expect(read).toBe(false);
@@ -229,7 +229,10 @@ describe('promptSerializer', () => {
 
     it('reads and parses a file after its size preflight succeeds', async () => {
       const markdown = '# Imported\n\n```prompt\nSafe content\n```';
-      const file = new Blob([markdown]) as File;
+      const file: Pick<File, 'size' | 'text'> = {
+        size: new Blob([markdown]).size,
+        text: async () => markdown,
+      };
       await expect(parseMarkdownImportFile(file)).resolves.toEqual([
         { title: 'Imported', content: 'Safe content' },
       ]);
