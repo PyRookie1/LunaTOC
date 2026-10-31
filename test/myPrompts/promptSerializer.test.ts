@@ -190,6 +190,17 @@ describe('promptSerializer', () => {
       expect(read).toBe(false);
     });
 
+    it('allows a file exactly at the byte-size limit', async () => {
+      const markdown = '# At limit\n\n```prompt\nContent\n```';
+      const file: Pick<File, 'size' | 'text'> = {
+        size: MAX_MARKDOWN_IMPORT_BYTES,
+        text: async () => markdown,
+      };
+      await expect(parseMarkdownImportFile(file)).resolves.toEqual([
+        { title: 'At limit', content: 'Content' },
+      ]);
+    });
+
     it('checks UTF-8 byte size even when the parser is called directly', () => {
       expect(() => parseMarkdownPrompts('x'.repeat(MAX_MARKDOWN_IMPORT_BYTES + 1)))
         .toThrow('5 MiB');
@@ -219,6 +230,12 @@ describe('promptSerializer', () => {
       expect(() => parseMarkdownPrompts(
         makeDocument(1, 'x'.repeat(MAX_MARKDOWN_PROMPT_CONTENT_LENGTH + 1))
       )).toThrow('单条提示词内容超过');
+    });
+
+    it('accepts a title exactly at the prompt storage limit', () => {
+      const fence = '`'.repeat(3);
+      const markdown = `# ${'T'.repeat(MAX_MARKDOWN_PROMPT_TITLE_LENGTH)}\n\n${fence}prompt\nContent\n${fence}`;
+      expect(parseMarkdownPrompts(markdown)).toHaveLength(1);
     });
 
     it('rejects a title longer than the prompt storage limit', () => {
