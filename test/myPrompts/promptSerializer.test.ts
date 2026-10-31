@@ -211,7 +211,8 @@ describe('promptSerializer', () => {
     });
 
     it('rejects a title longer than the prompt storage limit', () => {
-      const markdown = `# ${'T'.repeat(MAX_MARKDOWN_PROMPT_TITLE_LENGTH + 1)}\n\n``\`prompt\nContent\n``\` `;
+      const fence = '`'.repeat(3);
+      const markdown = `# ${'T'.repeat(MAX_MARKDOWN_PROMPT_TITLE_LENGTH + 1)}\n\n${fence}prompt\nContent\n${fence}`;
       expect(() => parseMarkdownPrompts(markdown)).toThrow('提示词标题超过');
     });
 
