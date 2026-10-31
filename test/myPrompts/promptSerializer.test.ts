@@ -200,6 +200,11 @@ describe('promptSerializer', () => {
         .toThrow('行限制');
     });
 
+    it('measures UTF-8 bytes rather than UTF-16 code units', () => {
+      const multibyte = '中'.repeat(Math.floor(MAX_MARKDOWN_IMPORT_BYTES / 3) + 1);
+      expect(() => parseMarkdownPrompts(multibyte)).toThrow('5 MiB');
+    });
+
     it('accepts up to the prompt-count limit and rejects one more', () => {
       expect(parseMarkdownPrompts(makeDocument(MAX_MARKDOWN_IMPORT_PROMPTS))).toHaveLength(
         MAX_MARKDOWN_IMPORT_PROMPTS
