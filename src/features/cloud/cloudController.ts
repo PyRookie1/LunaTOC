@@ -125,8 +125,15 @@ export function createCloudController(
           controller.abort();
         }, FIREBASE_REQUEST_TIMEOUT_MS);
       });
-      const response = fetcher(url, { ...options, signal: controller.signal });
-      return await Promise.race([response, deadline]);
+      // The deadline also covers a server that sends response headers but
+      // never finishes its JSON body. All LunaTOC Firebase endpoints return
+      // bounded JSON rather than streaming responses.
+      const completedResponse = (async (): Promise<Response> => {
+        const response = await fetcher(url, { ...options, signal: controller.signal });
+        await response.clone().arrayBuffer();
+        return response;
+      })();
+      return await Promise.race([completedResponse, deadline]);
     } catch (cause) {
       const detail = cause instanceof Error ? cause.message : String(cause);
       if (!(cause instanceof TypeError) && !/failed to fetch|fetch failed|network/i.test(detail)) {
