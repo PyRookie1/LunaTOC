@@ -37,7 +37,10 @@ export async function initializeReactHost(): Promise<void> {
   host.style.display = 'contents';
   synchronizeTheme(host);
 
-  const shadowRoot = host.attachShadow({ mode: 'open' });
+  // The host page must not be able to walk the saved-prompt editor and
+  // autocomplete DOM via host.shadowRoot. Keep the portal reference inside
+  // the isolated extension script instead of exposing an open shadow root.
+  const shadowRoot = host.attachShadow({ mode: 'closed' });
   const style = document.createElement('style');
   style.textContent = tailwindCss;
 
