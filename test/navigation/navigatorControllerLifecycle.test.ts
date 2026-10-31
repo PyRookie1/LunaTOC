@@ -3,6 +3,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { navigatorController } from '@/navigation/navigatorController';
+import { dispatchTrustedPageHookMessage } from '@/navigation/pageHookMessageTransport';
 import { getActivePlatform } from '@/platforms';
 import { isLoading, setLoading } from '@/navigation/loading/promptLoadingState';
 import * as promptNav from '@/navigation/jump/promptNavigation';
@@ -11,6 +12,16 @@ import * as outlineNavigation from '@/navigation/jump/outlineNavigation';
 describe('navigatorController lifecycle and coordination', () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    // Existing lifecycle fixtures simulate page-hook deliveries. Route those
+    // fixtures through the same isolated receiver used by the real port.
+    const nativeDispatchEvent = window.dispatchEvent.bind(window);
+    vi.spyOn(window, 'dispatchEvent').mockImplementation((event: Event) => {
+      if (event instanceof MessageEvent && event.type === 'message' &&
+          event.source === window && (!event.origin || event.origin === location.origin)) {
+        dispatchTrustedPageHookMessage(event.data);
+      }
+      return nativeDispatchEvent(event);
+    });
     window.HTMLElement.prototype.scrollIntoView = vi.fn();
     Object.defineProperty(window, 'location', {
       writable: true,
