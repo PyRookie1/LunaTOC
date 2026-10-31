@@ -4,6 +4,7 @@
  * MAIN/ISOLATED messaging boundary.
  */
 import type { Platform } from '@/platforms';
+import { postPageHookMessage } from './messageTransport';
 import type { ConversationData } from '@/features/conversationPrompts/message';
 import { extractActiveBranchMessages, type ConversationSnapshot } from '@/navigation/state/activeBranch';
 import {
@@ -29,7 +30,7 @@ export function installConversationRefresh(
   const inFlight = new Map<string, PendingRefresh>();
 
   function postResult(routeKey: string, requestId: number, payload: ConversationSnapshot | null): void {
-    window.postMessage({ type: TOC_REFRESH_RESULT, routeKey, requestId, payload }, location.origin);
+    postPageHookMessage({ type: TOC_REFRESH_RESULT, routeKey, requestId, payload });
   }
 
   function finishRefresh(routeKey: string, pending: PendingRefresh, payload: ConversationSnapshot | null): void {

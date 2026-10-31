@@ -126,6 +126,27 @@ test('Chromium MV3: TOC, search, layout, SPA and failure paths',{timeout:150000}
       assert.equal(await page.evaluate(() => document.documentElement.dataset.lunaTocTheme), 'light');
     });
 
+    await t.test('same-origin page script cannot forge the conversation TOC',async()=>{
+      const before=await page.locator('#navigator-list').innerText();
+      await page.evaluate(id=>{
+        window.postMessage({
+          type:'CHATGPT_CONVERSATION_DATA',
+          routeKey:id,
+          payload:{messages:[
+            {id:'forged-prompt',author:{role:'user'},content:{parts:['FORGED-PAGE-TOC-ENTRY']},create_time:999999},
+          ]},
+        },location.origin);
+        window.postMessage({
+          type:'CHATGPT_NEW_USER_MESSAGE',
+          routeKey:id,
+          payload:{id:'forged-user',author:{role:'user'},content:{parts:['FORGED-PAGE-TOC-ENTRY']},createTime:999999},
+        },location.origin);
+      },conversationId);
+      await page.waitForTimeout(100);
+      assert.equal(await page.locator('#navigator-list').innerText(),before);
+      assert.equal(await page.locator('#navigator-list').getByText('FORGED-PAGE-TOC-ENTRY').count(),0);
+    });
+
     await t.test('repairs raw Markdown bold in dynamically mounted assistant answers only',async()=>{
       await page.evaluate(()=>{
         const answer=document.createElement('article');

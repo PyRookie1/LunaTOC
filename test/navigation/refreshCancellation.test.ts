@@ -35,6 +35,7 @@ describe('navigation refresh cancellation lifecycle', () => {
 
   it('cancels timed-out fetches, rejects late responses and retries with a new ID', async () => {
     vi.resetModules();
+    const { dispatchTrustedPageHookMessage } = await import('@/navigation/pageHookMessageTransport');
     const { navigatorController } = await import('@/navigation/navigatorController');
     const post = vi.spyOn(window, 'postMessage').mockImplementation(() => {});
     navigatorController.init();
@@ -52,16 +53,12 @@ describe('navigation refresh cancellation lifecycle', () => {
     });
     expect(document.getElementById('luna-toc-status')?.textContent).toContain('未验证');
 
-    window.dispatchEvent(new MessageEvent('message', {
-      source: window,
-      origin: location.origin,
-      data: {
+    dispatchTrustedPageHookMessage({
         type: TOC_REFRESH_RESULT,
         routeKey,
         requestId: first!.requestId,
         payload: { messages: [], page_info: { has_previous_page: false } },
-      },
-    }));
+    });
     expect(document.getElementById('luna-toc-status')?.textContent).toContain('未验证');
 
     navigatorController.refreshCurrentConversation();
@@ -69,16 +66,12 @@ describe('navigation refresh cancellation lifecycle', () => {
     expect(requests).toHaveLength(2);
     expect(requests[1].requestId).toBeGreaterThan(first!.requestId);
 
-    window.dispatchEvent(new MessageEvent('message', {
-      source: window,
-      origin: location.origin,
-      data: {
+    dispatchTrustedPageHookMessage({
         type: TOC_REFRESH_RESULT,
         routeKey,
         requestId: requests[1].requestId,
         payload: { messages: [], activeBranchVerified: true, page_info: { has_previous_page: false } },
-      },
-    }));
+    });
     expect(document.getElementById('luna-toc-status')?.textContent).not.toContain('未验证');
     vi.advanceTimersByTime(TOC_REFRESH_TIMEOUT_MS);
     expect(sent().filter((message) => message.type === TOC_REFRESH_CANCEL))
@@ -87,6 +80,7 @@ describe('navigation refresh cancellation lifecycle', () => {
 
   it('aborts an outstanding route request when navigation changes', async () => {
     vi.resetModules();
+    const { dispatchTrustedPageHookMessage } = await import('@/navigation/pageHookMessageTransport');
     const { navigatorController } = await import('@/navigation/navigatorController');
     const post = vi.spyOn(window, 'postMessage').mockImplementation(() => {});
     navigatorController.init();
@@ -105,11 +99,9 @@ describe('navigation refresh cancellation lifecycle', () => {
         pathname: '/c/next-controller-conversation-456',
       },
     });
-    window.dispatchEvent(new MessageEvent('message', {
-      source: window,
-      origin: location.origin,
-      data: { type: getActivePlatform('chatgpt.com').pageHook.messages.routeChanged },
-    }));
+    dispatchTrustedPageHookMessage({
+      type: getActivePlatform('chatgpt.com').pageHook.messages.routeChanged,
+    });
     expect(messages()).toContainEqual({
       type: TOC_REFRESH_CANCEL,
       routeKey,

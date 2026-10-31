@@ -3,6 +3,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { navigatorController } from '@/navigation/navigatorController';
+import { dispatchTrustedPageHookMessage } from '@/navigation/pageHookMessageTransport';
 import {
   TOC_EDIT_SUBMISSION,
   TOC_REFRESH_REQUEST,
@@ -38,11 +39,7 @@ describe('historical prompt edit refresh', () => {
     navigatorController.attach();
 
     const emit = (type: string, data: Record<string, unknown>) => {
-      window.dispatchEvent(new MessageEvent('message', {
-        source: window,
-        origin: location.origin,
-        data: { type, ...data },
-      }));
+      dispatchTrustedPageHookMessage({ type, ...data });
     };
 
     emit(platform.pageHook.messages.conversationData, {
