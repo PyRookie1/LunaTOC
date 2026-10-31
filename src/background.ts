@@ -219,7 +219,7 @@ async function hasVerifiedChatGptOwner(ownerId: string, sourceTabId?: number): P
 }
 
 const cloudController = createCloudController(
-  chrome.storage.local, chrome.storage.local, storageWriteQueue, hasVerifiedChatGptOwner
+  chrome.storage.local, chrome.storage.session, storageWriteQueue, hasVerifiedChatGptOwner
 );
 
 // Automatic sync is opt-in. Local changes are uploaded only after a verified Firebase email/password identity has authenticated with the maintainer's project.
@@ -261,6 +261,7 @@ async function clearCloudRetry(): Promise<void> {
 }
 
 async function refreshCloudPolling(): Promise<void> {
+  await cloudController.initialize();
   const enabled = await chrome.storage.local.get(CLOUD_AUTO_SYNC_KEY);
   if (enabled[CLOUD_AUTO_SYNC_KEY] === true) {
     await chrome.alarms.create(CLOUD_POLL_ALARM, {
@@ -291,6 +292,7 @@ async function runAutomaticSync(force = false): Promise<void> {
   }
   autoSyncRunning = true;
   try {
+    await cloudController.initialize();
     do {
       autoSyncPending = false;
       const enabled = await chrome.storage.local.get(CLOUD_AUTO_SYNC_KEY);
