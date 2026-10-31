@@ -96,6 +96,70 @@ async function ready(local: ReturnType<typeof storage>, cloud: ReturnType<typeof
   return { service, sessions };
 }
 describe('Firebase REST account sync', () => {
+  it('keeps Firebase ID and refresh tokens only in Chrome session storage', async () => {
+    const local = storage(initialLocal()), remote = firebaseHarness();
+    const { service, sessions } = await ready(local, remote);
+    const saved = sessions.state['lunatoc:cloud:auth:session:v1'] as Record<string, unknown>;
+    expect(saved.idToken).toBe('id-token');
+    expect(saved.refreshToken).toBe('refresh-token');
+    expect(local.state).not.toHaveProperty('lunatoc:cloud:auth:session:v1');
+    expect(JSON.stringify(local.state)).not.toContain('refresh-token');
+    await service.execute(request('set-auto-sync', { enabled: true }));
+    // MV3 worker suspension must not log the user out: session storage survives it.
+    const restartedWorker = createCloudController(local.api, sessions.api, createSerialWriteQueue(),
+      async () => true, remote.fetcher as unknown as typeof fetch,
+      { apiKey: 'AIzaSy-Test-api-key-public', projectId: 'lunatoc-demo',
+        authDomain: 'lunatoc-demo.firebaseapp.com' });
+    expect(await restartedWorker.execute(request('status')))
+      .toMatchObject({ ok: true, uid: 'firebase-user', autoSyncEnabled: true });
+  });
+
+  it('removes old long-lived credentials without reusing them for login', async () => {
+    const previousSession = {
+      idToken: 'old-id-token', refreshToken: 'old-refresh-token',
+      uid: 'firebase-user', expiresAt: Date.now() + 3_600_000, emailVerified: true,
+    };
+    const local = storage({ ...initialLocal(), [CLOUD_AUTO_SYNC_KEY]: true,
+      'lunatoc:cloud:auth:session:v1': previousSession });
+    const sessions = storage(), remote = firebaseHarness();
+    const service = createCloudController(local.api, sessions.api, createSerialWriteQueue(),
+      async () => true, remote.fetcher as unknown as typeof fetch,
+      { apiKey: 'AIzaSy-Test-api-key-public', projectId: 'lunatoc-demo',
+        authDomain: 'lunatoc-demo.firebaseapp.com' });
+    expect(await service.execute(request('status'))).toMatchObject({
+      ok: true, autoSyncEnabled: false,
+      autoSyncStatus: { state: 'error', message: expect.stringContaining('重新登录') },
+    });
+    expect(local.state).not.toHaveProperty('lunatoc:cloud:auth:session:v1');
+    expect(sessions.state).not.toHaveProperty('lunatoc:cloud:auth:session:v1');
+    expect(remote.fetcher).not.toHaveBeenCalled();
+    expect(local.state[PROMPT_STORAGE_KEY]).toEqual([item]);
+    expect((await service.execute(request('login', {
+      email: 'test@example.com', password: 'a-secure-test-password',
+    }))).ok).toBe(true);
+    expect(sessions.state).toHaveProperty('lunatoc:cloud:auth:session:v1');
+    expect(local.state).not.toHaveProperty('lunatoc:cloud:auth:session:v1');
+  });
+
+  it('disables automatic sync after a complete browser restart without erasing local content', async () => {
+    const local = storage(initialLocal()), remote = firebaseHarness();
+    const { service } = await ready(local, remote);
+    expect(await service.execute(request('set-auto-sync', { enabled: true })))
+      .toMatchObject({ ok: true, autoSyncEnabled: true });
+    // New empty chrome.storage.session models a full browser shutdown and restart.
+    const restartedSessionStorage = storage();
+    const restartedWorker = createCloudController(local.api, restartedSessionStorage.api,
+      createSerialWriteQueue(), async () => true, remote.fetcher as unknown as typeof fetch,
+      { apiKey: 'AIzaSy-Test-api-key-public', projectId: 'lunatoc-demo',
+        authDomain: 'lunatoc-demo.firebaseapp.com' });
+    const result = await restartedWorker.execute(request('status'));
+    expect(result).toMatchObject({ ok: true, autoSyncEnabled: false });
+    if (result.ok) expect(result.uid).toBeUndefined();
+    expect(local.state[CLOUD_AUTO_SYNC_KEY]).toBe(false);
+    expect(local.state[PROMPT_STORAGE_KEY]).toEqual([item]);
+    expect(local.state[ACCOUNT_SETTINGS_KEY]).toEqual({ [owner]: settings });
+    expect(restartedSessionStorage.state).not.toHaveProperty('lunatoc:cloud:auth:session:v1');
+  });
   it('returns the authenticated email and per-UID bindings without persisting any password', async () => {
     const local = storage(initialLocal()), remote = firebaseHarness();
     const { service, sessions } = await ready(local, remote);
