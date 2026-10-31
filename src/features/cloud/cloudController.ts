@@ -7,13 +7,14 @@ import { CLOUD_MAX_BYTES, emptyCloudSnapshot, mergeAccountSnapshots, validateClo
   type CloudSnapshot } from './cloudSnapshot';
 import type { SerialWriteQueue } from '@/features/storage/serialWriteQueue';
 import { bundledFirebaseConfig } from './managedFirebaseConfig';
+import { pendingCloudSyncStatus } from './cloudSyncStatus';
 
 export const CLOUD_MESSAGE_TYPE = 'LUNATOC_CLOUD_V1';
 const SESSION_KEY = 'lunatoc:cloud:auth:session:v1';
 export const CLOUD_AUTO_SYNC_KEY = 'lunatoc:cloud:auto-sync:v1';
 export const CLOUD_AUTO_SYNC_STATUS_KEY = 'lunatoc:cloud:auto-sync-status:v1';
 export const CLOUD_ACCOUNT_BINDINGS_KEY = 'lunatoc:cloud:account-bindings:v1';
-export interface CloudAutoSyncStatus { state: 'success' | 'error'; message: string; updatedAt: number }
+export interface CloudAutoSyncStatus { state: 'pending' | 'success' | 'error'; message: string; updatedAt: number }
 const BASE_PREFIX = 'lunatoc:cloud:baseline:v1:';
 const PROJECT_PATTERN = /^[a-z][a-z0-9-]{4,62}$/;
 const AUTH_KEY_PATTERN = /^[A-Za-z0-9_-]{16,200}$/;
@@ -498,7 +499,10 @@ export function createCloudController(
             if (!Object.values(await accountBindings()).includes(active.uid)) {
               throw new Error('请先将当前 ChatGPT 账号明确绑定到 LunaTOC 云账号');
             }
-            await local.set({ [CLOUD_AUTO_SYNC_KEY]: true });
+            await local.set({
+              [CLOUD_AUTO_SYNC_KEY]: true,
+              [CLOUD_AUTO_SYNC_STATUS_KEY]: pendingCloudSyncStatus('自动云同步已开启，等待首次同步'),
+            });
             return { ok: true, message: '云同步已开启；后续本地更改会自动同步', uid: active.uid, autoSyncEnabled: true };
           }
           await local.set({ [CLOUD_AUTO_SYNC_KEY]: false });
