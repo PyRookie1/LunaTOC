@@ -22,6 +22,25 @@ function getMarkdownFence(content: string): string {
   return '`'.repeat(Math.max(3, longestRun + 1));
 }
 
+/** Counts UTF-8 bytes without allocating a second full-size buffer. */
+function exceedsUtf8ByteLimit(value: string, maximum: number): boolean {
+  let bytes = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code <= 0x7f) bytes += 1;
+    else if (code <= 0x7ff) bytes += 2;
+    else if (code >= 0xd800 && code <= 0xdbff &&
+        index + 1 < value.length &&
+        value.charCodeAt(index + 1) >= 0xdc00 &&
+        value.charCodeAt(index + 1) <= 0xdfff) {
+      bytes += 4;
+      index += 1;
+    } else bytes += 3;
+    if (bytes > maximum) return true;
+  }
+  return false;
+}
+
 /** Reads one line without allocating an array for every line in the document. */
 function readLine(
   source: string,
@@ -58,7 +77,7 @@ export function parseMarkdownPrompts(
   markdown: string
 ): Array<Pick<SavedPrompt, 'title' | 'content'>> {
   if (typeof markdown !== 'string') throw new Error('Markdown 文件内容无效。');
-  if (new Blob([markdown]).size > MAX_MARKDOWN_IMPORT_BYTES) {
+  if (exceedsUtf8ByteLimit(markdown, MAX_MARKDOWN_IMPORT_BYTES)) {
     throw new Error('Markdown 文件超过 5 MiB 限制，请拆分文件后重新导入。');
   }
 
