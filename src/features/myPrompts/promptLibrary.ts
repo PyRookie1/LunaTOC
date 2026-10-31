@@ -19,7 +19,7 @@ import { previewTooltip } from '@/features/tooltip';
 
 import {
   formatPromptsAsMarkdown,
-  parseMarkdownPrompts,
+  parseMarkdownImportFile,
 } from './promptSerializer';
 import {
   sortMyPrompts,
@@ -144,7 +144,7 @@ function importMyPrompts(onImport: VoidCallback): void {
     if (!file) return;
 
     try {
-      const promptsToImport = parseMarkdownPrompts(await file.text());
+      const promptsToImport = await parseMarkdownImportFile(file);
       if (!promptsToImport.length) {
         await showPromptModal({
           title: '导入提示词',
