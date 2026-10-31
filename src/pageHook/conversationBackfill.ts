@@ -1,3 +1,4 @@
+import { postPageHookMessage } from './messageTransport';
 /**
  * Paginates older conversation history after the initial load when
  * `page_info.has_previous_page` is set. Posts each parsed page to the
@@ -196,15 +197,12 @@ export function postConversationPayload(
   platform: Platform = installedPlatform ?? getActivePlatform(),
   requestStartedAt?: number
 ): void {
-  window.postMessage(
-    {
-      type: platform.pageHook.messages.conversationData,
-      ...(requestStartedAt !== undefined ? { requestStartedAt } : {}),
-      routeKey,
-      payload,
-    },
-    '*'
-  );
+  postPageHookMessage({
+    type: platform.pageHook.messages.conversationData,
+    ...(requestStartedAt !== undefined ? { requestStartedAt } : {}),
+    routeKey,
+    payload,
+  });
 }
 
 /**
@@ -226,13 +224,10 @@ export function postConversationEnded(
   complete = false
 ): void {
   if (!routeKey) return;
-  window.postMessage(
-    {
-      type: platform.pageHook.messages.conversationEnded,
-      routeKey,
-      complete,
-    },
-    '*'
-  );
+  postPageHookMessage({
+    type: platform.pageHook.messages.conversationEnded,
+    routeKey,
+    complete,
+  });
 }
 
