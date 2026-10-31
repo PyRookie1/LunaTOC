@@ -7,7 +7,7 @@
 4. 仅验证成功后，在设置页**明确选择将当前 ChatGPT 账号绑定至正在登录的 LunaTOC 云账号**，再首次同步。其他 ChatGPT 账号保持仅本地存储，不会自动上传。
 5. 在另一台设备使用**相同 LunaTOC 邮箱、密码和相同 ChatGPT 账号**登录，在该设备再次确认绑定后下载云数据。
 6. 同一 Firebase UID 可分别绑定多个 ChatGPT 账号并独立存储；切换 Firebase UID 不自动迁移本地 ChatGPT 账号。解绑仅删除本机绑定关系，不删除数据。
-7. 关闭同步即撤销本机 Firebase 登录会话、停止后续上传，不删除本地数据或已上传的云端副本。
+7. 关闭同步即撤销本机 Firebase 登录会话、停止后续上传，不删除本地数据或已上传的云端副本。浏览器完全退出后登录凭据也会清除：下次打开 Chrome 需要重新登录 LunaTOC 云账号并重新开启自动同步；浏览器后台服务暂时休眠不等于退出浏览器，不会因此退出登录。
 
 ## 维护者 Firebase 配置
 1. 可使用 Spark 免费方案。Project settings → General → Your apps → 注册 Firebase Web App，获取真实 `projectId`、`apiKey`、`authDomain`。自 2026-10-15 起新建项目不再自动创建默认 Hosting 站点；若 Web App Config 缺少 `authDomain`，按 Firebase 控制台提示先创建默认 Hosting 站点，再从 Config 读取实际域名，不能按 Project ID 猜测。
@@ -23,7 +23,7 @@
 8. 完成真实双用户、未验证邮箱、断网、双设备、同步冲突测试后，才可合并发布 PR。
 
 ## 安全、配额和数据隔离
-- Firebase Authentication 保管密码，扩展只持久保存 Firebase ID/Refresh Token；关闭同步清理本地会话。
+- Firebase Authentication 保管密码。扩展仅在 Chrome 的临时会话存储中保存 Firebase ID/Refresh Token，不写入长期本地存储；关闭同步或完全退出浏览器后清理登录会话。更新到本版本时也会删除旧版本留在长期本地存储中的凭据，要求重新登录。
 - **没有自定义用户名登录**；“LunaTOC 账号”是与 ChatGPT 账号独立的邮箱密码账号。若要自定义用户名，需要独立认证后端。
 - 数据路径为 `users/{firebaseUid}/accounts/acct_{sha256(chatgptOwnerId)}`，每份快照最多约 240 KB。同步 Tips、目录别名与偏好，不上传聊天正文；云端不是端到端加密，项目维护者有能力查看存储明文。
 - 未验证邮箱的账号无权访问 Firestore，包含 `get` 和 `create/update`；不同 Firebase UID 之间也互相拒绝。
