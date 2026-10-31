@@ -81,7 +81,6 @@ function PromptAutocompleteMenu({
             }}
             role="option"
             aria-selected={isSelected}
-            title={prompt.content}
             className={`cursor-pointer border-b border-(--ct-border-autocomplete-item) px-3 py-2.5 text-left transition-colors last:border-b-0 ${
               isSelected ? 'bg-(--ct-bg-item-hover)' : ''
             }`}
