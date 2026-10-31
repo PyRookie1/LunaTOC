@@ -6,6 +6,7 @@ import type { SavedPrompt } from './promptStore';
 
 export const MAX_MARKDOWN_IMPORT_BYTES = 5 * 1024 * 1024;
 export const MAX_MARKDOWN_IMPORT_PROMPTS = 500;
+export const MAX_MARKDOWN_IMPORT_LINES = 100_000;
 export const MAX_MARKDOWN_PROMPT_TITLE_LENGTH = 1_000;
 export const MAX_MARKDOWN_PROMPT_CONTENT_LENGTH = 100_000;
 
@@ -62,23 +63,31 @@ export function parseMarkdownPrompts(
   }
 
   const prompts: Array<Pick<SavedPrompt, 'title' | 'content'>> = [];
-  let current = readLine(markdown, 0);
+  let linesRead = 0;
+  const nextLine = (offset: number): { line: string; next: number } | null => {
+    const line = readLine(markdown, offset);
+    if (line && ++linesRead > MAX_MARKDOWN_IMPORT_LINES) {
+      throw new Error(`Markdown 文件超过 ${MAX_MARKDOWN_IMPORT_LINES.toLocaleString()} 行限制。`);
+    }
+    return line;
+  };
+  let current = nextLine(0);
 
   while (current) {
     if (!current.line.startsWith('# ')) {
-      current = readLine(markdown, current.next);
+      current = nextLine(current.next);
       continue;
     }
 
     const title = current.line.slice(2).trim();
-    current = readLine(markdown, current.next);
-    while (current?.line === '') current = readLine(markdown, current.next);
+    current = nextLine(current.next);
+    while (current?.line === '') current = nextLine(current.next);
 
     const openingFence = current?.line.match(/^(`{3,})prompt\s*$/);
     if (!title || !openingFence) {
       // Match the legacy parser's behavior: skip the first non-empty line
       // after a heading that does not introduce a supported prompt block.
-      current = current ? readLine(markdown, current.next) : null;
+      current = current ? nextLine(current.next) : null;
       continue;
     }
     if (title.length > MAX_MARKDOWN_PROMPT_TITLE_LENGTH) {
@@ -89,7 +98,7 @@ export function parseMarkdownPrompts(
     const contentLines: string[] = [];
     let contentLength = 0;
     let hasNonWhitespace = false;
-    current = readLine(markdown, current.next);
+    current = nextLine(current.next);
 
     while (current && current.line !== fence) {
       const nextLength = contentLength + current.line.length +
@@ -102,7 +111,7 @@ export function parseMarkdownPrompts(
       contentLength = nextLength;
       if (current.line.trim()) hasNonWhitespace = true;
       contentLines.push(current.line);
-      current = readLine(markdown, current.next);
+      current = nextLine(current.next);
     }
 
     // An incomplete block is ignored, as in the previous parser.
@@ -116,7 +125,7 @@ export function parseMarkdownPrompts(
       }
       prompts.push({ title, content: contentLines.join('\n') });
     }
-    current = readLine(markdown, current.next);
+    current = nextLine(current.next);
   }
 
   return prompts;
