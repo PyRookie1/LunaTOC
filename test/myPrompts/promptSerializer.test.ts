@@ -7,6 +7,7 @@ import {
   parseMarkdownImportFile,
   MAX_MARKDOWN_IMPORT_BYTES,
   MAX_MARKDOWN_IMPORT_PROMPTS,
+  MAX_MARKDOWN_IMPORT_LINES,
   MAX_MARKDOWN_PROMPT_CONTENT_LENGTH,
   MAX_MARKDOWN_PROMPT_TITLE_LENGTH,
 } from '@/features/myPrompts/promptSerializer';
@@ -192,6 +193,11 @@ describe('promptSerializer', () => {
     it('checks UTF-8 byte size even when the parser is called directly', () => {
       expect(() => parseMarkdownPrompts('x'.repeat(MAX_MARKDOWN_IMPORT_BYTES + 1)))
         .toThrow('5 MiB');
+    });
+
+    it('rejects pathological files with too many lines', () => {
+      expect(() => parseMarkdownPrompts('\n'.repeat(MAX_MARKDOWN_IMPORT_LINES)))
+        .toThrow('行限制');
     });
 
     it('accepts up to the prompt-count limit and rejects one more', () => {
