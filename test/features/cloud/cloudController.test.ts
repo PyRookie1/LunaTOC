@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createCloudController, CLOUD_MESSAGE_TYPE, CLOUD_AUTO_SYNC_KEY, CLOUD_ACCOUNT_BINDINGS_KEY } from '@/features/cloud/cloudController';
+import { createCloudController, CLOUD_MESSAGE_TYPE, CLOUD_AUTO_SYNC_KEY, CLOUD_ACCOUNT_BINDINGS_KEY, FIREBASE_REQUEST_TIMEOUT_MS } from '@/features/cloud/cloudController';
 import { createSerialWriteQueue } from '@/features/storage/serialWriteQueue';
 import { PROMPT_STORAGE_KEY } from '@/features/myPrompts/promptWriteCoordinator';
 import { ACCOUNT_SETTINGS_KEY } from '@/features/storage/accountSettings';
@@ -96,6 +96,81 @@ async function ready(local: ReturnType<typeof storage>, cloud: ReturnType<typeof
   return { service, sessions };
 }
 describe('Firebase REST account sync', () => {
+  it('fails a hung fetch after the deadline, aborts it and allows another attempt', async () => {
+    const local = storage(initialLocal()), sessions = storage(), cloud = firebaseHarness();
+    let signal: AbortSignal | undefined;
+    const fetcher = vi.fn((_url: string, options?: RequestInit): Promise<Response> => {
+      signal = options?.signal ?? undefined;
+      // Deliberately ignore AbortSignal. The caller must still settle.
+      return new Promise<Response>(() => {});
+    });
+    const service = createCloudController(local.api, sessions.api, createSerialWriteQueue(),
+      async () => true, fetcher as unknown as typeof fetch,
+      { apiKey: 'AIzaSy-Test-api-key-public', projectId: 'lunatoc-demo',
+        authDomain: 'lunatoc-demo.firebaseapp.com' });
+
+    vi.useFakeTimers();
+    try {
+      const pending = service.execute(request('login', {
+        email: 'test@example.com', password: 'a-secure-test-password',
+      }));
+      await vi.advanceTimersByTimeAsync(1);
+      expect(fetcher).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(FIREBASE_REQUEST_TIMEOUT_MS);
+      expect(await pending).toMatchObject({
+        ok: false, error: expect.stringContaining('网络请求超时'),
+      });
+      expect(signal?.aborted).toBe(true);
+      expect(vi.getTimerCount()).toBe(0);
+      expect(local.state[PROMPT_STORAGE_KEY]).toEqual([item]);
+    } finally {
+      vi.useRealTimers();
+    }
+    fetcher.mockImplementation((input, options) => cloud.fetcher(input, options));
+    expect(await service.execute(request('login', {
+      email: 'test@example.com', password: 'a-secure-test-password',
+    }))).toMatchObject({ ok: true, uid: 'firebase-user' });
+  });
+
+  it('also times out when Firebase sends headers but never completes the response body', async () => {
+    const local = storage(initialLocal()), sessions = storage();
+    let signal: AbortSignal | undefined;
+    let controller: ReadableStreamDefaultController<Uint8Array> | undefined;
+    const responseBody = new ReadableStream<Uint8Array>({
+      start(active) {
+        controller = active;
+        active.enqueue(new TextEncoder().encode('{"idToken":'));
+      },
+    });
+    const fetcher = vi.fn(async (_url: string, options?: RequestInit): Promise<Response> => {
+      signal = options?.signal ?? undefined;
+      return new Response(responseBody, { status: 200 });
+    });
+    const service = createCloudController(local.api, sessions.api, createSerialWriteQueue(),
+      async () => true, fetcher as unknown as typeof fetch,
+      { apiKey: 'AIzaSy-Test-api-key-public', projectId: 'lunatoc-demo',
+        authDomain: 'lunatoc-demo.firebaseapp.com' });
+
+    vi.useFakeTimers();
+    try {
+      const pending = service.execute(request('login', {
+        email: 'test@example.com', password: 'a-secure-test-password',
+      }));
+      await vi.advanceTimersByTimeAsync(1);
+      expect(fetcher).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(FIREBASE_REQUEST_TIMEOUT_MS);
+      expect(await pending).toMatchObject({
+        ok: false, error: expect.stringContaining('网络请求超时'),
+      });
+      expect(signal?.aborted).toBe(true);
+      expect(vi.getTimerCount()).toBe(0);
+      expect(local.state[PROMPT_STORAGE_KEY]).toEqual([item]);
+    } finally {
+      controller?.close();
+      vi.useRealTimers();
+    }
+  });
+
   it('does not reuse old success after cloud sync is re-enabled', async () => {
     const local = storage({ ...initialLocal(),
       'lunatoc:cloud:auto-sync-status:v1': {
