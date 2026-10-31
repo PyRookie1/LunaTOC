@@ -126,6 +126,21 @@ test('Chromium MV3: TOC, search, layout, SPA and failure paths',{timeout:150000}
       assert.equal(await page.evaluate(() => document.documentElement.dataset.lunaTocTheme), 'light');
     });
 
+    await t.test('saved-prompt editor and suggestions use a separate closed shadow root',async()=>{
+      const result=await page.evaluate(()=>{
+        const publicHost=document.getElementById('luna-toc-react-host');
+        const privateHost=document.getElementById('luna-toc-private-react-host');
+        return {
+          publicMenuMounted: Boolean(publicHost?.shadowRoot),
+          privateHostMounted: Boolean(privateHost),
+          privateTreeAccessible: privateHost ? privateHost.shadowRoot !== null : true,
+        };
+      });
+      assert.equal(result.publicMenuMounted,true);
+      assert.equal(result.privateHostMounted,true);
+      assert.equal(result.privateTreeAccessible,false);
+    });
+
     await t.test('same-origin page script cannot forge the conversation TOC',async()=>{
       const before=await page.locator('#navigator-list').innerText();
       await page.evaluate(id=>{
