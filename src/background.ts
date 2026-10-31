@@ -23,6 +23,7 @@ import { createToolbarWarningController } from '@/features/contractAlert/toolbar
 import { installRemoteDeletionObserver } from '@/background/remoteDeletionObserver';
 import { createCloudController, CLOUD_MESSAGE_TYPE, CLOUD_AUTO_SYNC_KEY, CLOUD_AUTO_SYNC_STATUS_KEY } from '@/features/cloud/cloudController';
 import { ACCOUNT_SETTINGS_KEY, GET_ACTIVE_ACCOUNT_OWNER_MESSAGE, isValidAccountOwnerId } from '@/features/storage/accountSettings';
+import { completedCloudSyncStatus, pendingCloudSyncStatus } from '@/features/cloud/cloudSyncStatus';
 import {
   CLOUD_RETRY_ALARM, CLOUD_RETRY_STATE_KEY, CLOUD_POLL_ALARM, CLOUD_POLL_MINUTES,
   cloudRetryDelayMs, isTransientCloudError, parseCloudRetryState,
@@ -324,15 +325,11 @@ async function runAutomaticSync(force = false): Promise<void> {
         }
       }
       const failed = errors.length > 0;
-      if (owners.length > 0) {
-        await chrome.storage.local.set({
-          [CLOUD_AUTO_SYNC_STATUS_KEY]: {
-            state: failed ? 'error' : 'success',
-            message: failed ? errors[0] : '已完成所有已验证 ChatGPT 账号的同步',
-            updatedAt: Date.now(),
-          },
-        });
-      }
+      // No verified, bound ChatGPT tabs means no data was synced; never
+      // leave a previously saved "success" visible as the current result.
+      await chrome.storage.local.set({
+        [CLOUD_AUTO_SYNC_STATUS_KEY]: completedCloudSyncStatus(owners.length, errors),
+      });
       if (transientFailure) {
         await armCloudRetry(Math.min((retry?.attempt ?? 0) + 1, 100));
       } else if (!failed && owners.length > 0) {
@@ -362,6 +359,11 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   void (async () => {
     const enabled = await chrome.storage.local.get(CLOUD_AUTO_SYNC_KEY);
     if (enabled[CLOUD_AUTO_SYNC_KEY] !== true) return;
+    // Clear the old success immediately on a local edit, including edits
+    // performed while the ChatGPT tab is closed.
+    await chrome.storage.local.set({
+      [CLOUD_AUTO_SYNC_STATUS_KEY]: pendingCloudSyncStatus(),
+    });
     const stored = await chrome.storage.local.get(CLOUD_RETRY_STATE_KEY);
     if (!parseCloudRetryState(stored[CLOUD_RETRY_STATE_KEY])) await armCloudRetry(0);
     if (autoSyncDebounce) clearTimeout(autoSyncDebounce);

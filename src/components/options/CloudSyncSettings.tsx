@@ -66,7 +66,7 @@ export function CloudSyncSettings({ accountId }: { accountId: string }): React.J
     ): void => {
       if (areaName !== 'local' || !changes[CLOUD_AUTO_SYNC_STATUS_KEY]) return;
       const value = changes[CLOUD_AUTO_SYNC_STATUS_KEY].newValue as CloudAutoSyncStatus | undefined;
-      if (value && (value.state === 'success' || value.state === 'error') &&
+      if (value && (value.state === 'pending' || value.state === 'success' || value.state === 'error') &&
           typeof value.message === 'string' && typeof value.updatedAt === 'number') {
         setLastSyncStatus(value);
       }
@@ -272,6 +272,9 @@ export function CloudSyncSettings({ accountId }: { accountId: string }): React.J
           </div>
         )}
         {message && <p role="status" className="settings-backup-status">{message}</p>}
+        {lastSyncStatus?.state === 'pending' && enabled && (
+          <p role="status" className="settings-backup-status">自动同步待完成：{lastSyncStatus.message}</p>
+        )}
         {lastSyncStatus?.state === 'success' && enabled && (
           <p role="status" className="settings-backup-status">自动同步成功：{lastSyncStatus.message}</p>
         )}

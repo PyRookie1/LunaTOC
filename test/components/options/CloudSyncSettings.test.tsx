@@ -67,6 +67,46 @@ async function enableForm(): Promise<void> {
 }
 
 describe('CloudSyncSettings verified LunaTOC password accounts', () => {
+  it('shows pending rather than a misleading success when no verified ChatGPT tab is available', async () => {
+    mocks.sendMessage.mockImplementation(async ({ action }: { action: string }) => {
+      if (action === 'status') return {
+        ok: true, configured: true, autoSyncEnabled: true,
+        autoSyncStatus: {
+          state: 'pending', message: '等待已登录且已绑定的 ChatGPT 页面；尚未进行本轮云同步',
+          updatedAt: 100,
+        },
+      };
+      return { ok: false, error: 'unexpected action' };
+    });
+    await render();
+    expect(host.textContent).toContain('自动同步待完成：');
+    expect(host.textContent).toContain('尚未进行本轮云同步');
+    expect(host.textContent).not.toContain('自动同步成功：');
+  });
+
+  it('replaces displayed success with pending when a local edit occurs', async () => {
+    mocks.sendMessage.mockImplementation(async ({ action }: { action: string }) => {
+      if (action === 'status') return {
+        ok: true, configured: true, autoSyncEnabled: true,
+        autoSyncStatus: { state: 'success', message: '上次同步完成', updatedAt: 100 },
+      };
+      return { ok: false, error: 'unexpected action' };
+    });
+    await render();
+    expect(host.textContent).toContain('自动同步成功：上次同步完成');
+    const callbacks = (chrome.storage.onChanged.addListener as ReturnType<typeof vi.fn>).mock.calls;
+    const listener = callbacks[callbacks.length - 1][0] as (
+      changes: Record<string, chrome.storage.StorageChange>, areaName: chrome.storage.AreaName
+    ) => void;
+    await act(async () => listener({
+      'lunatoc:cloud:auto-sync-status:v1': {
+        newValue: { state: 'pending', message: '本地数据有更改', updatedAt: 101 },
+      },
+    }, 'local'));
+    expect(host.textContent).not.toContain('自动同步成功：');
+    expect(host.textContent).toContain('自动同步待完成：本地数据有更改');
+  });
+
   it('starts disabled without credential inputs before user opts in', async () => {
     await render();
     expect(host.querySelector('input[type="email"]')).toBeNull();
