@@ -41,5 +41,5 @@ export function postPageHookMessage(message: unknown): void {
   // is for backwards-compatible diagnostics, not a trusted receive channel.
   if (buffered.length === MAX_BUFFERED) buffered.shift();
   buffered.push(message);
-  window.postMessage(message, location.origin);
+  window.postMessage(message, '*');
 }
