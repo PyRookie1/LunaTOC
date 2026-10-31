@@ -74,6 +74,32 @@ export function createCloudController(
   fetcher: Fetcher = fetch,
   managedConfig: Config | null = bundledFirebaseConfig()
 ) {
+  // Older builds accidentally stored the Firebase ID and refresh tokens in
+  // chrome.storage.local. Do not migrate those tokens into the new session:
+  // remove them and require a fresh login after a browser restart.
+  let initialization: Promise<void> | undefined;
+  function initialize(): Promise<void> {
+    initialization ??= (async () => {
+      const legacy = await local.get(SESSION_KEY);
+      if (Object.hasOwn(legacy, SESSION_KEY)) {
+        await local.remove(SESSION_KEY);
+      }
+      const [preferences, savedSession] = await Promise.all([
+        local.get(CLOUD_AUTO_SYNC_KEY), sessionStorage.get(SESSION_KEY),
+      ]);
+      if (preferences[CLOUD_AUTO_SYNC_KEY] === true && !validSession(savedSession[SESSION_KEY])) {
+        await local.set({
+          [CLOUD_AUTO_SYNC_KEY]: false,
+          [CLOUD_AUTO_SYNC_STATUS_KEY]: {
+            state: 'error',
+            message: '浏览器关闭后已清除云账号登录状态，请重新登录并开启自动同步。',
+            updatedAt: Date.now(),
+          } satisfies CloudAutoSyncStatus,
+        });
+      }
+    })();
+    return initialization;
+  }
   async function config(): Promise<Config> {
     // Never accept user-provided project identifiers from local storage or
     // messages. This prevents silently syncing to an attacker-owned backend.
@@ -442,6 +468,7 @@ export function createCloudController(
   }
   async function execute(request: unknown): Promise<CloudResult> {
     try {
+      await initialize();
       if (!request || typeof request !== 'object' || Array.isArray(request) ||
           (request as { type?: unknown }).type !== CLOUD_MESSAGE_TYPE) {
         throw new Error('无效的 Firebase 操作请求');
@@ -526,5 +553,5 @@ export function createCloudController(
       return { ok: false, error: error instanceof Error ? error.message : 'Firebase 操作失败' };
     }
   }
-  return { execute };
+  return { execute, initialize };
 }
