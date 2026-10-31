@@ -71,7 +71,7 @@ export function formatPromptsAsMarkdown(prompts: SavedPrompt[]): string {
 
 /**
  * Parses the Markdown format created by the exporter. Parsing is bounded by
- * UTF-8 file size, prompt count, title length and content length.
+ * UTF-8 file size, line count, prompt count, title length and content length.
  */
 export function parseMarkdownPrompts(
   markdown: string
