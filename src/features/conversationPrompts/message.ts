@@ -1,5 +1,5 @@
 /**
- * Converts ChatGPT conversation payloads into ChatTOC's compact message model.
+ * Converts ChatGPT conversation payloads into LunaTOC's compact message model.
  */
 export interface ChatAttachment {
   name?: string;
@@ -11,6 +11,9 @@ export type ChatContentPart = string | { content_type?: string };
 
 export interface ChatMessage {
   id: string;
+  /** Parent pointers are present on some paginated ChatGPT payloads. */
+  parent?: string | null;
+  parent_id?: string | null;
   author?: { role?: string };
   content?: { parts?: ChatContentPart[] };
   metadata?: { attachments?: ChatAttachment[] };
@@ -36,6 +39,8 @@ export interface NavigatorMessage {
   text: string;
   canMatchByText: boolean;
   createTime: number;
+  /** Associated assistant response for cache invalidation. */
+  answerId?: string;
 }
 /**
  * Converts ChatGPT message content and attachments into simple TOC text labels.
@@ -62,9 +67,9 @@ export function getMessageDisplayText(message: ChatMessage): string {
  * @returns {string}
  */
 function getAttachmentDisplayText(file: ChatAttachment): string {
-  const label = isImageAttachment(file) ? 'Image' : 'File';
+  const label = isImageAttachment(file) ? '图片' : '文件';
 
-  return `[${label}] ${file.name || 'Uploaded file'}`;
+  return `[${label}] ${file.name || '已上传的文件'}`;
 }
 
 /**
@@ -82,14 +87,14 @@ function getContentPartDisplayText(
   }
 
   if (part?.content_type === 'image_asset_pointer') {
-    return hasImageAttachment ? '' : '[Image]';
+    return hasImageAttachment ? '' : '[图片]';
   }
 
   if (part?.content_type) {
     return `[${part.content_type}]`;
   }
 
-  return '[Attachment]';
+  return '[附件]';
 }
 
 /**
@@ -154,7 +159,7 @@ function isTextMatchableMessage(message: ChatMessage): boolean {
 }
 
 /**
- * Converts a ChatGPT message into the compact model used by ChatTOC.
+ * Converts a ChatGPT message into the compact model used by LunaTOC.
  * @param {Object} message
  * @returns {{ id: string, text: string, canMatchByText: boolean, createTime: number }}
  */
@@ -183,10 +188,11 @@ export function extractUserMessages(
   const messages: NavigatorMessage[] = [];
   let pendingUserMessage: ChatMessage | null = null;
 
-  function flushPendingUserMessage(): void {
+  function flushPendingUserMessage(answerId?: string): void {
     if (!pendingUserMessage) return;
 
     const navigatorMessage = createNavigatorMessage(pendingUserMessage);
+    if (answerId) navigatorMessage.answerId = answerId;
 
     if (navigatorMessage.text.length > 0) {
       messages.push(navigatorMessage);
@@ -201,67 +207,15 @@ export function extractUserMessages(
     if (!role) return;
 
     if (role === 'user') {
+      // Consecutive user versions represent one turn; keep the latest.
       pendingUserMessage = message;
       return;
     }
 
-    flushPendingUserMessage();
+    if (role === 'assistant') flushPendingUserMessage(message.id);
   });
 
   flushPendingUserMessage();
 
   return messages;
-}
-
-/**
- * Builds an explicit map from collapsed predecessor user message IDs to their
- * surviving TOC user message ID. Follows the exact consecutive user collapse
- * semantics of extractUserMessages().
- */
-export function extractCollapsedUserMessageMap(
-  data: ConversationData | null | undefined
-): Map<string, string> {
-  const orderedMessages = data?.messages ?? [];
-  const collapsedMap = new Map<string, string>();
-  let collapsedPredecessorIds: string[] = [];
-  let pendingUserMessage: ChatMessage | null = null;
-
-  function flush(): void {
-    if (!pendingUserMessage) {
-      collapsedPredecessorIds = [];
-      return;
-    }
-
-    const navigatorMessage = createNavigatorMessage(pendingUserMessage);
-    if (navigatorMessage.text.length > 0 && pendingUserMessage.id) {
-      const survivingId = pendingUserMessage.id;
-      for (const predecessorId of collapsedPredecessorIds) {
-        collapsedMap.set(predecessorId, survivingId);
-      }
-    }
-
-    pendingUserMessage = null;
-    collapsedPredecessorIds = [];
-  }
-
-  orderedMessages.forEach((message) => {
-    const role = message?.author?.role;
-    if (!role) return;
-
-    if (role === 'user') {
-      if (
-        pendingUserMessage?.id &&
-        createNavigatorMessage(pendingUserMessage).text.length > 0
-      ) {
-        collapsedPredecessorIds.push(pendingUserMessage.id);
-      }
-      pendingUserMessage = message;
-      return;
-    }
-
-    flush();
-  });
-
-  flush();
-  return collapsedMap;
 }

@@ -21,6 +21,7 @@ import {
   probeNumTurnsBehavior,
   probeDomSelectors,
   reportContractMismatch,
+  shouldRunContractProbes,
 } from './contractAlerts';
 import {
   isBackfilling,
@@ -67,13 +68,16 @@ export function postConversationData(
   response: Response,
   routeKey: string,
   isInitialConversationLoad: boolean,
-  authHeaders: Record<string, string> | null
+  authHeaders: Record<string, string> | null,
+  requestStartedAt?: number
 ): void {
   const platform = getActivePlatform();
   response
     .clone()
     .json()
     .then((data) => {
+      postConversationPayload(data, routeKey, platform, requestStartedAt);
+
       const messages = (data as { messages?: unknown } | null)?.messages;
       if (!Array.isArray(messages)) {
         reportContractMismatch(
@@ -82,12 +86,12 @@ export function postConversationData(
         );
       }
 
-      let backfillStarted = false;
       if (isInitialConversationLoad) {
-        backfillStarted = startBackfillIfNeeded(
+        const backfillStarted = startBackfillIfNeeded(
           data,
           routeKey,
-          authHeaders
+          authHeaders,
+          requestStartedAt
         );
         // Skip the probe when the conversation is empty — a brand-new
         // chat has 0 messages by definition, and the probe would see 0
@@ -96,15 +100,18 @@ export function postConversationData(
         // unconditionally: it only alerts when both num_turns requests
         // return 0 messages, the only failure mode that actually
         // matters.
-        if (Array.isArray(messages) && messages.length > 0) {
-          void probeNumTurnsBehavior(routeKey, authHeaders);
+        if (shouldRunContractProbes()) {
+          if (Array.isArray(messages) && messages.length > 0) {
+            void probeNumTurnsBehavior(routeKey, authHeaders);
+          }
+          probeDomSelectors();
         }
-        probeDomSelectors();
-      }
-
-      postConversationPayload(data, routeKey, platform, { backfillStarted });
-
-      if (isInitialConversationLoad) {
+        // If the initial response already represents the whole conversation
+        // and no backfill is currently in flight for this route, the
+        // backfill branch above won't fire the ENDED signal — do it here.
+        // (If backfill already started for this route, either via the
+        // branch above or by an earlier fetch, its `finally` will post
+        // ENDED when it terminates, so we must not preempt it.)
         const pageInfo = (data as ConversationPayload | undefined)?.page_info;
         if (!backfillStarted && !isBackfilling(routeKey)) {
           const isComplete = pageInfo?.has_previous_page === false;

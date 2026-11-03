@@ -40,11 +40,16 @@ function PromptContextMenu({ request }: PromptContextMenuProps): React.JSX.Eleme
 
   return (
     <ContextMenu
-      ariaLabel="My Prompts actions"
+      ariaLabel="Tips 操作"
       items={request.items}
       position={request.position}
       onClose={promptContextMenuController.close}
-      onSelect={promptContextMenuController.select}
+      onSelect={(itemId, event) => {
+        // The menu is rendered in an open Shadow Root that host-page scripts
+        // can traverse. Only a real browser click may select a Tips action.
+        if (!event.nativeEvent.isTrusted) return;
+        promptContextMenuController.select(itemId);
+      }}
     />
   );
 }

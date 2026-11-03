@@ -3,7 +3,7 @@
  * Tests edgeNavigation functionality including column-reverse edge math, top-band detection, and retry settle loops.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { executeAbsoluteEdgeJump, isPageAtBottom } from '@/navigation/jump/edgeNavigation';
+import { executeAbsoluteEdgeJump } from '@/navigation/jump/edgeNavigation';
 
 describe('edgeNavigation', () => {
   let container: HTMLElement;
@@ -175,6 +175,75 @@ describe('edgeNavigation', () => {
       expect(container.scrollTop).toBe(0);
     });
 
+
+    it('does not pull the user back to the bottom after an upward wheel gesture', async () => {
+      container.style.flexDirection = 'column';
+      executeAbsoluteEdgeJump('bottom', { container });
+      expect(container.scrollTop).toBe(1200);
+
+      container.scrollTop = 850;
+      container.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: -120 }));
+      await vi.advanceTimersByTimeAsync(3100);
+      expect(container.scrollTop).toBe(850);
+    });
+
+    it('does not pull the user back in column-reverse after wheel input', async () => {
+      container.style.flexDirection = 'column-reverse';
+      executeAbsoluteEdgeJump('bottom', { container });
+      expect(container.scrollTop).toBe(0);
+
+      container.scrollTop = -350;
+      container.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: -100 }));
+      await vi.advanceTimersByTimeAsync(3100);
+      expect(container.scrollTop).toBe(-350);
+    });
+
+    it('cancels top-edge retries on a touch gesture', async () => {
+      container.style.flexDirection = 'column';
+      let height = 2000;
+      Object.defineProperty(container, 'scrollHeight', {
+        get: () => height,
+        configurable: true,
+      });
+      executeAbsoluteEdgeJump('top', { container });
+      expect(container.scrollTop).toBe(0);
+
+      height = 2200; // Normally triggers another top-edge assertion.
+      container.scrollTop = 250;
+      container.dispatchEvent(new Event('touchmove', { bubbles: true }));
+      await vi.advanceTimersByTimeAsync(3100);
+      expect(container.scrollTop).toBe(250);
+    });
+
+    it('cancels on a keyboard scroll gesture outside editable controls', async () => {
+      container.style.flexDirection = 'column';
+      executeAbsoluteEdgeJump('bottom', { container });
+      container.scrollTop = 750;
+      document.body.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'PageUp' }));
+      await vi.advanceTimersByTimeAsync(1600);
+      expect(container.scrollTop).toBe(750);
+    });
+
+    it('keeps automatic correction for host scroll changes and unrelated input', async () => {
+      container.style.flexDirection = 'column';
+      executeAbsoluteEdgeJump('bottom', { container });
+      container.scrollTop = 900;
+      container.dispatchEvent(new Event('scroll'));
+      document.body.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: -100 }));
+      await vi.advanceTimersByTimeAsync(1600);
+      expect(container.scrollTop).toBe(1200);
+    });
+
+    it('removes interruption listeners when the jump settles', async () => {
+      container.style.flexDirection = 'column';
+      const removeSpy = vi.spyOn(container, 'removeEventListener');
+      executeAbsoluteEdgeJump('bottom', { container });
+      await vi.advanceTimersByTimeAsync(1600);
+      expect(removeSpy).toHaveBeenCalledWith('wheel', expect.any(Function));
+      expect(removeSpy).toHaveBeenCalledWith('touchmove', expect.any(Function));
+      removeSpy.mockRestore();
+    });
+
     it('settles cleanly on standard layout bottom jump and re-asserts if displaced', async () => {
       container.style.flexDirection = 'column';
 
@@ -191,42 +260,6 @@ describe('edgeNavigation', () => {
       // Attempt 1 settle verified
       await vi.advanceTimersByTimeAsync(1600);
       expect(container.scrollTop).toBe(1200);
-    });
-  });
-
-  describe('isPageAtBottom', () => {
-    it('returns true when container is exactly at maxScrollTop in standard layout', () => {
-      container.style.flexDirection = 'column';
-      container.scrollTop = 1200; // scrollHeight (2000) - clientHeight (800)
-      expect(isPageAtBottom(container)).toBe(true);
-    });
-
-    it('returns true when container is within fractional tolerance of bottom', () => {
-      container.style.flexDirection = 'column';
-      container.scrollTop = 1198.5; // within 2px tolerance
-      expect(isPageAtBottom(container, 2)).toBe(true);
-    });
-
-    it('returns false when container is scrolled above bottom beyond tolerance', () => {
-      container.style.flexDirection = 'column';
-      container.scrollTop = 1195; // 5px above bottom
-      expect(isPageAtBottom(container, 2)).toBe(false);
-    });
-
-    it('returns true at scrollTop 0 for column-reverse layout', () => {
-      container.style.flexDirection = 'column-reverse';
-      container.scrollTop = 0;
-      expect(isPageAtBottom(container)).toBe(true);
-    });
-
-    it('returns false for column-reverse layout when scrolled into history', () => {
-      container.style.flexDirection = 'column-reverse';
-      container.scrollTop = -500;
-      expect(isPageAtBottom(container)).toBe(false);
-    });
-
-    it('returns false when container is null', () => {
-      expect(isPageAtBottom(null)).toBe(false);
     });
   });
 });

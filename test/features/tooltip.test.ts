@@ -1,8 +1,6 @@
+// @vitest-environment jsdom
 /**
- * @vitest-environment jsdom
- */
-/**
- * Tests shared tooltip visibility helpers and previewTooltip lifecycles.
+ * Tests shared tooltip visibility helpers and private prompt preview behavior.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -28,53 +26,74 @@ describe('isElementTextTruncated', () => {
   });
 });
 
-describe('previewTooltip immediate vs delayed hide', () => {
+describe('previewTooltip privacy', () => {
+  let closedRoot: ShadowRoot | null;
+  let originalAttachShadow: typeof Element.prototype.attachShadow;
+
   beforeEach(() => {
+    closedRoot = null;
     vi.useFakeTimers();
-    document.body.innerHTML = '';
+    originalAttachShadow = Element.prototype.attachShadow;
+    vi.spyOn(Element.prototype, 'attachShadow').mockImplementation(function (
+      this: Element,
+      init: ShadowRootInit
+    ): ShadowRoot {
+      const root = originalAttachShadow.call(this, init);
+      if (init.mode === 'closed') closedRoot = root;
+      return root;
+    });
     previewTooltip.init();
   });
 
   afterEach(() => {
-    previewTooltip.hide(true);
+    previewTooltip.hide();
     vi.runOnlyPendingTimers();
-    vi.useRealTimers();
     document.body.innerHTML = '';
+    vi.restoreAllMocks();
+    vi.useRealTimers();
   });
 
-  it('preserves 200ms delay when hide() is called without arguments', () => {
-    const tooltip = document.getElementById('luna-toc-preview-tooltip') as HTMLElement;
-    expect(tooltip).not.toBeNull();
-
-    // Trigger show
-    previewTooltip.show('Sample preview text', new MouseEvent('mouseenter', { clientX: 100, clientY: 100 }));
+  it('renders prompt text only inside a closed shadow root', () => {
+    previewTooltip.show(
+      { title: 'Private title', content: 'Private prompt body' },
+      new MouseEvent('mouseenter', { clientX: 120, clientY: 140 })
+    );
     vi.advanceTimersByTime(500);
-    expect(tooltip.classList.contains('luna-toc-tooltip-visible')).toBe(true);
 
-    // Call hide() without arguments
+    const host = document.getElementById('luna-toc-private-preview-host');
+    expect(host).not.toBeNull();
+    expect(host?.shadowRoot).toBeNull();
+    expect(document.body.textContent).not.toContain('Private prompt body');
+    expect(closedRoot?.textContent).toContain('Private prompt body');
+  });
+
+  it('clears prompt text from the shadow DOM immediately when hidden', () => {
+    previewTooltip.show(
+      { title: 'Private title', content: 'Private prompt body' },
+      new MouseEvent('mouseenter', { clientX: 120, clientY: 140 })
+    );
+    vi.advanceTimersByTime(500);
+
+    expect(closedRoot?.textContent).toContain('Private prompt body');
+    previewTooltip.hide();
+    expect(closedRoot?.textContent).not.toContain('Private prompt body');
+
+    vi.advanceTimersByTime(200);
+    expect(closedRoot?.querySelector('#luna-toc-preview-tooltip')?.classList.contains(
+      'luna-toc-tooltip-visible'
+    )).toBe(false);
+  });
+
+  it('restores the preview only when the pointer enters its private tooltip during the hide window', () => {
+    previewTooltip.show(
+      { title: 'Private title', content: 'Private prompt body' },
+      new MouseEvent('mouseenter', { clientX: 120, clientY: 140 })
+    );
+    vi.advanceTimersByTime(500);
     previewTooltip.hide();
 
-    // Still visible before 200ms
-    vi.advanceTimersByTime(100);
-    expect(tooltip.classList.contains('luna-toc-tooltip-visible')).toBe(true);
-
-    // Hidden after 200ms
-    vi.advanceTimersByTime(100);
-    expect(tooltip.classList.contains('luna-toc-tooltip-visible')).toBe(false);
-  });
-
-  it('dismisses immediately when hide(true) is called', () => {
-    const tooltip = document.getElementById('luna-toc-preview-tooltip') as HTMLElement;
-    expect(tooltip).not.toBeNull();
-
-    previewTooltip.show('Sample preview text', new MouseEvent('mouseenter', { clientX: 100, clientY: 100 }));
-    vi.advanceTimersByTime(500);
-    expect(tooltip.classList.contains('luna-toc-tooltip-visible')).toBe(true);
-
-    // Call hide(true)
-    previewTooltip.hide(true);
-
-    // Hidden immediately without advancing timer
-    expect(tooltip.classList.contains('luna-toc-tooltip-visible')).toBe(false);
+    const tooltip = closedRoot?.querySelector('#luna-toc-preview-tooltip');
+    tooltip?.dispatchEvent(new MouseEvent('mouseenter'));
+    expect(closedRoot?.textContent).toContain('Private prompt body');
   });
 });

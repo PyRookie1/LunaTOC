@@ -4,13 +4,13 @@
  */
 import {
   createNavigatorMessage,
-  extractCollapsedUserMessageMap,
   extractUserMessages,
   type ChatMessage,
   type ConversationData,
   type NavigatorMessage,
 } from '@/features/conversationPrompts/message';
 import { createNavigationSnapshotStore } from '@/navigation/jump/navigationSnapshotStore';
+import { extractActiveBranchMessages, type ConversationSnapshot } from './activeBranch';
 
 export interface ConversationStoreOptions {
   /**
@@ -42,11 +42,12 @@ export interface ConversationStore {
   isNewChatRouteKey(routeKey: string): boolean;
   getMessages(): NavigatorMessage[];
   setMessages(messages: NavigatorMessage[]): void;
-  getCollapsedMessageMap(routeKey?: string): ReadonlyMap<string, string>;
+  replaceWithFreshSnapshot(data: ConversationSnapshot, routeKey: string): boolean;
   appendNavigatorMessage(newMessage: ChatMessage, routeKey?: string): boolean;
   handleConversationData(
     data: ConversationData,
-    routeKey?: string
+    routeKey?: string,
+    requestStartedAt?: number
   ): NavigatorMessage[];
   handleNewUserMessage(
     newMessage: ChatMessage,
@@ -62,6 +63,8 @@ export interface ConversationStore {
   cacheConversationMessages(key: string): void;
   isConversationComplete(routeKey?: string): boolean;
   markConversationComplete(routeKey?: string): void;
+  markConversationIncomplete(routeKey?: string): void;
+  deleteConversation(routeKey: string): void;
   resetForCurrentRoute(options?: {
     preserveMessages?: boolean;
     nextMessages?: NavigatorMessage[];
@@ -83,16 +86,15 @@ export function createConversationStore(
   const navigationSnapshotStore =
     createNavigationSnapshotStore<NavigatorMessage>();
 
-  const EMPTY_COLLAPSED_MAP: ReadonlyMap<string, string> = new Map();
   let conversationMessages: NavigatorMessage[] = [];
   const accumulatedConversationMessages = new Map<
     string,
     Map<string, ChatMessage>
   >();
-  const accumulatedCollapsedMaps = new Map<string, Map<string, string>>();
   let currentConversationKey: string | null = null;
   let pendingNewChatRouteKey: string | null = null;
   let pendingNewChatMessage: ChatMessage | null = null;
+  const freshSnapshotAppliedAt = new Map<string, number>();
 
   function defaultRouteResolver(): string {
     return 'new-chat:/';
@@ -123,14 +125,6 @@ export function createConversationStore(
 
   function setMessages(messages: NavigatorMessage[]): void {
     conversationMessages = messages;
-    accumulatedCollapsedMaps.delete(getCurrentConversationKey());
-  }
-
-  function getCollapsedMessageMap(
-    routeKey?: string
-  ): ReadonlyMap<string, string> {
-    const targetKey = routeKey || getCurrentConversationKey();
-    return accumulatedCollapsedMaps.get(targetKey) || EMPTY_COLLAPSED_MAP;
   }
 
   function clearPendingNewChat(): void {
@@ -156,6 +150,23 @@ export function createConversationStore(
     navigationSnapshotStore.setComplete(targetKey, true);
   }
 
+
+  /** Removes all cached state for a confirmed-deleted conversation. */
+  function deleteConversation(routeKey: string): void {
+    accumulatedConversationMessages.delete(routeKey);
+    freshSnapshotAppliedAt.delete(routeKey);
+    navigationSnapshotStore.deleteConversation(routeKey);
+    if (currentConversationKey === routeKey) {
+      conversationMessages = [];
+      clearPendingNewChat();
+    }
+  }
+
+  /** A failed refresh invalidates completeness without deleting user data. */
+  function markConversationIncomplete(routeKey?: string): void {
+    navigationSnapshotStore.setComplete(routeKey || getCurrentConversationKey(), false);
+  }
+
   function getCachedConversationMessages(
     conversationKey: string
   ): NavigatorMessage[] {
@@ -167,32 +178,17 @@ export function createConversationStore(
     routeKey?: string
   ): boolean {
     const targetConversationKey = routeKey || getCurrentConversationKey();
-    const normalizedMessage: ChatMessage =
-      newMessage?.author?.role === 'user'
-        ? newMessage
-        : {
-            ...newMessage,
-            author: {
-              ...newMessage?.author,
-              role: 'user',
-            },
-          };
-
-    if (normalizedMessage?.id) {
+    if (newMessage?.id) {
       getAccumulatedMessageMap(targetConversationKey).set(
-        normalizedMessage.id,
-        normalizedMessage
+        newMessage.id,
+        newMessage
       );
     }
 
-    if (
-      conversationMessages.some(
-        (message) => message.id === normalizedMessage.id
-      )
-    ) {
+    if (conversationMessages.some((message) => message.id === newMessage.id)) {
       return false;
     }
-    conversationMessages.push(createNavigatorMessage(normalizedMessage));
+    conversationMessages.push(createNavigatorMessage(newMessage));
     cacheConversationMessages(targetConversationKey);
     return true;
   }
@@ -224,29 +220,71 @@ export function createConversationStore(
 
   function handleConversationData(
     data: ConversationData,
-    routeKey?: string
+    routeKey?: string,
+    requestStartedAt?: number
   ): NavigatorMessage[] {
     const incomingMessages = data?.messages;
     if (!Array.isArray(incomingMessages)) return conversationMessages;
 
     const conversationKey = routeKey || getCurrentConversationKey();
-    const messageMap = getAccumulatedMessageMap(conversationKey);
+    const verifiedAt = freshSnapshotAppliedAt.get(conversationKey);
+    if (verifiedAt !== undefined) {
+      // Normal paginated responses cannot prove the selected edit branch.
+      // Never union abandoned message IDs into a branch already verified by
+      // refresh, even if the host begins another request after that refresh.
+      if (typeof requestStartedAt !== 'number' || requestStartedAt <= verifiedAt) {
+        return conversationMessages;
+      }
+      const selected = getAccumulatedMessageMap(conversationKey);
+      for (const message of incomingMessages) {
+        if (message?.id && selected.has(message.id)) selected.set(message.id, message);
+      }
+      // The selected map stays in verified branch order (not timestamp order).
+      conversationMessages = extractUserMessages({ messages: [...selected.values()] });
+      cacheConversationMessages(conversationKey);
+      return conversationMessages;
+    }
 
+    const messageMap = getAccumulatedMessageMap(conversationKey);
     for (const message of incomingMessages) {
       if (message?.id) messageMap.set(message.id, message);
     }
 
-    const mergedData = buildMergedConversationData(
-      conversationKey,
-      data.current_node
-    );
+    const mergedData = buildMergedConversationData(conversationKey, data.current_node);
     conversationMessages = extractUserMessages(mergedData);
-    accumulatedCollapsedMaps.set(
-      conversationKey,
-      extractCollapsedUserMessageMap(mergedData)
-    );
     cacheConversationMessages(conversationKey);
     return conversationMessages;
+  }
+
+  /** Replaces the selected branch, rather than unioning abandoned branches. */
+  function replaceWithFreshSnapshot(data: ConversationSnapshot, routeKey: string): boolean {
+    if (routeKey !== getCurrentConversationKey()) return false;
+    const branch = extractActiveBranchMessages(data);
+    if (branch === null) {
+      markConversationIncomplete(routeKey);
+      return false;
+    }
+    // Requests begun before this authoritative snapshot must not reintroduce
+    // superseded branches when their paginated responses arrive late.
+    freshSnapshotAppliedAt.delete(routeKey);
+    freshSnapshotAppliedAt.set(routeKey, Date.now());
+    if (freshSnapshotAppliedAt.size > 8) {
+      const oldest = freshSnapshotAppliedAt.keys().next().value;
+      if (oldest) freshSnapshotAppliedAt.delete(oldest);
+    }
+    const next = extractUserMessages({ messages: branch });
+    const previous = conversationMessages;
+    const changed = previous.length !== next.length || previous.some((m, i) =>
+      m.id !== next[i]?.id || m.text !== next[i]?.text ||
+      m.createTime !== next[i]?.createTime || m.canMatchByText !== next[i]?.canMatchByText ||
+      m.answerId !== next[i]?.answerId
+    );
+    const map = new Map<string, ChatMessage>();
+    for (const message of branch) if (message.id) map.set(message.id, message);
+    accumulatedConversationMessages.set(routeKey, map);
+    conversationMessages = next;
+    navigationSnapshotStore.replacePrompts(routeKey, next, true);
+    return changed;
   }
 
   function handleNewUserMessage(
@@ -306,7 +344,7 @@ export function createConversationStore(
         nextKey: nextConversationKey,
         isNewChatRouteTransition: false,
         shouldPreserveMessages: false,
-        cachedMessages: getCachedConversationMessages(nextConversationKey),
+        cachedMessages: [],
         isComplete: navigationSnapshotStore.isComplete(nextConversationKey),
       };
     }
@@ -318,7 +356,8 @@ export function createConversationStore(
         nextKey: nextConversationKey,
         isNewChatRouteTransition: false,
         shouldPreserveMessages: false,
-        cachedMessages: getCachedConversationMessages(nextConversationKey),
+        // No route transition consumes a snapshot; avoid deep-cloning it.
+        cachedMessages: [],
         isComplete: navigationSnapshotStore.isComplete(nextConversationKey),
       };
     }
@@ -339,16 +378,6 @@ export function createConversationStore(
       }
       accumulatedConversationMessages.delete(previousConversationKey);
 
-      const previousCollapsed =
-        accumulatedCollapsedMaps.get(previousConversationKey);
-      if (previousCollapsed && previousCollapsed.size > 0) {
-        accumulatedCollapsedMaps.set(
-          nextConversationKey,
-          new Map(previousCollapsed)
-        );
-      }
-      accumulatedCollapsedMaps.delete(previousConversationKey);
-
       if (
         navigationSnapshotStore.copySnapshot(
           previousConversationKey,
@@ -357,9 +386,11 @@ export function createConversationStore(
       ) {
         cacheConversationMessages(nextConversationKey);
       }
-      navigationSnapshotStore.replacePrompts(previousConversationKey, []);
+      navigationSnapshotStore.deleteConversation(previousConversationKey);
+      freshSnapshotAppliedAt.delete(previousConversationKey);
     }
 
+    if (!shouldPreserveMessages) accumulatedConversationMessages.delete(previousConversationKey);
     const cachedMessages = getCachedConversationMessages(nextConversationKey);
     if (isNewChatRouteTransition) {
       pendingNewChatRouteKey = previousConversationKey;
@@ -388,7 +419,6 @@ export function createConversationStore(
   ): void {
     if (!resetOptions.preserveMessages) {
       conversationMessages = resetOptions.nextMessages || [];
-      accumulatedCollapsedMaps.delete(getCurrentConversationKey());
     }
   }
 
@@ -403,7 +433,8 @@ export function createConversationStore(
   function reset(): void {
     conversationMessages = [];
     accumulatedConversationMessages.clear();
-    accumulatedCollapsedMaps.clear();
+    freshSnapshotAppliedAt.clear();
+    navigationSnapshotStore.clear();
     currentConversationKey = null;
     clearPendingNewChat();
   }
@@ -414,7 +445,7 @@ export function createConversationStore(
     isNewChatRouteKey,
     getMessages,
     setMessages,
-    getCollapsedMessageMap,
+    replaceWithFreshSnapshot,
     appendNavigatorMessage,
     handleConversationData,
     handleNewUserMessage,
@@ -425,6 +456,8 @@ export function createConversationStore(
     cacheConversationMessages,
     isConversationComplete,
     markConversationComplete,
+    markConversationIncomplete,
+    deleteConversation,
     resetForCurrentRoute,
     getPendingNewChatRouteKey,
     getPendingNewChatMessage,

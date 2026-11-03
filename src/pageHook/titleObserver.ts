@@ -1,3 +1,4 @@
+import { postPageHookMessage } from './messageTransport';
 /**
  * Watches `document.title` for mutations and forwards every change to the
  * content-script world so the sidebar's title can stay in sync with the
@@ -41,10 +42,7 @@ function tryObserve(messageType: TitleChangedMessageType): void {
       if (current === lastSent) return;
       lastSent = current;
       try {
-        window.postMessage(
-          { type: messageType, title: current },
-          window.location.origin
-        );
+        postPageHookMessage({ type: messageType, title: current });
       } catch {
         // PostMessage failures are non-fatal.
       }

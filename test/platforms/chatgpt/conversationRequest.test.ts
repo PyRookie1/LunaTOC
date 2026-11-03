@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import {
   getConversationIdFromApiPath,
   getConversationMessagesIdFromApiPath,
+  isSupportedChatGptRequestUrl,
 } from '@/platforms/chatgpt/conversationRequest';
 
 describe('ChatGPT conversation request paths', () => {
@@ -41,5 +42,26 @@ describe('ChatGPT conversation messages paths', () => {
     '/backend-api/conversations/init/messages',
   ])('rejects a non-messages-resource path: %s', (pathname) => {
     expect(getConversationMessagesIdFromApiPath(pathname)).toBeNull();
+  });
+});
+
+describe('ChatGPT request origin validation', () => {
+  it.each([
+    ['/backend-api/conversations/current-id', 'https://chatgpt.com'],
+    ['https://chatgpt.com/backend-api/conversations/current-id', 'https://chatgpt.com'],
+    ['/backend-api/conversations/current-id', 'https://chat.openai.com'],
+    ['https://chat.openai.com/backend-api/conversations/current-id', 'https://chat.openai.com'],
+  ])('accepts same-origin ChatGPT requests: %s on %s', (requestUrl, pageOrigin) => {
+    expect(isSupportedChatGptRequestUrl(requestUrl, pageOrigin)).toBe(true);
+  });
+
+  it.each([
+    ['https://example.com/backend-api/conversations/current-id', 'https://chatgpt.com'],
+    ['https://chatgpt.com.evil.example/backend-api/conversations/current-id', 'https://chatgpt.com'],
+    ['//chat.openai.com/backend-api/conversations/current-id', 'https://chatgpt.com'],
+    ['/backend-api/conversations/current-id', 'https://example.com'],
+    ['/backend-api/conversations/current-id', 'http://chatgpt.com'],
+  ])('rejects cross-origin or unsupported requests: %s on %s', (requestUrl, pageOrigin) => {
+    expect(isSupportedChatGptRequestUrl(requestUrl, pageOrigin)).toBe(false);
   });
 });

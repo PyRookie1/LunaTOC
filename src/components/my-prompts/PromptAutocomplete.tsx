@@ -60,7 +60,7 @@ function PromptAutocompleteMenu({
       ref={menuRef}
       data-luna-toc-autocomplete="true"
       role="listbox"
-      aria-label="My Prompts suggestions"
+      aria-label="Tips 建议"
       className="fixed max-h-[220px] overflow-y-auto rounded-lg border border-[var(--ct-border-autocomplete)] bg-[var(--ct-bg-autocomplete)] shadow-xl backdrop-blur-xl"
       style={{
         left: state.position.left,
@@ -81,7 +81,6 @@ function PromptAutocompleteMenu({
             }}
             role="option"
             aria-selected={isSelected}
-            title={prompt.content}
             className={`cursor-pointer border-b border-(--ct-border-autocomplete-item) px-3 py-2.5 text-left transition-colors last:border-b-0 ${
               isSelected ? 'bg-(--ct-bg-item-hover)' : ''
             }`}
@@ -92,7 +91,12 @@ function PromptAutocompleteMenu({
               )
             }
             onMouseDown={(event) => event.preventDefault()}
-            onClick={() => promptAutocompleteViewController.select(index)}
+            onClick={(event) => {
+              // Keep the closed-root menu defensive if its event target is ever
+              // exposed through a future host integration.
+              if (!event.nativeEvent.isTrusted) return;
+              promptAutocompleteViewController.select(index);
+            }}
           >
             <div className="truncate text-[13px] font-semibold text-(--ct-text-autocomplete-title)">
               {prompt.title}

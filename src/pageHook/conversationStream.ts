@@ -1,3 +1,4 @@
+import { postPageHookMessage } from './messageTransport';
 /**
  * Reads the cloned send-message SSE response so newly submitted user prompts
  * can appear in the navigator before the next full conversation fetch
@@ -21,9 +22,14 @@ interface OutgoingMessage {
 
 interface OutgoingRequestBody {
   messages?: OutgoingMessage[];
+  parent_message_id?: string | null;
+  parentMessageId?: string | null;
 }
 
-let streamBuffer = '';
+export interface OutgoingMessageMeta {
+  messageId: string;
+  parentMessageId: string | null;
+}
 
 /**
  * Attempts to parse the outgoing POST request body to immediately capture
@@ -33,7 +39,7 @@ export function extractOutgoingMessage(
   args: FetchArgs,
   routeKey: string,
   messageType: string = NEW_USER_MESSAGE_TYPE
-): void {
+): OutgoingMessageMeta | null {
   try {
     const init = args[1] || {};
     if (typeof init.body === 'string') {
@@ -41,24 +47,32 @@ export function extractOutgoingMessage(
       const messages = data.messages || [];
       const userMessage = messages.find((m) => m.author?.role === 'user');
 
-      if (userMessage) {
-        window.postMessage(
+      if (userMessage?.id) {
+        const parentMessageId =
+          (typeof data.parent_message_id === 'string' && data.parent_message_id) ||
+          (typeof data.parentMessageId === 'string' && data.parentMessageId) ||
+          null;
+
+        postPageHookMessage(
           {
             type: messageType,
             routeKey,
             payload: {
               id: userMessage.id,
-              author: { role: 'user' },
               content: userMessage.content,
               metadata: userMessage.metadata,
               createTime: userMessage.create_time || Date.now(),
+              parentMessageId,
             },
-          },
-          '*'
+          }
         );
+
+        return { messageId: userMessage.id, parentMessageId };
       }
     }
   } catch {}
+
+  return null;
 }
 
 /**
@@ -76,7 +90,8 @@ export async function inspectStream(
 
   if (!reader) return;
 
-  streamBuffer = '';
+  // Keep incomplete lines local to each response.
+  let streamBuffer = '';
   const decoder = new TextDecoder();
 
   while (true) {
@@ -95,7 +110,7 @@ export async function inspectStream(
       stream: true,
     });
 
-    processBufferedStream(routeKey, messageType);
+    streamBuffer = processBufferedStream(streamBuffer, routeKey, messageType);
   }
 }
 
@@ -103,15 +118,15 @@ export async function inspectStream(
  * Splits the accumulated SSE buffer into complete lines while keeping the
  * trailing partial line for the next stream chunk.
  */
-function processBufferedStream(routeKey: string, messageType: string): void {
-  const lines = streamBuffer.split('\n');
-
-  // The last line may be incomplete.
-  streamBuffer = lines.pop() || '';
-
+function processBufferedStream(
+  buffer: string, routeKey: string, messageType: string
+): string {
+  const lines = buffer.split('\n');
+  const remainder = lines.pop() || '';
   for (const line of lines) {
     processStreamLine(line, routeKey, messageType);
   }
+  return remainder;
 }
 
 /**
@@ -139,19 +154,17 @@ function processStreamLine(
     if (data.type === 'input_message') {
       const message = data.input_message;
 
-      window.postMessage(
+      postPageHookMessage(
         {
           type: messageType,
           routeKey,
           payload: {
             id: message.id,
-            author: { role: 'user' },
             content: message.content,
             metadata: message.metadata,
             createTime: message.create_time || Date.now(),
           },
-        },
-        '*'
+        }
       );
     }
   } catch {}

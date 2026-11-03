@@ -17,6 +17,7 @@
 import {
   getConversationIdFromApiPath,
   getConversationMessagesIdFromApiPath,
+  isSupportedChatGptRequestUrl,
 } from './conversationRequest';
 
 export type FetchArgs = Parameters<typeof fetch>;
@@ -42,6 +43,9 @@ export function maybeBumpChatGptFetchNumTurns(
 
   try {
     const urlString = getFetchUrl(input);
+    if (!urlString || !isSupportedChatGptRequestUrl(urlString, window.location.origin)) {
+      return args;
+    }
     const url = new URL(urlString, window.location.origin);
 
     const initialId = getConversationIdFromApiPath(url.pathname);

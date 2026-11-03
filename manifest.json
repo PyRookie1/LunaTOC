@@ -1,9 +1,9 @@
 {
     "manifest_version": 3,
-    "name": "ChatGPT Table of Contents - LunaTOC",
+    "name": "LunaTOC",
     "short_name": "LunaTOC",
-    "version": "1.13.8",
-    "description": "Add a table of contents, prompt navigator, and MyPrompts sidebar to long ChatGPT conversations.",
+    "version": "1.0.0",
+    "description": "LunaTOC：为 ChatGPT 长对话提供目录、回答标题导航和 Markdown 粗体修复。",
     "icons": {
         "16": "src/icons/icon16.png",
         "32": "src/icons/icon32.png",
@@ -22,8 +22,18 @@
         "page": "src/options/options.html",
         "open_in_tab": true
     },
+    "background": {
+        "service_worker": "src/background.ts",
+        "type": "module"
+    },
     "permissions": [
-        "storage"
+        "storage",
+        "webRequest",
+        "alarms"
+    ],
+    "host_permissions": [
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*"
     ],
     "content_scripts": [
         {
@@ -51,5 +61,10 @@
             "run_at": "document_start",
             "world": "ISOLATED"
         }
+    ],
+    "optional_host_permissions": [
+        "https://identitytoolkit.googleapis.com/*",
+        "https://securetoken.googleapis.com/*",
+        "https://firestore.googleapis.com/*"
     ]
 }

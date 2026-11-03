@@ -35,48 +35,6 @@ let autocompleteRequestVersion = 0;
 const autocompleteTriggerPattern =
   /(^|[\s.,!?;:()[\]{}<>"]|'|`|~|，|。|！|？|；|：|、|（|）|【|】|《|》])((?:\/\/)|#)([^\s]*)$/;
 
-let isAutocompleteInitialized = false;
-
-/**
- * Handles input events on the composer element.
- * @param {Event} event
- */
-function handleDocumentInput(event: Event): void {
-  if (isProgrammaticInsert) {
-    return;
-  }
-
-  const target = event.target;
-  if (!(target instanceof Element)) return;
-  // The ChatGPT composer was rewritten in 2026 from a
-  // `<textarea id="prompt-textarea">` to a contenteditable ProseMirror
-  // div, so match by the platform-provided selector instead of an id.
-  const composer = target.closest(
-    getActivePlatform().myPrompts.composerTextareaSelector
-  );
-  if (!(composer instanceof HTMLElement)) return;
-  currentTextarea = composer;
-  handleTextareaInput(composer);
-}
-
-/**
- * Handles document clicks to dismiss the autocomplete menu when clicked outside.
- * @param {MouseEvent} event
- */
-function handleDocumentClick(event: MouseEvent): void {
-  if (
-    promptAutocompleteViewController.getSnapshot() &&
-    event.target instanceof Node &&
-    !isAutocompleteMenuEvent(event) &&
-    // For a contenteditable composer, clicks land on child paragraphs
-    // rather than the editor itself, so test with `contains` instead of
-    // a strict reference equality.
-    !(currentTextarea && currentTextarea.contains(event.target))
-  ) {
-    closeAutocompleteMenu();
-  }
-}
-
 /**
  * Connects autocomplete to the prompt library.
  * @param {Object} dependencies
@@ -94,31 +52,55 @@ export function initializePromptAutocomplete(
 
 /**
  * Initializes the autocomplete overlay on ChatGPT's input textarea.
- * Guaranteed idempotent; ignores duplicate calls.
  */
 export function initAutocomplete(): void {
-  if (isAutocompleteInitialized) {
-    return;
-  }
-  isAutocompleteInitialized = true;
+  document.addEventListener('input', (event) => {
+    // Page scripts can dispatch synthetic input events on the ChatGPT composer.
+    // Only user-agent events from the focused composer may reveal saved prompts
+    // through the autocomplete flow.
+    if (isProgrammaticInsert || !event.isTrusted) {
+      return;
+    }
 
-  document.addEventListener('input', handleDocumentInput);
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    // The ChatGPT composer was rewritten in 2026 from a
+    // `<textarea id="prompt-textarea">` to a contenteditable ProseMirror
+    // div, so match by the platform-provided selector instead of an id.
+    const composer = target.closest(
+      getActivePlatform().myPrompts.composerTextareaSelector
+    );
+    if (!(composer instanceof HTMLElement) || !isComposerFocused(composer)) return;
+    currentTextarea = composer;
+    handleTextareaInput(composer);
+  });
+
   document.addEventListener('keydown', handleTextareaKeydown, true);
-  document.addEventListener('click', handleDocumentClick);
+
+  document.addEventListener('click', (event) => {
+    if (
+      promptAutocompleteViewController.getSnapshot() &&
+      event.target instanceof Node &&
+      !isAutocompleteMenuEvent(event) &&
+      // For a contenteditable composer, clicks land on child paragraphs
+      // rather than the editor itself, so test with `contains` instead of
+      // a strict reference equality.
+      !(currentTextarea && currentTextarea.contains(event.target))
+    ) {
+      closeAutocompleteMenu();
+    }
+  });
 }
 
 /**
- * Cleans up listeners and resets autocomplete state for test isolation.
+ * Returns whether the ChatGPT composer currently owns keyboard focus.
  */
-export function resetAutocompleteForTesting(): void {
-  if (isAutocompleteInitialized) {
-    document.removeEventListener('input', handleDocumentInput);
-    document.removeEventListener('keydown', handleTextareaKeydown, true);
-    document.removeEventListener('click', handleDocumentClick);
-    isAutocompleteInitialized = false;
-  }
-  closeAutocompleteMenu();
-  currentTextarea = null;
+function isComposerFocused(composer: HTMLElement): boolean {
+  const activeElement = document.activeElement;
+  return (
+    activeElement === composer ||
+    (activeElement instanceof Node && composer.contains(activeElement))
+  );
 }
 
 /**
@@ -144,7 +126,9 @@ export function insertIntoChatGPTInput(text: string): void {
       }
 
       try {
-        document.execCommand('insertText', false, textToInsert);
+        if (!document.execCommand('insertText', false, textToInsert)) {
+          throw new Error('Text insertion was rejected');
+        }
       } catch (error) {
         textarea.value = currentValue + textToInsert;
         textarea.dispatchEvent(new Event('input', { bubbles: true }));
@@ -161,7 +145,9 @@ export function insertIntoChatGPTInput(text: string): void {
       }
 
       try {
-        document.execCommand('insertText', false, textToInsert);
+        if (!document.execCommand('insertText', false, textToInsert)) {
+          throw new Error('Text insertion was rejected');
+        }
       } catch (error) {
         const textNode = document.createTextNode(textToInsert);
         textarea.appendChild(textNode);
@@ -573,7 +559,14 @@ function selectAutocompleteItem(prompt: SavedPrompt): void {
       if (selection && context.replaceRange) {
         selection.removeAllRanges();
         selection.addRange(context.replaceRange);
-        document.execCommand('insertText', false, prompt.content);
+        const inserted = document.execCommand('insertText', false, prompt.content);
+        if (!inserted) {
+          context.replaceRange.deleteContents();
+          context.replaceRange.insertNode(document.createTextNode(prompt.content));
+          textarea.dispatchEvent(new InputEvent('input', {
+            bubbles: true, inputType: 'insertText', data: prompt.content,
+          }));
+        }
       }
     }
   } finally {
@@ -588,7 +581,19 @@ function selectAutocompleteItem(prompt: SavedPrompt): void {
  * @param {KeyboardEvent} event
  */
 function handleTextareaKeydown(event: KeyboardEvent): void {
-  if (!promptAutocompleteViewController.getSnapshot()) return;
+  if (!event.isTrusted || !promptAutocompleteViewController.getSnapshot()) return;
+
+  const target = event.target;
+  if (
+    !currentTextarea ||
+    !currentTextarea.isConnected ||
+    !(target instanceof Node) ||
+    !currentTextarea.contains(target) ||
+    !isComposerFocused(currentTextarea)
+  ) {
+    closeAutocompleteMenu();
+    return;
+  }
 
   if (event.key === 'ArrowDown') {
     event.preventDefault();

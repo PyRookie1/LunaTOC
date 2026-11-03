@@ -23,6 +23,10 @@ import {
   postContractUpdate,
 } from './pageHook';
 import {
+  createChatGptNavigationTurns,
+} from './navigationAdapter';
+import { createRenderedFingerprintCollector } from './renderedFingerprintCollector';
+import {
   inspectFetchRequest,
   isNewChatRouteKey,
 } from './contentCapture';
@@ -35,7 +39,6 @@ import {
   getChatGptThreadScrollContainer,
   readMountedWithSidebarIdx,
 } from './virtualSearchAdapter';
-import { queryChatGptVirtualJumpTarget } from './virtualLayoutAdapter';
 import {
   createChatGptNavigationJumpId,
   getChatGptNavigationTestConfig,
@@ -51,18 +54,11 @@ import {
   observeVisibleUserMessages as observeChatGptVisibleUserMessages,
   getJumpTargetElement as getChatGptJumpTargetElement,
 } from './nativePromptNavigation';
-import { getResolvedTheme, observeTheme } from './theme';
 import {
   CHATGPT_CONTRACT_TABLE,
   resolveChatGptContractValue,
   labelChatGptContractValue,
 } from './contract';
-import {
-  installMatchMediaSpoof as installChatGptMatchMediaSpoof,
-  installMatchMediaToggleListener as installChatGptMatchMediaToggleListener,
-  setSidebarSpoofEnabled as setChatGptSidebarSpoofEnabled,
-  SPOOFED_VIEWPORT_WIDTH,
-} from './pageHook/matchMediaSpoof';
 import type {
   Platform,
   PlatformContractTable,
@@ -111,17 +107,12 @@ export const chatGptPlatform: Platform = {
     messages: CHATGPT_MESSAGE_TYPES,
     buildBackfillUrl,
     probeFetchContract: undefined, // populated after the contractAlerts port
-    installMatchMediaSpoof: installChatGptMatchMediaSpoof,
-    installMatchMediaToggleListener: installChatGptMatchMediaToggleListener,
     postContractUpdate,
-    setSidebarSpoofEnabled: setChatGptSidebarSpoofEnabled,
-    spoofedViewportWidthPx: SPOOFED_VIEWPORT_WIDTH,
     installFlag: HOOK_INSTALL_FLAG_VALUE,
   },
   navigation: {
     getScrollContainer: getChatGptScrollContainer,
     getThreadScrollContainer: getChatGptThreadScrollContainer,
-    queryVirtualJumpTarget: queryChatGptVirtualJumpTarget,
     findRenderedPrompt: findRenderedChatGptPrompt,
     findRenderedPromptByText: findRenderedChatGptPromptByText,
     readMountedWithSidebarIdx,
@@ -141,19 +132,19 @@ export const chatGptPlatform: Platform = {
     getConversationLinkSelector,
   },
   myPrompts: {
-    // ChatGPT's 2026 composer rewrite replaced the old
-    // `<textarea id="prompt-textarea">` with a contenteditable ProseMirror
-    // div. The autocomplete consumer reads this selector at runtime.
+    // Read the active ChatGPT contenteditable composer at runtime.
     composerTextareaSelector: '.ProseMirror[contenteditable="true"]',
   },
   config: {
     promptTopOffsetPx: APP_CONFIG.platforms.chatgpt.promptTopOffsetPx,
     settleAttempts: APP_CONFIG.platforms.chatgpt.settleAttempts,
+    backfillMaxPages: APP_CONFIG.platforms.chatgpt.backfillMaxPages,
     interceptFetchNumTurns: {
       pagination: APP_CONFIG.platforms.chatgpt.interceptChatGptPaginationNumTurns,
       initialLoad: APP_CONFIG.platforms.chatgpt.interceptChatGptInitialLoadNumTurns,
     },
     useLocalConfig: APP_CONFIG.platforms.chatgpt.useLocalConfig,
+    showCompatibilityAlert: APP_CONFIG.platforms.chatgpt.showCompatibilityAlert,
     selectors: {
       userMessage: '[data-chatgpt-search-unit-key$=":user"]',
       assistantMessage: '[data-chatgpt-search-unit-key$=":assistant"]',
@@ -163,6 +154,8 @@ export const chatGptPlatform: Platform = {
   },
   contentCapture: {
     inspectFetchRequest,
+    createNavigationTurns: createChatGptNavigationTurns,
+    createRenderedFingerprintCollector,
     isNewChatRouteKey,
   },
   diagnostics: {
@@ -173,9 +166,5 @@ export const chatGptPlatform: Platform = {
     logEvent: logChatGptNavigationEvent,
     isJumpVizDebugEnabled,
   },
-  runtimeConfigKey: 'luna:chatgpt:runtimeConfig',
-  theme: {
-    getResolvedTheme,
-    observe: observeTheme,
-  },
+  runtimeConfigKey: 'lunatoc:chatgpt:runtimeConfig:v1',
 };

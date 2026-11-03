@@ -1,189 +1,44 @@
 # LunaTOC
 
-A lightweight Chrome extension that adds a Table of Contents (TOC) sidebar to ChatGPT conversations.
+LunaTOC 是面向 ChatGPT 长对话的 Chrome 扩展，用于整理提问目录、浏览回答标题和修复部分回答中未被渲染的 Markdown 粗体标记。
 
-LunaTOC helps you navigate long conversations by automatically turning your prompts into a searchable, clickable outline.
+## 功能
 
-👉 [Install from Chrome Web Store](https://chromewebstore.google.com/detail/chattoc/ibfdglfgljonajofiiaonlimoiolkcpa)
+- **对话目录**：按用户提问生成可搜索的目录，并跟踪当前问题。
+- **回答标题导航**：从回答中提取标题，支持展开、收起和章节跳转。
+- **活动分支识别**：根据 ChatGPT 提供的消息关系展示当前回答分支。
+- **目录自定义名称**：为会话中的问题设置本地显示名称，不修改 ChatGPT 的原始消息。
+- **Markdown 粗体修复**：仅处理助手回答 Markdown 中安全、完整的 `**粗体文本**` 标记；保留代码、数学公式、转义标记和不完整标记。
+- **Tips 提示词库**：保存、管理、导入和导出常用提示词，并支持输入补全。
+- **主题与布局**：调整侧边栏布局、背景配色和显示方式。
+- **本地备份**：导出或恢复提示词、目录别名、使用统计和账号偏好。
+- **账号隔离**：通过 ChatGPT 自身的登录会话识别当前账号，按账号区分扩展数据。
+- **可选云同步**：默认关闭。开启时注册独立的 LunaTOC 邮箱＋密码账号并首次验证邮箱；之后无需每次收取登录邮件，用户需为每个 ChatGPT 账号明确选择 LunaTOC 云账号绑定，仅同步已绑定账号的 Tips、目录别名与偏好。无需绑定 Chrome 扩展 ID。
 
-[![Release](https://img.shields.io/badge/release-latest-blue)](https://github.com/Leo7805/chat-toc/releases/latest)
+## 安装与开发
 
-![Demo](assets/demo-v1.5.gif)
+1. 安装 Node.js 22。
+2. 安装依赖：`npm ci`。
+3. 运行类型检查：`npm run typecheck`。
+4. 运行单元测试：`npm test`。
+5. 构建扩展：`npm run build`。
+6. 在 Chrome 打开 `chrome://extensions/`，启用开发者模式并加载生成的 `dist` 文件夹。
 
----
+浏览器自动化测试使用本地模拟的 ChatGPT 页面，不会登录真实账号，也不会把测试流量发送到 ChatGPT 服务。完整命令和验收范围见 [测试说明](docs/TESTING.md)。
 
-## Features
+## 支持范围与限制
 
-- Automatically generates a TOC from user prompts
-- Expand prompts to navigate answer headings
-- Click any prompt to instantly jump to its location
-- Mark important prompts for quick visual reference
-- Search and filter prompts
-- Save and reuse custom prompt templates
-- Import and export saved prompts as editable Markdown files
-- Autocomplete saved prompts inside ChatGPT's input box
-- Highlights the prompt currently visible in the conversation
-- Preview full prompt content on hover
-- View the full conversation title from the sidebar title tooltip
-- Automatically updates when new prompts are sent
-- Resizable sidebar
-- Pinnable sidebar with optional hover-based auto-hide
-- Choose whether the sidebar starts pinned open or collapsed in Settings
-- Draggable floating toggle button with per-tab position memory
-- SVG refresh button to rebuild the TOC
-- Detects text, image, and file prompts
-- Works entirely in the browser
+- 支持 Chrome Manifest V3，目标站点为 `chatgpt.com` 和 `chat.openai.com`。
+- 目录和标题导航依赖 ChatGPT 的页面结构与会话接口；网页更新后，扩展可能需要适配。
+- 目录标题只从当前已加载的回答中提取；远距离导航可能需要等待历史内容加载。
+- 默认仅本地保存；官方 Firebase 云同步由维护者统一部署，用户无需创建项目或部署安全规则；未上线时同步功能停用，本地功能正常。说明见 [LunaTOC 云同步](docs/FIREBASE_SYNC.md)。
+- 自动化测试不等同于真实 ChatGPT 页面上的人工验收。
+- **邮箱认证额度注意**：新方案已关闭每天仅 5 封的邮件链接登录；首次邮箱验证邮件的 Spark 额度为每天 1,000 封，密码重置邮件每天 150 封。真实部署仍需验收，详见 [Firebase 官方限制](https://firebase.google.com/docs/auth/limits)。
 
----
+## 隐私
 
-## Installation
+扩展会读取生成目录所需的 ChatGPT 页面内容，并通过 ChatGPT 自身的同源登录接口识别账号。默认扩展数据保存在本地浏览器；用户主动启用后，选中账号的 Tips、目录别名与偏好会上传到 LunaTOC 维护者统一管理的 Firebase 项目，维护者可能访问所上传的明文内容。项目不包含遥测或广告追踪。详见 [隐私说明](PRIVACY.md)。
 
-### Option 1: Load Unpacked (Developer Mode)
+## 许可与第三方来源
 
-Prerequisites: Node.js and npm.
-
-1. Download or clone this repository.
-2. Install dependencies and build the extension:
-
-   ```bash
-   npm install
-   npm run build
-   ```
-
-3. Open Chrome and navigate to:
-
-   ```text
-   chrome://extensions
-   ```
-
-4. Enable **Developer Mode**.
-5. Click **Load unpacked**.
-6. Select the generated `luna-toc/dist` directory.
-
-After changing source files, run `npm run build` again and reload the
-extension from `chrome://extensions`.
-
-### Option 2: Chrome Web Store
-
-Install the published extension from the
-[Chrome Web Store](https://chromewebstore.google.com/detail/chattoc/ibfdglfgljonajofiiaonlimoiolkcpa).
-
----
-
-## Usage
-
-1. Open any ChatGPT conversation.
-2. The LunaTOC sidebar appears on the right side, pinned open by default.
-3. Click a TOC item to jump to that prompt.
-4. Use the search box to filter prompts.
-5. Switch to My Prompts to manage saved prompt templates.
-6. Right-click a prompt item to add it to My Prompts.
-7. Use the My Prompts import and export buttons to transfer saved prompts as Markdown.
-8. Type `#` or `//` in the ChatGPT input box to autocomplete a saved prompt.
-9. Hover over a truncated prompt to preview the full content.
-10. Drag the left edge of the sidebar to resize it.
-11. Use the sidebar pin button to keep the sidebar open or enable auto-hide.
-12. Hover the floating button to reveal an auto-hidden sidebar, or drag it to reposition it for the current tab.
-13. Open the extension popup → **Settings** → **Sidebar** and turn **Pin sidebar on startup** on or off. The choice is saved across tabs and browser restarts and applies to new ChatGPT tab sessions. Refreshing or switching chats preserves the current tab’s pin state.
-
----
-
-## Why LunaTOC?
-
-ChatGPT conversations can become very long, making it difficult to find previous prompts.
-
-LunaTOC provides a lightweight navigation layer that lets you:
-
-- Quickly revisit earlier questions
-- Navigate long technical discussions
-- Review project planning conversations
-- Jump between different topics without endless scrolling
-
----
-
-## Tech Stack
-
-- TypeScript
-- ES Modules
-- Vite and CRXJS
-- Chrome Extension (Manifest V3)
-- DOM Manipulation
-- MutationObserver
-- Fetch Hooking
-- Server-Sent Events (SSE)
-
----
-
-## Development
-
-Install dependencies:
-
-```bash
-npm install
-```
-
-Start the Vite development process:
-
-```bash
-npm run dev
-```
-
-Run the automated checks:
-
-```bash
-npm test
-npm run typecheck
-```
-
-Create a production extension in `dist/`:
-
-```bash
-npm run build
-```
-
-The root `manifest.json` is the source Manifest. Chrome loads the generated
-`dist/` directory. Browser source, Vite configuration, and release tooling are
-all written in TypeScript and checked by `npm run typecheck`.
-
-The generated `dist/`, `coverage/`, and release output are local artifacts and
-are excluded from version control.
-
----
-
-## Versioning
-
-The native npm version commands require a clean Git working tree, synchronize
-`package.json` and `manifest.json`, create a version commit, and tag that commit.
-The lifecycle runs `scripts/version.ts` through `tsx`. It does not push the
-commit or tag.
-
-```bash
-npm version patch
-npm version minor
-npm version major
-```
-
-Before creating a release, run the checks and build:
-
-```bash
-npm test
-npm run typecheck
-npm run build
-```
-
-The generated `dist/` directory is the folder to load in Chrome or package for
-distribution.
-
----
-
-## Privacy
-
-LunaTOC runs entirely in your browser.
-
-No conversation data is collected, stored, transmitted, or shared with any external service.
-
----
-
-## License
-
-MIT License
+LunaTOC 作为独立扩展名称和发布流程维护。仓库中的部分实现来源于 [Leo7805/luna-toc](https://github.com/Leo7805/luna-toc)；依照 MIT 许可保留原有版权与许可通知。LunaTOC 独立维护，不代表上游项目的官方发布渠道。第三方组件的许可说明见 [第三方许可](docs/VENDOR_LICENSE_SHADCN.md)。

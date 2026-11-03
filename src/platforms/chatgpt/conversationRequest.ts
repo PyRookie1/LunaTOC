@@ -1,5 +1,30 @@
 /** Identifies ChatGPT full-conversation API requests across supported paths. */
 
+
+const SUPPORTED_CHATGPT_ORIGINS = new Set([
+  'https://chatgpt.com',
+  'https://chat.openai.com',
+]);
+
+/**
+ * Accept only requests made to the current supported ChatGPT page origin.
+ * Relative URLs are resolved against the page origin; cross-origin requests
+ * and requests from unrelated host pages are never classified as ChatGPT API calls.
+ */
+export function isSupportedChatGptRequestUrl(
+  requestUrl: string,
+  pageOrigin: string
+): boolean {
+  try {
+    const page = new URL(pageOrigin);
+    if (!SUPPORTED_CHATGPT_ORIGINS.has(page.origin)) return false;
+    const request = new URL(requestUrl, page);
+    return request.origin === page.origin;
+  } catch {
+    return false;
+  }
+}
+
 const FULL_CONVERSATION_PATH_PATTERN =
   /^\/backend-api\/conversations?\/([^/]+)\/?$/;
 

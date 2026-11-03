@@ -1,5 +1,5 @@
 /**
- * Shared tooltips for ChatTOC:
+ * Shared tooltips for LunaTOC:
  * 1. Preview tooltip: For viewing truncated prompt text in the sidebar.
  * 2. Button tooltip: For showing fast, custom floating tooltips on buttons and icons.
  */
@@ -8,8 +8,6 @@
 export interface PreviewTooltipContent {
   title?: string;
   content?: string;
-  originalPrompt?: string;
-  customTitle?: string;
 }
 
 /**
@@ -25,143 +23,185 @@ export function isElementTextTruncated(element: HTMLElement): boolean {
 export const previewTooltip = (() => {
   const SHOW_DELAY_MS = 500;
   const HIDE_DELAY_MS = 200;
+  const HOST_ID = 'luna-toc-private-preview-host';
+  const TOOLTIP_ID = 'luna-toc-preview-tooltip';
+
+  const tooltipStyles = `
+    :host {
+      position: fixed;
+      inset: 0;
+      z-index: var(--ct-z-popover, 1020);
+      pointer-events: none;
+    }
+
+    #${TOOLTIP_ID} {
+      position: fixed;
+      right: 320px;
+      top: 80px;
+      box-sizing: border-box;
+      width: 380px;
+      max-width: calc(100vw - 32px);
+      max-height: 60vh;
+      overflow-y: auto;
+      background: var(--ct-bg-tooltip-preview);
+      color: var(--ct-text-tooltip-preview);
+      border: 1px solid var(--ct-border-tooltip-preview);
+      border-radius: 6px;
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.28);
+      padding: 10px 12px;
+      white-space: pre-wrap;
+      font-size: 13px;
+      line-height: 1.45;
+      pointer-events: auto;
+      display: none;
+    }
+
+    #${TOOLTIP_ID}.luna-toc-tooltip-visible {
+      display: block;
+    }
+
+    .navigator-preview-tooltip-title {
+      font-weight: 600;
+      color: var(--ct-text-tooltip-title);
+      border-bottom: 1px solid var(--ct-border-tooltip-preview);
+      padding-bottom: 6px;
+      margin-bottom: 8px;
+      font-size: 13px;
+    }
+
+    .navigator-preview-tooltip-content {
+      white-space: pre-wrap;
+      font-size: 12.5px;
+      line-height: 1.5;
+      color: var(--ct-text-tooltip-content);
+    }
+  `;
 
   let hideTimer: ReturnType<typeof setTimeout> | null = null;
   let showTimer: ReturnType<typeof setTimeout> | null = null;
   let anchorSelector: string | null = null;
+  let tooltipElement: HTMLDivElement | null = null;
+  let activeContent: string | PreviewTooltipContent | null = null;
 
-  /**
-   * Creates the tooltip element and wires tooltip hover behavior.
-   * @param {Object} options
-   * @param {string} options.anchorSelector Selector used to position the tooltip beside the sidebar.
-   */
-  function init(options: { anchorSelector?: string } = {}): void {
-    anchorSelector = options.anchorSelector || null;
+  function getTooltip(): HTMLDivElement | null {
+    return tooltipElement?.isConnected ? tooltipElement : null;
+  }
 
-    create();
+  function create(): void {
+    if (getTooltip()) return;
 
-    const tooltip = getTooltip();
-    if (!tooltip) return;
-    if (tooltip.dataset.initialized === 'true') return;
+    const host = document.createElement('div');
+    host.id = HOST_ID;
+    const shadowRoot = host.attachShadow({ mode: 'closed' });
+    const style = document.createElement('style');
+    style.textContent = tooltipStyles;
+    tooltipElement = document.createElement('div');
+    tooltipElement.id = TOOLTIP_ID;
+    shadowRoot.append(style, tooltipElement);
 
-    tooltip.dataset.initialized = 'true';
-
+    const tooltip = tooltipElement;
     tooltip.addEventListener('mouseenter', () => {
-      if (hideTimer !== null) clearTimeout(hideTimer);
+      if (hideTimer === null) return;
+      clearTimeout(hideTimer);
+      hideTimer = null;
+      if (activeContent !== null) {
+        renderContent(tooltip, activeContent);
+        tooltip.classList.add('luna-toc-tooltip-visible');
+      }
     });
 
-    tooltip.addEventListener('mouseleave', () => {
-      hide();
-    });
+    tooltip.addEventListener('mouseleave', hide);
+    document.body.appendChild(host);
+  }
+
+  function renderContent(
+    tooltip: HTMLElement,
+    content: string | PreviewTooltipContent
+  ): void {
+    tooltip.replaceChildren();
+    if (typeof content === 'object' && content !== null) {
+      if (content.title && content.content) {
+        const titleEl = document.createElement('div');
+        titleEl.className = 'navigator-preview-tooltip-title';
+        titleEl.textContent = content.title;
+
+        const contentEl = document.createElement('div');
+        contentEl.className = 'navigator-preview-tooltip-content';
+        contentEl.textContent = content.content;
+
+        tooltip.append(titleEl, contentEl);
+      }
+      return;
+    }
+
+    const contentEl = document.createElement('div');
+    contentEl.className = 'navigator-preview-tooltip-content';
+    contentEl.textContent = content;
+    tooltip.appendChild(contentEl);
   }
 
   /**
-   * Creates the tooltip element if it does not already exist.
+   * Creates the isolated preview surface. The host is visible to the page,
+   * but its closed shadow root and prompt text are not traversable by page JS.
    */
-  function create(): void {
-    if (document.getElementById('luna-toc-preview-tooltip')) return;
-
-    const tooltip = document.createElement('div');
-    tooltip.id = 'luna-toc-preview-tooltip';
-    document.body.appendChild(tooltip);
+  function init(options: { anchorSelector?: string } = {}): void {
+    anchorSelector = options.anchorSelector || null;
+    create();
   }
 
   /**
    * Shows a tooltip with the full prompt text near the hovered row.
-   * @param {string} text
-   * @param {MouseEvent} event
-   * @param {HTMLElement} [anchorElement] Element whose top edge anchors the tooltip vertically.
    */
   function show(
     text: string | PreviewTooltipContent,
     event: MouseEvent,
     anchorElement?: HTMLElement
   ): void {
+    create();
     const tooltip = getTooltip();
     if (!tooltip) return;
 
     if (hideTimer !== null) clearTimeout(hideTimer);
     if (showTimer !== null) clearTimeout(showTimer);
-
     hideTimer = null;
     showTimer = null;
+    activeContent = text;
     tooltip.classList.remove('luna-toc-tooltip-visible');
 
     const clientX = event.clientX;
     const clientY = event.clientY;
 
     showTimer = setTimeout(() => {
-      tooltip.innerHTML = '';
-      if (typeof text === 'object' && text !== null) {
-        if (text.customTitle && text.originalPrompt) {
-          tooltip.innerHTML =
-            '<div class="navigator-preview-tooltip-custom"></div>' +
-            '<div class="navigator-preview-tooltip-original"></div>';
-          const customEl = tooltip.querySelector<HTMLElement>(
-            '.navigator-preview-tooltip-custom'
-          );
-          const origEl = tooltip.querySelector<HTMLElement>(
-            '.navigator-preview-tooltip-original'
-          );
-          if (customEl) customEl.textContent = text.customTitle;
-          if (origEl) origEl.textContent = text.originalPrompt;
-        } else if (text.title && text.content) {
-          const titleEl = document.createElement('div');
-          titleEl.className = 'navigator-preview-tooltip-title';
-          titleEl.textContent = text.title;
-
-          const contentEl = document.createElement('div');
-          contentEl.className = 'navigator-preview-tooltip-content';
-          contentEl.textContent = text.content;
-
-          tooltip.appendChild(titleEl);
-          tooltip.appendChild(contentEl);
-        }
-      } else {
-        const contentEl = document.createElement('div');
-        contentEl.className = 'navigator-preview-tooltip-content';
-        contentEl.textContent = text;
-        tooltip.appendChild(contentEl);
-      }
+      if (activeContent !== text) return;
+      renderContent(tooltip, text);
       tooltip.classList.add('luna-toc-tooltip-visible');
       positionTooltip(tooltip, clientX, clientY, anchorElement);
     }, SHOW_DELAY_MS);
   }
 
   /**
-   * Hides the tooltip after a short delay so pointer transitions are not abrupt.
-   * If immediate is true, cancels pending timers and removes the visible class immediately.
-   *
-   * @param {boolean} [immediate=false]
+   * Removes prompt text from the DOM immediately. A short hide window is
+   * retained so pointer transitions into the tooltip can restore it safely.
    */
-  function hide(immediate: boolean = false): void {
+  function hide(): void {
     if (hideTimer !== null) clearTimeout(hideTimer);
     if (showTimer !== null) clearTimeout(showTimer);
-
     showTimer = null;
 
     const tooltip = getTooltip();
-    if (!tooltip) return;
-
-    if (immediate) {
-      tooltip.classList.remove('luna-toc-tooltip-visible');
-      hideTimer = null;
+    if (!tooltip) {
+      activeContent = null;
       return;
     }
 
+    tooltip.replaceChildren();
     hideTimer = setTimeout(() => {
       tooltip.classList.remove('luna-toc-tooltip-visible');
+      activeContent = null;
       hideTimer = null;
     }, HIDE_DELAY_MS);
   }
 
-  /**
-   * Positions the tooltip beside the sidebar while keeping it in the viewport.
-   * @param {HTMLElement} tooltip
-   * @param {number} clientX
-   * @param {number} clientY
-   * @param {HTMLElement} [anchorElement]
-   */
   function positionTooltip(
     tooltip: HTMLElement,
     clientX: number,
@@ -170,21 +210,9 @@ export const previewTooltip = (() => {
   ): void {
     const gap = 8;
     const margin = 16;
-    let anchor: Element | null = null;
-    if (anchorSelector) {
-      for (const candidate of document.querySelectorAll(anchorSelector)) {
-        if (
-          candidate instanceof HTMLElement &&
-          candidate.style.display !== 'none'
-        ) {
-          anchor = candidate;
-          break;
-        }
-      }
-      if (!anchor) {
-        anchor = document.querySelector(anchorSelector);
-      }
-    }
+    const anchor = anchorSelector
+      ? document.querySelector(anchorSelector)
+      : null;
     const anchorRect = anchor?.getBoundingClientRect();
     const tooltipAnchorRect = anchorElement?.getBoundingClientRect();
 
@@ -196,21 +224,13 @@ export const previewTooltip = (() => {
       : Math.max(margin, clientX - rect.width - gap);
 
     y = Math.max(margin, y);
-
     if (y + rect.height > window.innerHeight) {
       y = window.innerHeight - rect.height - margin;
     }
 
     tooltip.style.left = `${x}px`;
+    tooltip.style.right = 'auto';
     tooltip.style.top = `${y}px`;
-  }
-
-  /**
-   * Returns the shared tooltip element.
-   * @returns {HTMLElement | null}
-   */
-  function getTooltip(): HTMLElement | null {
-    return document.getElementById('luna-toc-preview-tooltip');
   }
 
   return {

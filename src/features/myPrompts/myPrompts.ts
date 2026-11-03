@@ -7,17 +7,10 @@ import {
   insertIntoChatGPTInput,
 } from './promptAutocomplete';
 import {
-  clearAllMyPrompts,
-  copyPromptText,
-  deletePrompt,
-  exportMyPrompts,
   getMyPrompts,
-  getMyPromptsSnapshot,
-  importMyPrompts,
   initializePromptLibrary,
-  insertPrompt,
   onPromptsChanged,
-  saveMyPrompts,
+  renderMyPrompts,
   showDialog,
 } from './promptLibrary';
 import { createPromptStore } from './promptStore';
@@ -32,6 +25,11 @@ initializePromptLibrary({
   insertIntoChatGPTInput,
 });
 
+// Reconcile orphaned usage entries once when the extension loads.
+void promptsStore.getAll()
+  .then((prompts) => promptUsageStore.reconcile(prompts.map((prompt) => prompt.id)))
+  .catch(() => undefined);
+
 initializePromptAutocomplete({
   getMyPrompts,
   getPromptUsage: promptUsageStore.getAll,
@@ -40,16 +38,9 @@ initializePromptAutocomplete({
 
 export const myPrompts = {
   getMyPrompts,
-  getMyPromptsSnapshot,
-  saveMyPrompts,
   onPromptsChanged,
-  deletePrompt,
-  clearAllMyPrompts,
-  copyPromptText,
-  exportMyPrompts,
-  importMyPrompts,
-  insertPrompt,
   showDialog,
+  renderMyPrompts,
   initAutocomplete,
   insertIntoChatGPTInput,
 };

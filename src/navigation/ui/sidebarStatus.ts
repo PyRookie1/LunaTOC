@@ -1,9 +1,7 @@
 /**
- * Manages the sidebar status banner state, transitions, count pluralization,
- * jumping text formatting, and linger timeouts.
- *
- * Visual rendering is owned by React (`SidebarStatus.tsx`), which subscribes
- * to this module's snapshot via `useSyncExternalStore`.
+ * Manages the sidebar status banner between the sidebar header and prompt list.
+ * Controls visual status states, count pluralization, silent jumping,
+ * and linger timeouts.
  */
 import { APP_CONFIG } from '@/config/config';
 
@@ -20,80 +18,26 @@ export type SidebarStatusState =
   | 'jumping'
   | 'complete'
   | 'empty'
-  | 'failed';
-
-export interface SidebarStatusSnapshot {
-  readonly state: SidebarStatusState;
-  readonly text: string;
-}
+  | 'failed'
+  | 'stale';
 
 let currentStatusMode: SidebarStatusState = 'idle';
 let statusLingerTimer: ReturnType<typeof setTimeout> | null = null;
 
 /**
- * Last text rendered while in `jumping` mode. Reused as the lingering
- * text after a jump finishes so the user sees the final target instead of
- * an empty band.
- */
-let lastJumpingText = '';
-
-let statusSnapshot: SidebarStatusSnapshot = {
-  state: 'idle',
-  text: '',
-};
-
-const statusListeners = new Set<() => void>();
-
-/**
  * Formats a prompt count with the correct singular/plural form for the
  * sidebar status band. Always produces "0 prompts" / "1 prompt" /
  * "N prompts".
- *
  * @param {number} count
  * @returns {string}
  */
 function pluralizePrompts(count: number): string {
-  return count === 1 ? '1 prompt' : `${count} prompts`;
+  return count === 1 ? '1 条提示词' : `${count} 条提示词`;
 }
 
 /**
- * Returns the immutable current status snapshot for React subscribers.
- *
- * @returns {SidebarStatusSnapshot}
- */
-export function getStatusSnapshot(): SidebarStatusSnapshot {
-  return statusSnapshot;
-}
-
-/**
- * Subscribes a listener to status state updates.
- *
- * @param {() => void} listener
- * @returns {() => void} Unsubscribe callback.
- */
-export function subscribeStatus(listener: () => void): () => void {
-  statusListeners.add(listener);
-  return () => {
-    statusListeners.delete(listener);
-  };
-}
-
-/**
- * Notifies all active store subscribers of a snapshot change.
- */
-function notifyStatusListeners(): void {
-  statusListeners.forEach((listener) => {
-    try {
-      listener();
-    } catch (error) {
-      console.error('Error in sidebar status listener:', error);
-    }
-  });
-}
-
-/**
- * Updates the small status line state and dispatches external store updates.
- * Owns six mutually exclusive states:
+ * Updates the small status line that lives between the sidebar header and
+ * the prompt list. Owns five mutually exclusive states:
  *
  *   - `jumping`: a jump is in progress; band shows the destination
  *     with the animated dots and lives until the jump ends.
@@ -107,11 +51,10 @@ function notifyStatusListeners(): void {
  *     Shows "No prompts" *persistently* — no linger timer, no retract,
  *     because the empty state is the stable visual until the user
  *     starts typing.
- *   - `failed`: jump target could not be resolved; lingers then retracts.
  *   - `idle`: nothing to convey. Hidden, no reserved space.
  *
- * Safe to call on every render — short-circuits when neither the mode nor
- * the rendered text changes.
+ * Safe to call on every render — the helper short-circuits when neither
+ * the mode nor the rendered text changes.
  *
  * @param {Object} options
  * @param {SidebarStatusState} options.state The visible state to render.
@@ -120,86 +63,75 @@ function notifyStatusListeners(): void {
  */
 export function setSidebarStatus(options: {
   state: SidebarStatusState;
-  jump?: {
-    active: boolean;
-    targetIndex: number;
-    currentProgressIndex?: number | null;
-    remainingSteps?: number;
-  } | null;
+  jump?: { active: boolean; targetIndex: number; remainingSteps: number } | null;
   promptCount?: number;
 }): void {
-  const { state, jump, promptCount = 0 } = options;
+  const { state, promptCount = 0 } = options;
+  const element = document.getElementById('luna-toc-status');
+  if (!element) return;
+
+  // Keep the jump state for virtual navigation, but do not flash an animated
+  // progress band or a completion count on every TOC click.
+  if (state === 'jumping' || (state === 'complete' && currentStatusMode === 'jumping')) {
+    if (statusLingerTimer !== null) {
+      clearTimeout(statusLingerTimer);
+      statusLingerTimer = null;
+    }
+    currentStatusMode = state === 'jumping' ? 'jumping' : 'idle';
+    element.replaceChildren();
+    element.classList.remove('navigator-status-active');
+    return;
+  }
 
   let text: string;
 
   switch (state) {
-    case 'jumping':
-      if (jump) {
-        const targetLabel = `To #${jump.targetIndex + 1}`;
-        const progressSuffix =
-          typeof jump.currentProgressIndex === 'number' &&
-          jump.currentProgressIndex >= 0
-            ? ` · Now #${jump.currentProgressIndex + 1}`
-            : '';
-        text = `${targetLabel}${progressSuffix}`;
-      } else {
-        text = 'Jumping';
-      }
-      lastJumpingText = text;
-      break;
     case 'loading':
-      text = promptCount > 0 ? `Loading... (${promptCount} so far)` : 'Loading…';
+      // Bare "Loading…" covers the `promptCount === 0` case (e.g. an
+      // empty chat whose page hook never posted DATA). Once at least
+      // one prompt has landed, appending "(N so far)" gives backfill
+      // progress for long conversations.
+      text = promptCount > 0 ? `加载中...（已加载 ${promptCount} 条）` : '加载中…';
       break;
     case 'empty':
-      text = 'No prompts';
+      // Definitively empty chat: persistent, no linger timer.
+      text = '暂无提示词';
+      break;
+    case 'stale':
+      text = '目录缓存未验证，请重新打开目录刷新';
       break;
     case 'failed':
-      text = 'Jump failed';
+      // A jump could not resolve its target (e.g. the prompt is too far
+      // to mount). Show briefly, then retract like `complete`.
+      text = '跳转失败';
       break;
     case 'complete':
-      text =
-        currentStatusMode === 'jumping'
-          ? lastJumpingText
-          : pluralizePrompts(promptCount);
+      text = pluralizePrompts(promptCount);
       break;
     case 'idle':
     default:
       text = '';
   }
 
-  if (state === statusSnapshot.state && text === statusSnapshot.text) {
+  if (state === currentStatusMode && element.textContent === text) {
     return;
   }
 
   currentStatusMode = state;
-  statusSnapshot = { state, text };
+
+  element.textContent = text;
+  element.classList.toggle('navigator-status-active', state !== 'idle');
 
   if (statusLingerTimer !== null) {
     clearTimeout(statusLingerTimer);
     statusLingerTimer = null;
   }
-
   if (state === 'complete' || state === 'failed') {
     statusLingerTimer = window.setTimeout(() => {
       currentStatusMode = 'idle';
-      statusSnapshot = { state: 'idle', text: '' };
+      element.textContent = '';
+      element.classList.remove('navigator-status-active');
       statusLingerTimer = null;
-      notifyStatusListeners();
     }, STATUS_LINGER_MS);
   }
-
-  notifyStatusListeners();
-}
-
-/**
- * Resets status store state and clears any pending linger timers for testing.
- */
-export function resetStatusForTesting(): void {
-  if (statusLingerTimer !== null) {
-    clearTimeout(statusLingerTimer);
-    statusLingerTimer = null;
-  }
-  currentStatusMode = 'idle';
-  lastJumpingText = '';
-  statusSnapshot = { state: 'idle', text: '' };
 }

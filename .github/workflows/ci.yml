@@ -1,0 +1,303 @@
+name: LunaTOC CI
+
+on:
+  push:
+    branches:
+      - main
+      - 'rebuild/**'
+      - 'phase/**'
+  pull_request:
+    branches:
+      - main
+      - 'rebuild/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Typecheck, tests, build, browser E2E and dependency audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Verify LunaTOC identity and version consistency
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+          const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
+          const lock = JSON.parse(readFileSync('package-lock.json', 'utf8'));
+          const manifest = JSON.parse(readFileSync('manifest.json', 'utf8'));
+          if (pkg.name !== 'lunatoc' || lock.name !== pkg.name || lock.packages?.['']?.name !== pkg.name) {
+            throw new Error('Project package name must be lunatoc in package.json and package-lock.json');
+          }
+          if (manifest.name !== 'LunaTOC' || manifest.short_name !== 'LunaTOC') {
+            throw new Error('Extension name must be LunaTOC');
+          }
+          if (!/^\d+\.\d+\.\d+$/.test(pkg.version) ||
+              lock.version !== pkg.version ||
+              lock.packages?.['']?.version !== pkg.version ||
+              manifest.version !== pkg.version) {
+            throw new Error('package.json, package-lock.json and manifest.json versions must match');
+          }
+          console.log(`LunaTOC ${pkg.version}: project identity and versions match`);
+          NODE
+
+      - name: Enforce first-release source hygiene
+        run: node scripts/check-initial-release-hygiene.mjs
+
+      - name: Type-check
+        run: npm run typecheck
+
+      - name: Run unit tests
+        run: npm test
+
+      - name: Build Chrome extension
+        env:
+          VITE_LUNATOC_FIREBASE_PROJECT_ID: ${{ vars.LUNATOC_FIREBASE_PROJECT_ID }}
+          VITE_LUNATOC_FIREBASE_WEB_API_KEY: ${{ vars.LUNATOC_FIREBASE_WEB_API_KEY }}
+          VITE_LUNATOC_FIREBASE_AUTH_DOMAIN: ${{ vars.LUNATOC_FIREBASE_AUTH_DOMAIN }}
+        run: npm run build
+
+      - name: Verify built extension files
+        run: |
+          node --input-type=module <<'NODE'
+          import { existsSync, readFileSync, statSync } from 'node:fs';
+          import { resolve, relative, isAbsolute } from 'node:path';
+
+          const dist = resolve('dist');
+          const manifestPath = resolve(dist, 'manifest.json');
+          if (!existsSync(manifestPath)) {
+            throw new Error('dist/manifest.json is missing');
+          }
+
+          const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+          if (manifest.manifest_version !== 3) {
+            throw new Error('Expected a Manifest V3 extension');
+          }
+
+          const files = [
+            ...Object.values(manifest.icons ?? {}),
+            ...Object.values(manifest.action?.default_icon ?? {}),
+            manifest.action?.default_popup,
+            manifest.options_ui?.page,
+            manifest.background?.service_worker,
+            manifest.side_panel?.default_path,
+            ...(manifest.content_scripts ?? []).flatMap((script) => [
+              ...(script.js ?? []),
+              ...(script.css ?? []),
+            ]),
+          ].filter(Boolean);
+
+          if (files.length === 0) {
+            throw new Error('No extension assets were declared');
+          }
+
+          for (const file of files) {
+            const target = resolve(dist, file);
+            const pathFromDist = relative(dist, target);
+            if (
+              pathFromDist.startsWith('..') ||
+              isAbsolute(pathFromDist) ||
+              !existsSync(target) ||
+              !statSync(target).isFile()
+            ) {
+              throw new Error(`Missing or invalid extension asset: ${file}`);
+            }
+          }
+
+          console.log(`Manifest V3 validated with ${files.length} referenced assets`);
+          NODE
+
+      - name: Package and verify extension ZIP
+        id: package
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          PACKAGE="lunatoc-v${VERSION}.zip"
+          echo "package_base=lunatoc-v${VERSION}" >> "$GITHUB_OUTPUT"
+          (cd dist && zip -q -r "../${PACKAGE}" .)
+          unzip -tq "$PACKAGE"
+          unzip -Z1 "$PACKAGE" | grep -Fxq manifest.json
+          sha256sum "$PACKAGE" > "${PACKAGE}.sha256"
+          sha256sum -c "${PACKAGE}.sha256"
+
+      - name: Install isolated Chromium test runner
+        run: npm run test:browser:setup
+
+      - name: Run Chromium browser tests
+        run: npm run test:browser
+
+      - name: Check dependency advisories
+        run: npm audit --audit-level=high
+
+      - name: Upload verified extension package
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.package.outputs.package_base }}
+          path: |
+            lunatoc-v*.zip
+            lunatoc-v*.zip.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+  firebase-rules:
+    name: Firebase Auth and Firestore emulator security regressions
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: test/firebase/package-lock.json
+      - name: Verify Firestore reset scope and execution guards
+        run: node --test test/firebase/firestore-reset.test.mjs
+      - name: Set up Firestore emulator Java runtime
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install locked Firebase emulator test tooling
+        run: npm --prefix test/firebase ci --no-audit --no-fund
+      - name: Audit Firebase test dependency tree
+        run: npm --prefix test/firebase audit --audit-level=high
+      - name: Execute actual firestore.rules with two simulated Firebase UIDs
+        run: test/firebase/node_modules/.bin/firebase emulators:exec --only auth,firestore --project demo-lunatoc-ci "node --test --test-concurrency=1 test/firebase/auth-emulator.test.mjs test/firebase/firestore.rules.test.mjs test/firebase/firestore-reset-emulator.test.mjs"
+
+  release-config:
+    name: Managed Firebase config gate for main
+    if: github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.base_ref == 'main')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+      - name: Prevent publication without maintainer-owned Firebase config
+        env:
+          VITE_LUNATOC_FIREBASE_PROJECT_ID: ${{ vars.LUNATOC_FIREBASE_PROJECT_ID }}
+          VITE_LUNATOC_FIREBASE_WEB_API_KEY: ${{ vars.LUNATOC_FIREBASE_WEB_API_KEY }}
+          VITE_LUNATOC_FIREBASE_AUTH_DOMAIN: ${{ vars.LUNATOC_FIREBASE_AUTH_DOMAIN }}
+        run: node scripts/check-managed-firebase-release.mjs
+
+  publish-release:
+    name: Publish GitHub Release
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && (startsWith(github.event.head_commit.message, 'LunaTOC ') || startsWith(github.event.head_commit.message, 'Republish v1.0.0'))
+    needs: [verify, firebase-rules, release-config]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out release notes
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Resolve release version
+        id: release
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "package_base=lunatoc-v${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Download verified extension package
+        uses: actions/download-artifact@v7
+        with:
+          name: ${{ steps.release.outputs.package_base }}
+          path: release
+
+      - name: Verify release asset checksum
+        env:
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          ZIP="lunatoc-v${RELEASE_VERSION}.zip"
+          test -s "release/${ZIP}"
+          test -s "release/${ZIP}.sha256"
+          (cd release && sha256sum -c "${ZIP}.sha256")
+
+      - name: Publish new GitHub Release and version tag
+        if: "!startsWith(github.event.head_commit.message, 'Republish v1.0.0')"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          gh release create "v${RELEASE_VERSION}" \
+            "release/lunatoc-v${RELEASE_VERSION}.zip" \
+            "release/lunatoc-v${RELEASE_VERSION}.zip.sha256" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "LunaTOC ${RELEASE_VERSION}" \
+            --notes-file CHANGELOG.md
+
+      - name: Rebuild existing v1.0.0 release using the verified main branch
+        if: startsWith(github.event.head_commit.message, 'Republish v1.0.0')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          test "$RELEASE_VERSION" = "1.0.0"
+          TAG="v${RELEASE_VERSION}"
+          ZIP="lunatoc-${TAG}.zip"
+          REPO="$GITHUB_REPOSITORY"
+
+          # This is explicitly a rebuild of an existing, mutable release.
+          test "$(gh release view "$TAG" --repo "$REPO" --json isImmutable --jq '.isImmutable')" = "false"
+          test "$(gh api "repos/$REPO/git/ref/tags/$TAG" --jq '.object.sha')" != "$GITHUB_SHA"
+
+          # Preserve the old assets in case the replacement upload fails.
+          mkdir -p old-release
+          gh release download "$TAG" --repo "$REPO" \
+            --pattern "$ZIP*" --dir old-release
+          test -s "old-release/$ZIP"
+          test -s "old-release/$ZIP.sha256"
+
+          if ! gh release upload "$TAG" \
+            "release/$ZIP" "release/$ZIP.sha256" \
+            --repo "$REPO" --clobber; then
+            echo "Replacement failed: attempting to restore original release assets"
+            gh release upload "$TAG" "old-release/$ZIP" "old-release/$ZIP.sha256" \
+              --repo "$REPO" --clobber || true
+            exit 1
+          fi
+
+          # Point the existing tag and source archive to the exact rebuilt code.
+          gh api --method PATCH "repos/$REPO/git/refs/tags/$TAG" \
+            -f sha="$GITHUB_SHA" -F force=true
+
+          gh release edit "$TAG" --repo "$REPO" \
+            --target "$GITHUB_SHA" \
+            --title "LunaTOC ${RELEASE_VERSION}" \
+            --notes-file docs/RELEASE_V1.0.0_REBUILD.md \
+            --latest
+
+          test "$(gh api "repos/$REPO/git/ref/tags/$TAG" --jq '.object.sha')" = "$GITHUB_SHA"
+          gh release view "$TAG" --repo "$REPO" --json assets \
+            --jq '.assets[].name' | grep -Fx "$ZIP"
+          gh release view "$TAG" --repo "$REPO" --json assets \
+            --jq '.assets[].name' | grep -Fx "$ZIP.sha256"

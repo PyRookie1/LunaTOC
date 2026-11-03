@@ -15,7 +15,7 @@ describe('outline diagnostics', () => {
     logOutlineDiagnostic('OUTLINE_TEST', { promptIndex: 1 });
     expect(debug).not.toHaveBeenCalled();
 
-    localStorage.setItem('chatTocDebugOutline', '1');
+    localStorage.setItem('lunatoc:debugOutline:v1', '1');
     logOutlineDiagnostic('OUTLINE_TEST', { promptIndex: 1 });
 
     expect(debug).toHaveBeenCalledWith(

@@ -11,7 +11,10 @@
  * ChatGPT requests without going through the entry's `window.fetch` override.
  */
 import { getActiveContractValue, type ChatGptContractId } from '@/config/config';
-import { PAGE_HOOK_MISMATCH_MESSAGE_TYPE } from '@/features/contractAlert/pageHookBridge';
+import {
+  PAGE_HOOK_MISMATCH_MESSAGE_TYPE,
+  PAGE_HOOK_RECOVERY_MESSAGE_TYPE,
+} from '@/features/contractAlert/pageHookBridge';
 
 /**
  * Minimum number of times a given contract mismatch must be observed in a
@@ -29,6 +32,17 @@ const contractMismatchCounters = new Map<ChatGptContractId, number>();
  * detection. Populated on startup and on every `chrome.storage` change.
  */
 const effectiveContractValues: Partial<Record<ChatGptContractId, string>> = {};
+let contractProbesEnabled = false;
+
+/** Enables extra same-origin diagnostic requests only when opted in. */
+export function setContractProbesEnabled(enabled: boolean): void {
+  contractProbesEnabled = enabled;
+}
+
+/** Whether active developer diagnostics may issue extra requests. */
+export function shouldRunContractProbes(): boolean {
+  return contractProbesEnabled;
+}
 
 let originalFetch: typeof fetch = window.fetch.bind(window);
 
@@ -48,6 +62,9 @@ export function installContractAlerts(opts: { originalFetch: typeof fetch }): vo
 export function setEffectiveContractValues(
   values: Record<string, unknown>
 ): void {
+  for (const key of Object.keys(effectiveContractValues) as ChatGptContractId[]) {
+    delete effectiveContractValues[key];
+  }
   for (const [key, value] of Object.entries(values)) {
     if (typeof value === 'string') {
       effectiveContractValues[key as ChatGptContractId] = value;
@@ -108,12 +125,31 @@ export function reportContractMismatch(
       {
         type: PAGE_HOOK_MISMATCH_MESSAGE_TYPE,
         contractId,
-        expected: getActiveContractValue(contractId, false),
+        expected: effectiveContractValues[contractId] ?? getActiveContractValue(contractId, false),
         actual,
       },
       window.location.origin
     );
   } catch {}
+}
+
+/** Positive evidence of recovery re-arms the next mismatch detection. */
+export function reportContractRecovered(contractId: ChatGptContractId): void {
+  if (!contractMismatchCounters.has(contractId)) return;
+  contractMismatchCounters.delete(contractId);
+  try {
+    window.postMessage({
+      type: PAGE_HOOK_RECOVERY_MESSAGE_TYPE,
+      contractId,
+    }, window.location.origin);
+  } catch {
+    // Page may be tearing down.
+  }
+}
+
+/** Reset one-route mismatch counters when SPA navigation changes the view. */
+export function resetContractMismatchCounters(): void {
+  contractMismatchCounters.clear();
 }
 
 /**
@@ -160,11 +196,16 @@ export async function probeNumTurnsBehavior(
     const len100 = Array.isArray(d100?.messages)
       ? d100.messages.length
       : 0;
-    if (len10 > 0 && len100 > 0 && len100 - len10 < 5) {
-      reportContractMismatch(
-        'api.params.num-turns',
-        `num_turns=10 -> ${len10} messages, num_turns=100 -> ${len100} messages (delta ${len100 - len10})`
-      );
+    // Identical 10/100 results are normal when a short chat fits one page.
+    if (d10?.page_info?.has_previous_page === true && len10 > 0 && len100 > 0) {
+      if (len100 - len10 < 5) {
+        reportContractMismatch(
+          'api.params.num-turns',
+          `num_turns=10 -> ${len10} messages, num_turns=100 -> ${len100} messages (delta ${len100 - len10})`
+        );
+      } else {
+        reportContractRecovered('api.params.num-turns');
+      }
     }
   } catch {
     // Probe failures are non-fatal.

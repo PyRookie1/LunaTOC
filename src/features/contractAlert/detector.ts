@@ -1,13 +1,17 @@
 /**
  * Compatibility-alert detector. The page-hook (MAIN world) and content-script
- * (ISOLATED world) post mismatch records here via `recordMismatch`.
+ * (ISOLATED world) post mismatch records here via `recordMismatch`. The
+ * `ContractAlert` component subscribes and renders a top-most dialog when
+ * the pending list is non-empty.
  *
- * The detector itself is world-agnostic (pure module state) and preserves
- * mismatch records for diagnostic monitoring.
+ * The detector itself is world-agnostic (pure module state); whether records
+ * are *displayed* is the responsibility of the caller, gated by the
+ * `showCompatibilityAlert` Options toggle.
  */
 import {
   APP_CONFIG,
   type ChatGptContractId,
+  type ChatGptRuntimeConfig,
 } from '@/config/config';
 
 /** One detected mismatch between an expected contract value and the observed one. */
@@ -84,4 +88,15 @@ export function subscribeMismatches(listener: Listener): () => void {
 function notify(): void {
   const snapshot = Array.from(pending.values());
   for (const listener of listeners) listener(snapshot);
+}
+
+/**
+ * Determines whether a mismatch record should be retained for display.
+ * Currently the detector only emits when the Options toggle is on, but this
+ * helper centralizes the gate so callers can compose it cleanly.
+ */
+export function shouldDisplayAlert(
+  runtimeConfig: Pick<ChatGptRuntimeConfig, 'showCompatibilityAlert'>
+): boolean {
+  return runtimeConfig.showCompatibilityAlert === true;
 }

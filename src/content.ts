@@ -1,22 +1,36 @@
 /**
- * Starts LunaTOC's legacy DOM application and isolated React UI environment
+ * Starts LunaTOC's DOM application and isolated React UI environment
  * from the Chrome Content Script entry.
  */
 import { initializeApplication } from '@/app/applicationShell';
+import { initializeConversationLifecycle } from '@/navigation/lifecycle/conversationLifecycle';
 import { observeExternalOverlays } from '@/features/externalOverlay';
 import { startPageHookMismatchBridge, startChatGptConfigSync } from '@/features/contractAlert/pageHookBridge';
 import { initializeReactHost } from '@/reactHost/reactHost';
+import { connectPageHookMessageTransport } from '@/navigation/pageHookMessageTransport';
+import { startToolbarCompatibilityMonitor } from '@/features/contractAlert/toolbarMonitor';
+import { startMarkdownBoldRepair } from '@/platforms/chatgpt/markdownBoldRepair';
+
+// Bind the isolated conversation receiver before the application starts.
+connectPageHookMessageTransport();
+
+// Start the one-time reconciliation listener before sidebar setup.
+initializeConversationLifecycle();
+
+// Repair raw Markdown bold markers only in rendered assistant answer text.
+startMarkdownBoldRepair();
 
 // Start the existing sidebar and browser-integration features.
-void initializeApplication().catch((error: unknown) => {
-  console.error('[LunaTOC] Application initialization failed:', error);
-});
+void initializeApplication();
 
 // Prepare the Shadow DOM boundary used by current and future React interfaces.
 void initializeReactHost();
 
 // Forward page-hook contract-mismatch messages into the ISOLATED-world detector.
 startPageHookMismatchBridge();
+
+// Always send observed incompatibilities to Chrome's toolbar, independently of developer settings.
+startToolbarCompatibilityMonitor();
 
 // Sync the active contract values to the MAIN-world page-hook so its detection
 // compares observed paths against the developer's current expectations.

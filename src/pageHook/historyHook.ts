@@ -7,6 +7,8 @@
  * The route-changed message type is provided by the caller so the same
  * hook can serve any platform.
  */
+import { postPageHookMessage } from './messageTransport';
+
 type RouteChangedMessageType = string;
 
 /**
@@ -36,10 +38,5 @@ export function installHistoryHook(messageType: RouteChangedMessageType): void {
  * Sends a message to the content script indicating that navigation occurred.
  */
 function notifyRouteChanged(messageType: RouteChangedMessageType): void {
-  window.postMessage(
-    {
-      type: messageType,
-    },
-    '*'
-  );
+  postPageHookMessage({ type: messageType });
 }

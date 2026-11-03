@@ -1,5 +1,5 @@
 /** Provides opt-in diagnostics for per-Prompt Assistant outlines. */
-const OUTLINE_DIAGNOSTICS_STORAGE_KEY = 'chatTocDebugOutline';
+const OUTLINE_DIAGNOSTICS_STORAGE_KEY = 'lunatoc:debugOutline:v1';
 
 /**
  * Logs structured Outline diagnostics when explicitly enabled.

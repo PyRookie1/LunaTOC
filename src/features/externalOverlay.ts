@@ -20,14 +20,6 @@ export function isFullscreenMediaOverlay(element: Element | null): boolean {
   );
 }
 
-/**
- * Reports whether the host page has disabled body-level pointer interaction.
- */
-function isBodyPointerEventsDisabled(): boolean {
-  if (typeof document === 'undefined' || !document.body) return false;
-  return getComputedStyle(document.body).pointerEvents === 'none';
-}
-
 function isOpenBodyImageOverlay(element: Element | null): boolean {
   if (!(element instanceof HTMLElement)) return false;
   if (element.parentElement !== document.body) return false;
@@ -61,7 +53,6 @@ function isFullscreenLightboxOverlay(element: Element | null): boolean {
 export function observeExternalOverlays(): () => void {
   const synchronizeState = (): void => {
     const hasOpenOverlay =
-      isBodyPointerEventsDisabled() ||
       Array.from(document.body.children).some(isFullscreenMediaOverlay) ||
       Array.from(
         document.querySelectorAll<HTMLElement>(LIGHTBOX_CLOSE_SELECTOR)

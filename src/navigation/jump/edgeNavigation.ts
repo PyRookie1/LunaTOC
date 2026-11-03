@@ -12,6 +12,8 @@ function platform() {
  * previous loop instead of stacking on top of it.
  */
 let activeEdgeJumpVersion = 0;
+let stopActiveScrollIntentTracking: (() => void) | null = null;
+const SCROLL_KEYS = new Set(['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' ']);
 const EDGE_JUMP_HARD_CAP = 30;
 const EDGE_JUMP_SETTLE_MS = 1500;
 const EDGE_JUMP_HEIGHT_GROWTH_EPSILON = 50;
@@ -24,6 +26,52 @@ const EDGE_JUMP_BOTTOM_TOLERANCE_PX = 2;
  * actually scrolled to it, so we require it to be in the visible band.
  */
 const EDGE_JUMP_FIRST_PROMPT_VISIBLE_BAND_PX = 200;
+
+/**
+ * Cancels automatic edge correction when the user takes control of scrolling.
+ * Listen for input intent, not scroll events: programmatic scrolling and
+ * ChatGPT virtualizer updates also emit scroll events.
+ */
+function trackManualScrollIntent(
+  container: HTMLElement,
+  cancelJump: () => void
+): () => void {
+  const onWheel = (event: WheelEvent): void => {
+    if (event.deltaY !== 0) cancelJump();
+  };
+  const onTouchMove = (): void => cancelJump();
+  const onPointerDown = (): void => cancelJump();
+  const onKeyDown = (event: KeyboardEvent): void => {
+    if (
+      event.defaultPrevented ||
+      event.altKey || event.ctrlKey || event.metaKey ||
+      !SCROLL_KEYS.has(event.key)
+    ) return;
+
+    const target = event.target;
+    // Editable controls and the extension UI must not interrupt chat scrolling.
+    if (
+      target instanceof Element &&
+      target.closest(
+        'input, textarea, select, [contenteditable="true"], [role="textbox"], ' +
+        '#luna-toc-sidebar, #luna-toc-toggle-btn, #luna-toc-react-host'
+      )
+    ) return;
+    cancelJump();
+  };
+
+  container.addEventListener('wheel', onWheel, { passive: true });
+  container.addEventListener('touchmove', onTouchMove, { passive: true });
+  container.addEventListener('pointerdown', onPointerDown, { passive: true });
+  document.addEventListener('keydown', onKeyDown, true);
+
+  return () => {
+    container.removeEventListener('wheel', onWheel);
+    container.removeEventListener('touchmove', onTouchMove);
+    container.removeEventListener('pointerdown', onPointerDown);
+    document.removeEventListener('keydown', onKeyDown, true);
+  };
+}
 
 interface ExecuteAbsoluteEdgeJumpOptions {
   container?: HTMLElement | null;
@@ -73,21 +121,39 @@ async function retryEdgeUntilSettled(
   isCancelled?: () => boolean,
   onFirstPromptVisible?: (element: HTMLElement) => void
 ): Promise<void> {
+  const logEdgeSettle = (details: Record<string, unknown>): void => {
+    if (platform().diagnostics.isJumpVizDebugEnabled?.()) {
+      console.log('[LunaTOC edge-settle]', details);
+    }
+  };
+
   for (let attempt = 0; attempt < EDGE_JUMP_HARD_CAP; attempt++) {
     if (
       jumpVersion !== activeEdgeJumpVersion ||
       isCancelled?.()
     ) {
+      logEdgeSettle({ attempt, phase: 'cancelled' });
       return;
     }
 
     const beforeHeight = container.scrollHeight;
+    const beforeScrollTop = container.scrollTop;
     const maxScrollTop = beforeHeight - container.clientHeight;
     const targetTop = edge === 'top'
       ? (isReverse ? -maxScrollTop : 0)
       : (isReverse ? 0 : maxScrollTop);
 
     container.scrollTop = targetTop;
+
+    logEdgeSettle({
+      attempt,
+      edge,
+      isReverse,
+      maxScrollTop,
+      targetTop,
+      beforeScrollTop,
+      beforeHeight,
+    });
 
     await new Promise<void>(function (resolve) {
       setTimeout(resolve, EDGE_JUMP_SETTLE_MS);
@@ -96,6 +162,7 @@ async function retryEdgeUntilSettled(
       jumpVersion !== activeEdgeJumpVersion ||
       isCancelled?.()
     ) {
+      logEdgeSettle({ attempt, phase: 'cancelled-after-sleep' });
       return;
     }
 
@@ -106,21 +173,43 @@ async function retryEdgeUntilSettled(
       : null;
     if (firstPromptInView) {
       onFirstPromptVisible?.(firstPromptInView);
+      logEdgeSettle({ attempt, phase: 'first-prompt-visible' });
       return;
     }
 
     if (edge === 'bottom') {
-      if (isPageAtBottom(container, EDGE_JUMP_BOTTOM_TOLERANCE_PX)) return;
+      const currentBottomTarget = isReverse
+        ? 0
+        : Math.max(0, container.scrollHeight - container.clientHeight);
+      const isAtBottom =
+        Math.abs(container.scrollTop - currentBottomTarget) <=
+        EDGE_JUMP_BOTTOM_TOLERANCE_PX;
+      logEdgeSettle({
+        attempt,
+        phase: isAtBottom ? 'bottom-settled' : 'bottom-displaced',
+        scrollTop: container.scrollTop,
+        currentBottomTarget,
+        isAtBottom,
+      });
+      if (isAtBottom) return;
       continue;
     }
 
     const afterHeight = container.scrollHeight;
     const grown = afterHeight > beforeHeight + EDGE_JUMP_HEIGHT_GROWTH_EPSILON;
+    logEdgeSettle({
+      attempt,
+      phase: 'settled',
+      afterScrollTop: container.scrollTop,
+      afterHeight,
+      grown,
+    });
     // Convergence signal 2: scrollHeight stopped growing, meaning
     // ChatGPT's mount window has stabilised at whatever boundary it
     // is willing to expose.
     if (!grown) return;
   }
+  logEdgeSettle({ phase: 'hard-cap-reached' });
 }
 
 /**
@@ -150,7 +239,19 @@ export function executeAbsoluteEdgeJump(
 
   const isReverse =
     window.getComputedStyle(container).flexDirection === 'column-reverse';
+  // Replace any previous jump's event listeners before tracking this attempt.
+  stopActiveScrollIntentTracking?.();
   const jumpVersion = ++activeEdgeJumpVersion;
+  const stopListening = trackManualScrollIntent(container, () => {
+    if (jumpVersion !== activeEdgeJumpVersion) return;
+    // Invalidate the retry loop immediately, even while it is sleeping.
+    activeEdgeJumpVersion += 1;
+    stopListening();
+    if (stopActiveScrollIntentTracking === stopListening) {
+      stopActiveScrollIntentTracking = null;
+    }
+  });
+  stopActiveScrollIntentTracking = stopListening;
 
   void retryEdgeUntilSettled(
     container,
@@ -160,33 +261,10 @@ export function executeAbsoluteEdgeJump(
     options.firstPromptId ?? null,
     options.isCancelled,
     options.onFirstPromptVisible
-  );
-}
-
-/**
- * Checks whether the chat scroll container is currently scrolled to the bottom.
- *
- * @param targetContainer Optional scroll container override.
- * @param tolerancePx Tolerance in pixels for fractional zoom or subpixel scrolling.
- * @returns True if the container is at or within tolerance of the bottom edge.
- */
-export function isPageAtBottom(
-  targetContainer?: HTMLElement | null,
-  tolerancePx: number = EDGE_JUMP_BOTTOM_TOLERANCE_PX
-): boolean {
-  const threadContainer =
-    platform().navigation.getThreadScrollContainer?.() ?? null;
-  const scrollContainer = platform().navigation.getScrollContainer();
-  const container = targetContainer ?? (threadContainer ?? scrollContainer);
-  if (!container) return false;
-
-  const isReverse =
-    window.getComputedStyle(container).flexDirection === 'column-reverse';
-  const currentBottomTarget = isReverse
-    ? 0
-    : Math.max(0, container.scrollHeight - container.clientHeight);
-
-  return (
-    Math.abs(container.scrollTop - currentBottomTarget) <= tolerancePx
-  );
+  ).finally(() => {
+    stopListening();
+    if (stopActiveScrollIntentTracking === stopListening) {
+      stopActiveScrollIntentTracking = null;
+    }
+  });
 }
