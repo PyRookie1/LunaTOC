@@ -59,9 +59,7 @@ export function startMarkdownBoldRepair(
       }
     }
 
-    for (const textNode of pending) {
-      repairMarkdownBoldTextNode(textNode);
-    }
+    repairPendingTextNodes(pending);
   });
 
   observer.observe(root, {
@@ -89,34 +87,56 @@ export function startMarkdownBoldRepair(
 
 export function repairMarkdownBoldTextNode(textNode: Text): boolean {
   if (!isEligibleTextNodeContext(textNode)) return false;
+  return repairMarkdownBoldTextRun(collectContiguousTextRun(textNode));
+}
 
-  // ChatGPT can split one streamed Markdown string across adjacent DOM text
-  // nodes. Parse the complete contiguous text run so the opening and closing
-  // delimiters do not have to live in the same node.
-  const textNodes = collectContiguousTextRun(textNode);
+function repairPendingTextNodes(pending: Set<Text>): void {
+  const processed = new Set<Text>();
+
+  for (const textNode of pending) {
+    if (processed.has(textNode) || !isEligibleTextNodeContext(textNode)) {
+      continue;
+    }
+
+    const textNodes = collectContiguousTextRun(textNode);
+    for (const node of textNodes) processed.add(node);
+    repairMarkdownBoldTextRun(textNodes);
+  }
+}
+
+/**
+ * ChatGPT can split one streamed Markdown string across adjacent DOM text
+ * nodes. Parse the complete contiguous text run so opening and closing
+ * delimiters do not have to live in the same node.
+ */
+function repairMarkdownBoldTextRun(textNodes: Text[]): boolean {
+  const firstTextNode = textNodes[0];
+  if (!firstTextNode) return false;
+
   const original = textNodes.map((node) => node.data).join('');
   if (!original.includes('**')) return false;
 
   const segments = parseUnrenderedBoldMarkdown(original);
   if (!segments) return false;
 
-  const fragment = textNode.ownerDocument.createDocumentFragment();
+  const document = firstTextNode.ownerDocument;
+  const fragment = document.createDocumentFragment();
 
   for (const segment of segments) {
     if (!segment.bold) {
-      fragment.appendChild(textNode.ownerDocument.createTextNode(segment.text));
+      fragment.appendChild(document.createTextNode(segment.text));
       continue;
     }
 
-    const strong = textNode.ownerDocument.createElement('strong');
+    const strong = document.createElement('strong');
     strong.dataset.lunaTocMarkdownBold = 'true';
     strong.textContent = segment.text;
     fragment.appendChild(strong);
   }
 
-  const parent = textNodes[0]?.parentNode;
+  const parent = firstTextNode.parentNode;
   if (!parent) return false;
-  parent.insertBefore(fragment, textNodes[0]);
+  parent.insertBefore(fragment, firstTextNode);
   for (const node of textNodes) node.remove();
   return true;
 }
@@ -196,9 +216,7 @@ function repairMountedAssistantResponses(root: Node): void {
     collectOwnedMarkdownTextNodes(assistantRoot, pending);
   }
 
-  for (const textNode of pending) {
-    repairMarkdownBoldTextNode(textNode);
-  }
+  repairPendingTextNodes(pending);
 }
 
 function collectChangedNode(node: Node, pending: Set<Text>): void {
