@@ -270,10 +270,6 @@ function collectEligibleTextNodes(node: Node, pending: Set<Text>): void {
   }
 }
 
-function isEligibleTextNode(textNode: Text): boolean {
-  return textNode.data.includes('**') && isEligibleTextNodeContext(textNode);
-}
-
 function isEligibleTextNodeContext(textNode: Text): boolean {
   if (!textNode.isConnected) return false;
 
