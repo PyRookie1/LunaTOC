@@ -230,9 +230,11 @@ describe('startMarkdownBoldRepair', () => {
     const assistant = mountAssistant('<p id="split"></p>');
     const paragraph = assistant.querySelector('#split')!;
     paragraph.append(
-      document.createTextNode('before **split'),
+      document.createTextNode('before *'),
+      document.createTextNode('*split'),
       document.createTextNode(' across '),
-      document.createTextNode('text nodes** after')
+      document.createTextNode('text nodes*'),
+      document.createTextNode('* after')
     );
 
     stopRepair = startMarkdownBoldRepair();
