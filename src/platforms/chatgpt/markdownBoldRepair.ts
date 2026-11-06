@@ -254,7 +254,7 @@ function collectOwnedMarkdownTextNodes(
 function collectEligibleTextNodes(node: Node, pending: Set<Text>): void {
   if (node.nodeType === Node.TEXT_NODE) {
     const textNode = node as Text;
-    if (isEligibleTextNode(textNode)) pending.add(textNode);
+    if (isEligibleTextNodeContext(textNode)) pending.add(textNode);
     return;
   }
 
