@@ -179,17 +179,17 @@ describe('startMarkdownBoldRepair', () => {
       .toBe('**outside markdown**');
   });
 
-  it('repairs a complete marker pair after a streamed text node is updated', async () => {
-    const assistant = mountAssistant('<p>**incomplete');
-    const textNode = assistant.querySelector('p')?.firstChild as Text;
-
+  it('repairs a bold pair when the streamed closing delimiter arrives in a new text node', async () => {
+    const assistant = mountAssistant('<p>**streamed');
+    const paragraph = assistant.querySelector('p')!;
     stopRepair = startMarkdownBoldRepair();
     expect(assistant.querySelector('strong')).toBeNull();
 
-    textNode.data = '**complete**';
+    paragraph.appendChild(document.createTextNode(' content**'));
     await flushMutations();
 
-    expect(assistant.querySelector('strong')?.textContent).toBe('complete');
+    expect(assistant.querySelector('strong')?.textContent).toBe('streamed content');
+    expect(paragraph.textContent).toBe('streamed content');
   });
 
   it('repairs newly mounted assistant answers and remains idempotent', async () => {
@@ -226,12 +226,33 @@ describe('startMarkdownBoldRepair', () => {
     ).toHaveLength(1);
   });
 
-  it('does not join marker pairs split across separate text nodes', () => {
+  it('repairs a bold pair split across adjacent text nodes', () => {
     const assistant = mountAssistant('<p id="split"></p>');
     const paragraph = assistant.querySelector('#split')!;
     paragraph.append(
-      document.createTextNode('**split'),
-      document.createTextNode(' across nodes**')
+      document.createTextNode('before *'),
+      document.createTextNode('*split'),
+      document.createTextNode(' across '),
+      document.createTextNode('text nodes*'),
+      document.createTextNode('* after')
+    );
+
+    stopRepair = startMarkdownBoldRepair();
+
+    expect(paragraph.textContent).toBe('before split across text nodes after');
+    expect(
+      Array.from(paragraph.querySelectorAll('strong[data-luna-toc-markdown-bold="true"]'))
+        .map((node) => node.textContent)
+    ).toEqual(['split across text nodes']);
+  });
+
+  it('does not join bold markers across inline element boundaries', () => {
+    const assistant = mountAssistant('<p id="split"></p>');
+    const paragraph = assistant.querySelector('#split')!;
+    paragraph.append(
+      document.createTextNode('**split '),
+      Object.assign(document.createElement('em'), { textContent: 'across' }),
+      document.createTextNode(' nodes**')
     );
 
     stopRepair = startMarkdownBoldRepair();

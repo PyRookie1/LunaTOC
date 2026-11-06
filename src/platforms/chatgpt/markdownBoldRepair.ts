@@ -47,7 +47,7 @@ export function startMarkdownBoldRepair(
       if (mutation.type === 'characterData') {
         if (mutation.target.nodeType === Node.TEXT_NODE) {
           const textNode = mutation.target as Text;
-          if (isEligibleTextNode(textNode)) pending.add(textNode);
+          if (isEligibleTextNodeContext(textNode)) pending.add(textNode);
         }
         continue;
       }
@@ -59,9 +59,7 @@ export function startMarkdownBoldRepair(
       }
     }
 
-    for (const textNode of pending) {
-      repairMarkdownBoldTextNode(textNode);
-    }
+    repairPendingTextNodes(pending);
   });
 
   observer.observe(root, {
@@ -88,27 +86,58 @@ export function startMarkdownBoldRepair(
 }
 
 export function repairMarkdownBoldTextNode(textNode: Text): boolean {
-  const original = textNode.data;
-  if (!original.includes('**') || !isEligibleTextNode(textNode)) return false;
+  if (!isEligibleTextNodeContext(textNode)) return false;
+  return repairMarkdownBoldTextRun(collectContiguousTextRun(textNode));
+}
+
+function repairPendingTextNodes(pending: Set<Text>): void {
+  const processed = new Set<Text>();
+
+  for (const textNode of pending) {
+    if (processed.has(textNode) || !isEligibleTextNodeContext(textNode)) {
+      continue;
+    }
+
+    const textNodes = collectContiguousTextRun(textNode);
+    for (const node of textNodes) processed.add(node);
+    repairMarkdownBoldTextRun(textNodes);
+  }
+}
+
+/**
+ * ChatGPT can split one streamed Markdown string across adjacent DOM text
+ * nodes. Parse the complete contiguous text run so opening and closing
+ * delimiters do not have to live in the same node.
+ */
+function repairMarkdownBoldTextRun(textNodes: Text[]): boolean {
+  const firstTextNode = textNodes[0];
+  if (!firstTextNode) return false;
+
+  const original = textNodes.map((node) => node.data).join('');
+  if (!original.includes('**')) return false;
 
   const segments = parseUnrenderedBoldMarkdown(original);
   if (!segments) return false;
 
-  const fragment = textNode.ownerDocument.createDocumentFragment();
+  const document = firstTextNode.ownerDocument;
+  const fragment = document.createDocumentFragment();
 
   for (const segment of segments) {
     if (!segment.bold) {
-      fragment.appendChild(textNode.ownerDocument.createTextNode(segment.text));
+      fragment.appendChild(document.createTextNode(segment.text));
       continue;
     }
 
-    const strong = textNode.ownerDocument.createElement('strong');
+    const strong = document.createElement('strong');
     strong.dataset.lunaTocMarkdownBold = 'true';
     strong.textContent = segment.text;
     fragment.appendChild(strong);
   }
 
-  textNode.replaceWith(fragment);
+  const parent = firstTextNode.parentNode;
+  if (!parent) return false;
+  parent.insertBefore(fragment, firstTextNode);
+  for (const node of textNodes) node.remove();
   return true;
 }
 
@@ -187,9 +216,7 @@ function repairMountedAssistantResponses(root: Node): void {
     collectOwnedMarkdownTextNodes(assistantRoot, pending);
   }
 
-  for (const textNode of pending) {
-    repairMarkdownBoldTextNode(textNode);
-  }
+  repairPendingTextNodes(pending);
 }
 
 function collectChangedNode(node: Node, pending: Set<Text>): void {
@@ -245,7 +272,7 @@ function collectOwnedMarkdownTextNodes(
 function collectEligibleTextNodes(node: Node, pending: Set<Text>): void {
   if (node.nodeType === Node.TEXT_NODE) {
     const textNode = node as Text;
-    if (isEligibleTextNode(textNode)) pending.add(textNode);
+    if (isEligibleTextNodeContext(textNode)) pending.add(textNode);
     return;
   }
 
@@ -261,8 +288,8 @@ function collectEligibleTextNodes(node: Node, pending: Set<Text>): void {
   }
 }
 
-function isEligibleTextNode(textNode: Text): boolean {
-  if (!textNode.isConnected || !textNode.data.includes('**')) return false;
+function isEligibleTextNodeContext(textNode: Text): boolean {
+  if (!textNode.isConnected) return false;
 
   const owner = findNearestAssistantRoot(textNode);
   if (!owner || !isWithinOwnedMarkdown(textNode, owner)) return false;
@@ -274,6 +301,29 @@ function isEligibleTextNode(textNode: Text): boolean {
   }
 
   return true;
+}
+
+function collectContiguousTextRun(textNode: Text): Text[] {
+  let first = textNode;
+
+  while (
+    first.previousSibling?.nodeType === Node.TEXT_NODE &&
+    isEligibleTextNodeContext(first.previousSibling as Text)
+  ) {
+    first = first.previousSibling as Text;
+  }
+
+  const nodes: Text[] = [];
+  let current: Node | null = first;
+  while (
+    current?.nodeType === Node.TEXT_NODE &&
+    isEligibleTextNodeContext(current as Text)
+  ) {
+    nodes.push(current as Text);
+    current = current.nextSibling;
+  }
+
+  return nodes;
 }
 
 function findNearestAssistantRoot(node: Node): HTMLElement | null {

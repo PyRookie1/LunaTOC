@@ -272,6 +272,87 @@ test('Chromium MV3: TOC, search, layout, SPA and failure paths',{timeout:150000}
       }
     });
 
+    await t.test('private prompt editor accepts numeric titles and pasted content',async()=>{
+      const promptKey='lunatoc:prompts:v1';
+      const title='E2E Custom Prompt 123';
+      const body='Pasted custom prompt body 456';
+      await context.grantPermissions(['clipboard-read','clipboard-write'],{origin:'https://chatgpt.com'});
+      await page.evaluate(async text=>navigator.clipboard.writeText(text),body);
+      await page.evaluate(()=>{
+        const privateHost=document.getElementById('luna-toc-private-react-host');
+        const probe={digitEvents:0,pasteShortcutEvents:0,pasteEvents:0};
+        probe.onKeydown=event=>{
+          if(event.target!==privateHost)return;
+          if(/^\d$/.test(event.key)){
+            probe.digitEvents+=1;
+            event.preventDefault();
+          }else if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='v'){
+            probe.pasteShortcutEvents+=1;
+            event.preventDefault();
+          }
+        };
+        probe.onPaste=event=>{
+          if(event.target===privateHost){
+            probe.pasteEvents+=1;
+            event.preventDefault();
+          }
+        };
+        window.__lunaTocEditorInputProbe=probe;
+        window.addEventListener('keydown',probe.onKeydown,true);
+        window.addEventListener('paste',probe.onPaste,true);
+      });
+
+      try{
+        await page.locator('#toggle-view-mode-btn').evaluate(button=>button.click());
+        await page.locator('#myprompt-add-new-btn').waitFor({state:'visible'});
+        await page.locator('#myprompt-add-new-btn').click();
+        // The title field is auto-focused inside the closed Shadow DOM.
+        await page.keyboard.type(title);
+        // Tab to the prompt body, paste from the browser clipboard, then
+        // tab through Cancel to Save and submit using the real keyboard path.
+        await page.keyboard.press('Tab');
+        await page.keyboard.press('Control+V');
+        await page.keyboard.press('Tab');
+        await page.keyboard.press('Tab');
+        await page.keyboard.press('Enter');
+
+        let savedPrompt=null;
+        for(let attempt=0;attempt<40;attempt++){
+          savedPrompt=await worker.evaluate(async({key,title})=>{
+            const prompts=(await chrome.storage.local.get(key))[key]??[];
+            return prompts.find(prompt=>prompt.title===title)??null;
+          },{key:promptKey,title});
+          if(savedPrompt)break;
+          await page.waitForTimeout(100);
+        }
+        assert.ok(savedPrompt,'the editor should submit the custom prompt');
+        assert.equal(savedPrompt.title,title,'digits must remain in the title');
+        assert.equal(savedPrompt.content,body,'clipboard text must reach the prompt body');
+        const probe=await page.evaluate(()=>({
+          digitEvents:window.__lunaTocEditorInputProbe?.digitEvents??-1,
+          pasteShortcutEvents:window.__lunaTocEditorInputProbe?.pasteShortcutEvents??-1,
+          pasteEvents:window.__lunaTocEditorInputProbe?.pasteEvents??-1,
+        }));
+        assert.deepEqual(probe,{digitEvents:0,pasteShortcutEvents:0,pasteEvents:0},
+          'host-page capture handlers must not intercept private editor input');
+      }finally{
+        await page.keyboard.press('Escape').catch(()=>{});
+        await page.evaluate(()=>{
+          const probe=window.__lunaTocEditorInputProbe;
+          if(!probe)return;
+          window.removeEventListener('keydown',probe.onKeydown,true);
+          window.removeEventListener('paste',probe.onPaste,true);
+          delete window.__lunaTocEditorInputProbe;
+        });
+        await worker.evaluate(async({key,title})=>{
+          const prompts=(await chrome.storage.local.get(key))[key]??[];
+          await chrome.storage.local.set({[key]:prompts.filter(prompt=>prompt.title!==title)});
+        },{key:promptKey,title});
+        const currentTitle=await page.locator('#navigator-title').innerText().catch(()=> '');
+        if(/Tips/.test(currentTitle))await page.locator('#toggle-view-mode-btn').evaluate(button=>button.click());
+      }
+    });
+
     await t.test('autocomplete rejects synthetic composer events and accepts real input',async()=>{
       const promptKey='lunatoc:prompts:v1';
       const promptTitle='E2E Autocomplete Target';

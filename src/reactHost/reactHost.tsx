@@ -13,6 +13,7 @@ import {
   getReactPortalContainer,
 } from './portalContainer';
 import tailwindCss from '@/styles/tailwind.css?inline';
+import { installPrivateEditorInputGuard } from './privateEditorInputGuard';
 
 export { getReactPortalContainer };
 
@@ -21,6 +22,11 @@ const REACT_ROOT_ID = 'luna-toc-react-root';
 const PRIVATE_HOST_ID = 'luna-toc-private-react-host';
 const PRIVATE_ROOT_ID = 'luna-toc-private-react-root';
 const PORTAL_ROOT_ID = 'luna-toc-private-react-portals';
+
+// Install before the page registers global shortcuts. Closed-root events are
+// retargeted to the host, so page handlers may mistake editor input for keys
+// pressed outside an editable field and cancel numeric entry or paste.
+installPrivateEditorInputGuard();
 
 /**
  * Creates the isolated React host once the document body is available.
