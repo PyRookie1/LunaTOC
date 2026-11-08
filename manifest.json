@@ -2,7 +2,7 @@
     "manifest_version": 3,
     "name": "LunaTOC",
     "short_name": "LunaTOC",
-    "version": "1.0.0",
+    "version": "1.0.2",
     "description": "LunaTOC：为 ChatGPT 长对话提供目录、回答标题导航和 Markdown 粗体修复。",
     "icons": {
         "16": "src/icons/icon16.png",
