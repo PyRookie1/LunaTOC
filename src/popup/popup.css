@@ -1,0 +1,68 @@
+@layer theme, utilities;
+
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/utilities.css' layer(utilities);
+
+/* Keep the popup invisible until the account's manual theme is loaded. */
+html:not([data-theme]) body { visibility: hidden; }
+
+/* ============================================================
+   Popup Theme Tokens
+   ============================================================ */
+
+html[data-theme='dark'],
+body[data-theme='dark'] {
+  --p-bg-body: #0f172a;
+  --p-bg-main: #111827;
+  --p-bg-note: #1f2937;
+  --p-bg-kbd: #1f2937;
+  --p-border-kbd: #4b5563;
+  --p-text-base: #dbe4f0;
+  --p-text-h2: #93c5fd;
+  --p-text-strong: #93c5fd;
+  --p-text-kbd: #bfdbfe;
+  --p-accent: #60a5fa;
+
+  /* Theme toggle */
+  --p-toggle-bg: #1e293b;
+  --p-toggle-bg-active: #1d4ed8;
+  --p-toggle-border: #334155;
+  --p-toggle-text: #94a3b8;
+
+}
+
+:root,
+html[data-theme='light'],
+body[data-theme='light'] {
+  --p-bg-body: #e0effe;
+  --p-bg-main: #eff6ff;
+  --p-bg-note: #dbeafe;
+  --p-bg-kbd: #dbeafe;
+  --p-border-kbd: #93c5fd;
+  --p-text-base: #1e3a5f;
+  --p-text-h2: #1d4ed8;
+  --p-text-strong: #1d4ed8;
+  --p-text-kbd: #1d4ed8;
+  --p-accent: #2563eb;
+
+  /* Theme toggle */
+  --p-toggle-bg: #dbeafe;
+  --p-toggle-bg-active: #2563eb;
+  --p-toggle-border: #93c5fd;
+  --p-toggle-text: #3b6b9e;
+
+
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  width: 320px;
+  margin: 0;
+  padding: 2px;
+  background: var(--p-bg-body);
+  font-family: Arial, Helvetica, sans-serif;
+  color: var(--p-text-base);
+}

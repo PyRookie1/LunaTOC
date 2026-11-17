@@ -1,0 +1,118 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function verifiedOwner(uid) {
+      return request.auth != null
+        && request.auth.uid == uid
+        && request.auth.token.email_verified == true;
+    }
+
+    function accountPath(uid, accountHash) {
+      return /databases/$(database)/documents/users/$(uid)/accounts/$(accountHash);
+    }
+
+    function quotaPath(uid) {
+      return /databases/$(database)/documents/users/$(uid)/usage/cloudWrites;
+    }
+
+    function accountChangedInCommit(uid, accountHash) {
+      let path = accountPath(uid, accountHash);
+      let next = getAfter(path).data;
+      return existsAfter(path)
+        && next.keys().hasOnly(['json'])
+        && next.keys().hasAll(['json'])
+        && next.json is string
+        && (!exists(path) || next.json != get(path).data.json);
+    }
+
+    function matchingQuotaInCommit(uid, accountHash) {
+      let path = quotaPath(uid);
+      let next = getAfter(path).data;
+      return existsAfter(path)
+        && next.lastAccountHash == accountHash
+        && next.accountHashes is list
+        && next.accountHashes.hasAny([accountHash])
+        && next.lastWriteAt == request.time;
+    }
+
+    function validQuotaFields(data) {
+      return data.keys().hasOnly([
+          'accountHashes', 'lastAccountHash',
+          'dailyWrites', 'windowStart', 'lastWriteAt'
+        ])
+        && data.keys().hasAll([
+          'accountHashes', 'lastAccountHash',
+          'dailyWrites', 'windowStart', 'lastWriteAt'
+        ])
+        && data.accountHashes is list
+        && data.accountHashes.size() >= 1
+        && data.accountHashes.size() <= 20
+        && data.lastAccountHash is string
+        && data.lastAccountHash.matches('acct_[a-f0-9]{64}')
+        && data.accountHashes.hasAny([data.lastAccountHash])
+        && data.dailyWrites is int
+        && data.dailyWrites >= 1
+        && data.dailyWrites <= 100
+        && data.windowStart is timestamp
+        && data.lastWriteAt is timestamp;
+    }
+
+    function validQuotaCreate(uid) {
+      let data = request.resource.data;
+      return validQuotaFields(data)
+        && data.accountHashes.size() == 1
+        && data.accountHashes == [data.lastAccountHash]
+        && data.dailyWrites == 1
+        && data.windowStart == request.time
+        && data.lastWriteAt == request.time
+        && accountChangedInCommit(uid, data.lastAccountHash);
+    }
+
+    function validQuotaUpdate(uid) {
+      let old = resource.data;
+      let next = request.resource.data;
+      let accountAlreadyRegistered = old.accountHashes.hasAny([next.lastAccountHash]);
+      let accountCountAfter = old.accountHashes.size() + (accountAlreadyRegistered ? 0 : 1);
+      let windowExpired = request.time >= old.windowStart + duration.value(1, 'd');
+      return validQuotaFields(old)
+        && validQuotaFields(next)
+        && request.time >= old.lastWriteAt + duration.value(5, 's')
+        && next.accountHashes.size() == accountCountAfter
+        && next.accountHashes.size() <= 20
+        && next.accountHashes.hasAll(old.accountHashes)
+        && next.accountHashes.hasAny([next.lastAccountHash])
+        && accountChangedInCommit(uid, next.lastAccountHash)
+        && (
+          windowExpired
+            ? next.windowStart == request.time && next.dailyWrites == 1
+            : next.windowStart == old.windowStart
+              && next.dailyWrites == old.dailyWrites + 1
+              && next.dailyWrites <= 100
+        );
+    }
+
+    match /users/{uid}/accounts/{accountHash} {
+      allow get: if verifiedOwner(uid)
+        && accountHash.matches('acct_[a-f0-9]{64}');
+      allow create, update: if verifiedOwner(uid)
+        && accountHash.matches('acct_[a-f0-9]{64}')
+        && request.resource.data.keys().hasOnly(['json'])
+        && request.resource.data.keys().hasAll(['json'])
+        && request.resource.data.json is string
+        && request.resource.data.json.size() <= 240000
+        && matchingQuotaInCommit(uid, accountHash);
+      allow list, delete: if false;
+    }
+
+    match /users/{uid}/usage/cloudWrites {
+      allow get: if verifiedOwner(uid);
+      allow create: if verifiedOwner(uid) && validQuotaCreate(uid);
+      allow update: if verifiedOwner(uid) && validQuotaUpdate(uid);
+      allow list, delete: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -1,0 +1,13 @@
+.prettierrc
+.DS_Store
+.vscode/
+
+release/
+icons/v*/
+node_modules/
+dist/
+
+docs/context.md
+
+# Upstream editor and AI-workspace metadata; not part of the extension.
+.czaza/
