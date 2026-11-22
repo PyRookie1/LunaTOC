@@ -27,7 +27,7 @@ function tick(signal: AbortSignal): Promise<void> {
 /**
  * A native Promise can complete before neighboring turns finish measuring.
  * Reacquire through the same semantic API only after observed drift/eviction;
- * never fight the host with pixel writes or continuously repin a correct row.
+ * correct the initial landing through the host controller so virtualizer state stays in sync.
  */
 export async function settleNativeMessage(options: {
   container: HTMLElement; api: NativeTurnList; turnKey: string; messageId: string;
@@ -51,6 +51,7 @@ export async function settleNativeMessage(options: {
     options.prepare();
     await untilAbort(api.scrollToKey(turnKey, row => findNativeMessageTarget(row, messageId, edge),
       { align: 'top', signal }), signal);
+    if (signal.aborted) return;
     if (edge === 'top') {
       const row = api.getRowElement(turnKey);
       const target = row && container.contains(row) ? findNativeMessageTarget(row, messageId, edge) : null;
