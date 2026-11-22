@@ -65,7 +65,7 @@ describe('boldFixController', () => {
   it('preserves the userscript fixes for native bold markers and inline code weight', () => {
     const thread = mountThread(
       '<div data-message-author-role="assistant">' +
-        '<p><strong>native **** marker</strong></p>' +
+        '<p><strong>native****marker</strong></p>' +
         '<p><strong>native trailing**</strong></p>' +
         '<p>**<code style="font-weight: 400">inline code</code>**</p>' +
       '</div>'
@@ -74,7 +74,7 @@ describe('boldFixController', () => {
     controller.start();
 
     const paragraphs = thread.querySelectorAll('p');
-    expect(paragraphs[0].textContent).toBe('native  marker');
+    expect(paragraphs[0].textContent).toBe('nativemarker');
     expect(paragraphs[1].textContent).toBe('native trailing');
     expect(paragraphs[2].querySelector('code')?.style.fontWeight).toBe('600');
   });
