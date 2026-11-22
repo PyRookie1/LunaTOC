@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   createBoldFixLifecycle,
   type BoldFixLifecycle,
+  type BoldFixLifecycleSettings,
 } from '@/features/boldFix/boldFixLifecycle';
 import { CHATGPT_MESSAGE_TYPES } from '@/platforms/chatgpt/messages';
 
@@ -17,7 +18,7 @@ function mountThread(markup: string): HTMLElement {
   return thread;
 }
 
-function createLifecycleHarness(): {
+function createLifecycleHarness(settings?: BoldFixLifecycleSettings): {
   lifecycle: BoldFixLifecycle;
   emitRouteChanged(): void;
 } {
@@ -28,7 +29,7 @@ function createLifecycleHarness(): {
       subscriber = null;
     };
   };
-  const instance = createBoldFixLifecycle(document, subscribe);
+  const instance = createBoldFixLifecycle(document, subscribe, settings);
   lifecycle = instance;
 
   return {
@@ -62,6 +63,44 @@ describe('boldFixLifecycle', () => {
     expect(harness.lifecycle.controller.running).toBe(true);
     expect(thread.querySelector('strong[data-chatgpt-md-fix="bold"]')?.textContent)
       .toBe('bold text');
+  });
+
+  it('honors the saved setting and restores or reapplies the current conversation on toggle', async () => {
+    const thread = mountThread(
+      '<div data-message-author-role="assistant"><p>before **bold text** after</p></div>'
+    );
+    const settingsEvents: { listener?: (enabled: boolean) => void } = {};
+    const settings: BoldFixLifecycleSettings = {
+      readEnabled: async () => false,
+      subscribeEnabled: (listener) => {
+        settingsEvents.listener = listener;
+        return () => { delete settingsEvents.listener; };
+      },
+    };
+    const harness = createLifecycleHarness(settings);
+
+    await vi.waitFor(() => {
+      expect(harness.lifecycle.controller.running).toBe(false);
+    });
+    expect(thread.querySelector('strong[data-chatgpt-md-fix="bold"]')).toBeNull();
+
+    settingsEvents.listener?.(true);
+    expect(harness.lifecycle.controller.running).toBe(true);
+    expect(thread.querySelector('strong[data-chatgpt-md-fix="bold"]')?.textContent)
+      .toBe('bold text');
+
+    settingsEvents.listener?.(false);
+    expect(harness.lifecycle.controller.running).toBe(false);
+    expect(thread.querySelector('[data-chatgpt-md-fix]')).toBeNull();
+    expect(thread.querySelector('p')?.textContent).toBe('before **bold text** after');
+
+    settingsEvents.listener?.(true);
+    expect(harness.lifecycle.controller.running).toBe(true);
+    expect(thread.querySelector('strong[data-chatgpt-md-fix="bold"]')?.textContent)
+      .toBe('bold text');
+
+    harness.lifecycle.stop();
+    expect(settingsEvents.listener).toBeUndefined();
   });
 
   it('runs a debounced full scan after trusted SPA route changes', async () => {

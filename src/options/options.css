@@ -70,6 +70,7 @@ body {
 .settings-switch-input:checked + .settings-switch-track { background: var(--o-accent); }
 .settings-switch-input:checked + .settings-switch-track::after { transform: translateX(16px); }
 .settings-switch-input:focus-visible + .settings-switch-track { outline: 2px solid var(--o-accent); outline-offset: 3px; }
+.settings-switch-input:disabled + .settings-switch-track { opacity: .55; }
 .settings-error { color: #d63838; font-size: 13px; }
 .settings-footnote { color: var(--o-muted); font-size: 11px; margin-top: 28px; }
 @media (max-width: 480px) { .settings-page { padding: 28px 15px; } .settings-card { padding: 4px 13px; } }

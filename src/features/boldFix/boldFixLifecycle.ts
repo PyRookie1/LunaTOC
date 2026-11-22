@@ -10,10 +10,21 @@ import {
   createBoldFixController,
   type BoldFixController,
 } from './boldFixController';
+import {
+  DEFAULT_BOLD_FIX_ENABLED,
+  readBoldFixEnabled,
+  subscribeBoldFixEnabled,
+} from './boldFixSettings';
 
 const ROUTE_SCAN_DEBOUNCE_MS = 250;
 
 type PageHookSubscriber = (subscriber: (event: MessageEvent) => void) => () => void;
+
+/** Injectable global preference boundary for deterministic lifecycle tests. */
+export interface BoldFixLifecycleSettings {
+  readEnabled(): Promise<boolean>;
+  subscribeEnabled(listener: (enabled: boolean) => void): () => void;
+}
 
 export interface BoldFixLifecycle {
   readonly controller: BoldFixController;
@@ -32,7 +43,8 @@ export interface BoldFixLifecycle {
  */
 export function createBoldFixLifecycle(
   doc: Document = document,
-  subscribe: PageHookSubscriber = subscribeTrustedPageHookMessage
+  subscribe: PageHookSubscriber = subscribeTrustedPageHookMessage,
+  settings?: BoldFixLifecycleSettings
 ): BoldFixLifecycle {
   const view = doc.defaultView;
   if (!view) {
@@ -41,16 +53,32 @@ export function createBoldFixLifecycle(
 
   const controller = createBoldFixController(doc);
   let stopped = false;
+  let enabled = !settings;
+  let settingsChangedDuringLoad = false;
   let routeScanTimer: number | null = null;
 
+  const applyEnabled = (next: boolean): void => {
+    if (stopped || enabled === next) return;
+    enabled = next;
+    if (enabled) {
+      controller.start();
+      return;
+    }
+    if (routeScanTimer !== null) {
+      view.clearTimeout(routeScanTimer);
+      routeScanTimer = null;
+    }
+    controller.stop();
+  };
+
   const scheduleFullScan = (): void => {
-    if (stopped) return;
+    if (stopped || !enabled) return;
     if (routeScanTimer !== null) {
       view.clearTimeout(routeScanTimer);
     }
     routeScanTimer = view.setTimeout(() => {
       routeScanTimer = null;
-      if (!stopped) controller.scanAll();
+      if (!stopped && enabled) controller.scanAll();
     }, ROUTE_SCAN_DEBOUNCE_MS);
   };
 
@@ -67,8 +95,24 @@ export function createBoldFixLifecycle(
   };
 
   const unsubscribe = subscribe(handlePageHookMessage);
+  const unsubscribeSettings = settings?.subscribeEnabled((next) => {
+    settingsChangedDuringLoad = true;
+    applyEnabled(next);
+  }) ?? (() => {});
   view.addEventListener('popstate', handlePopState);
-  controller.start();
+
+  if (settings) {
+    // Do not briefly repair the page before reading a user's saved OFF state.
+    // A storage event received during the read wins over the potentially stale read result.
+    void settings.readEnabled().then((next) => {
+      if (!settingsChangedDuringLoad) applyEnabled(next);
+    }).catch(() => {
+      if (!settingsChangedDuringLoad) applyEnabled(DEFAULT_BOLD_FIX_ENABLED);
+    });
+  } else {
+    // Test and embedding callers without a settings provider retain the enabled default.
+    controller.start();
+  }
 
   return {
     controller,
@@ -80,6 +124,7 @@ export function createBoldFixLifecycle(
         routeScanTimer = null;
       }
       unsubscribe();
+      unsubscribeSettings();
       view.removeEventListener('popstate', handlePopState);
       controller.stop();
     },
@@ -91,7 +136,10 @@ let defaultLifecycle: BoldFixLifecycle | null = null;
 /** Initializes the one document-scoped controller used by the content script. */
 export function initializeBoldFixLifecycle(): BoldFixLifecycle {
   if (!defaultLifecycle) {
-    defaultLifecycle = createBoldFixLifecycle(document);
+    defaultLifecycle = createBoldFixLifecycle(document, subscribeTrustedPageHookMessage, {
+      readEnabled: readBoldFixEnabled,
+      subscribeEnabled: subscribeBoldFixEnabled,
+    });
   }
   return defaultLifecycle;
 }
