@@ -64,7 +64,8 @@ export const APP_CONFIG = {
   },
   platforms: {
     chatgpt: {
-      promptTopOffsetPx: 16,
+      /** Keep TOC destinations below ChatGPT's top fade overlay. */
+      promptTopOffsetPx: 100,
       settleAttempts: 3,
       backfillMaxPages: 10,
       // Rewrites ChatGPT's own older-page pagination requests so its

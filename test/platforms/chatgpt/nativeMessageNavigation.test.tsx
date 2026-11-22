@@ -15,6 +15,7 @@ let dispose: () => void;
 let api: NativeTurnList;
 let controller: ThreadScrollController;
 let pending: Array<{ key: string; signal: AbortSignal; complete(): void }>;
+let cachedDistance: number;
 
 function VirtualRows(_props: { rows: typeof rows; getRowKey: (row: typeof rows[number]) => string }) {
   return <div data-turn-key="turn-119" />;
@@ -27,7 +28,7 @@ function SnapshotOwner() {
 
 beforeEach(async () => {
   vi.useFakeTimers(); vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
-  pending = [];
+  pending = []; cachedDistance = 0;
   api = {
     getRowElement: key => feed.querySelector(`[data-turn-key="${key}"]`),
     getEntryGeometry: () => ({ startPx: 0, endPx: 100 }),
@@ -36,10 +37,11 @@ beforeEach(async () => {
         if (signal.aborted) return;
         feed.querySelector(`[data-turn-key="${key}"]`)?.remove();
         const row = document.createElement('div'); row.dataset.turnKey = key;
+        feed.scrollTop = 4990; // Host align:'top' landing before LunaTOC's safety-offset correction.
         const prompt = document.createElement('div');
         prompt.setAttribute('data-chatgpt-search-unit-key', `${key}:user`);
         prompt.setAttribute('data-chatgpt-search-message-ids', rows.find(row => row.turnKey === key)!.turn.messageIds.join(' '));
-        prompt.getBoundingClientRect = () => ({ top: 10, bottom: 60, height: 50 } as DOMRect);
+        prompt.getBoundingClientRect = () => ({ top: 5000 - feed.scrollTop, bottom: 5050 - feed.scrollTop, height: 50 } as DOMRect);
         row.append(prompt); feed.append(row);
         expect(target(row)).toBe(prompt);
         resolve();
@@ -47,8 +49,12 @@ beforeEach(async () => {
     })),
   };
   controller = {
-    getScrollElement: () => feed, getLastScrollDistanceFromBottomPx: () => 0,
-    holdViewport: vi.fn(), scrollToDistanceFromBottomPx: vi.fn(),
+    getScrollElement: () => feed, getLastScrollDistanceFromBottomPx: () => cachedDistance,
+    holdViewport: vi.fn(),
+    scrollToDistanceFromBottomPx: vi.fn(distance => {
+      feed.scrollTop = feed.scrollHeight - feed.clientHeight - distance;
+      cachedDistance = distance;
+    }),
   };
   const Context = createContext(controller);
   const host = document.createElement('div'); document.body.append(host);
@@ -77,6 +83,8 @@ describe('semantic native message navigation', () => {
     expect(api.scrollToKey).toHaveBeenCalledOnce();
     pending[0].complete(); await vi.advanceTimersByTimeAsync(0);
     expect(await navigation.ready).toBe(true);
+    expect(feed.scrollTop).toBe(4900);
+    expect(feed.querySelector('[data-chatgpt-search-message-ids="message-4"]')?.getBoundingClientRect().top).toBe(100);
     expect(snapshot).not.toHaveBeenCalled(); expect(verified).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1300);
     expect(await navigation.finished).toBe('found');
@@ -103,12 +111,12 @@ describe('semantic native message navigation', () => {
     const owned = Object.assign(controller, { compensateScrollToDistanceFromBottomPx: compensate });
     const snapshot = vi.fn(); Object.defineProperty(feed, 'startViewTransition', { value: snapshot });
     const navigation = navigateChatGptMessageNatively(feed, 'message-4')!;
-    expect(feed.scrollTop).toBe(4990); // No time or frame has advanced.
+    expect(feed.scrollTop).toBe(4900); // No time or frame has advanced.
     expect(await navigation.ready).toBe(true);
     await vi.advanceTimersByTimeAsync(0);
     expect(await navigation.finished).toBe('found');
     owned.compensateScrollToDistanceFromBottomPx(100);
-    expect(positions).toEqual([4990, 4990]); expect(compensate).not.toHaveBeenCalled();
+    expect(positions).toEqual([4900, 4900]); expect(compensate).not.toHaveBeenCalled();
     expect(api.scrollToKey).not.toHaveBeenCalled(); expect(snapshot).not.toHaveBeenCalled();
     window.dispatchEvent(new WheelEvent('wheel', { deltaY: 100 }));
     expect(owned.compensateScrollToDistanceFromBottomPx).toBe(compensate);

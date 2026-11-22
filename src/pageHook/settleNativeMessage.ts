@@ -1,4 +1,7 @@
-import { measureNativeMessageLanding } from '@/platforms/chatgpt/nativeMessageLanding';
+import {
+  getNativeMessageLandingDistanceFromBottomPx,
+  measureNativeMessageLanding,
+} from '@/platforms/chatgpt/nativeMessageLanding';
 import { findNativeMessageTarget, type NativeTurnList } from './nativeMessageNavigation';
 
 /** Cancellation must release even a host Promise that never resolves on abort. */
@@ -24,12 +27,13 @@ function tick(signal: AbortSignal): Promise<void> {
 /**
  * A native Promise can complete before neighboring turns finish measuring.
  * Reacquire through the same semantic API only after observed drift/eviction;
- * never fight the host with pixel writes or continuously repin a correct row.
+ * correct the initial landing through the host controller so virtualizer state stays in sync.
  */
 export async function settleNativeMessage(options: {
   container: HTMLElement; api: NativeTurnList; turnKey: string; messageId: string;
   edge: 'top' | 'bottom'; signal: AbortSignal;
   prepare(): void;
+  scrollToDistanceFromBottomPx(distance: number): void;
   /** First correct landing can be presented while background verification continues. */
   onReady?(): void;
 }): Promise<{ success: boolean; attempts: number; reason: string }> {
@@ -47,6 +51,15 @@ export async function settleNativeMessage(options: {
     options.prepare();
     await untilAbort(api.scrollToKey(turnKey, row => findNativeMessageTarget(row, messageId, edge),
       { align: 'top', signal }), signal);
+    if (signal.aborted) return;
+    if (edge === 'top') {
+      const row = api.getRowElement(turnKey);
+      const target = row && container.contains(row) ? findNativeMessageTarget(row, messageId, edge) : null;
+      if (target && !measureNativeMessageLanding(container, target).aligned) {
+        const distance = getNativeMessageLandingDistanceFromBottomPx(container, target);
+        if (distance !== null) options.scrollToDistanceFromBottomPx(distance);
+      }
+    }
     lastCompletion = performance.now();
     firstCompletion ??= lastCompletion;
     lastChange = lastCompletion;

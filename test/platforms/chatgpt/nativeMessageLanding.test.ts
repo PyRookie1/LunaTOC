@@ -1,6 +1,9 @@
 /** @vitest-environment jsdom */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { measureNativeMessageLanding } from '@/platforms/chatgpt/nativeMessageLanding';
+import {
+  getNativeMessageLandingDistanceFromBottomPx,
+  measureNativeMessageLanding,
+} from '@/platforms/chatgpt/nativeMessageLanding';
 
 let feed: HTMLDivElement;
 let prompt: HTMLDivElement;
@@ -19,10 +22,18 @@ afterEach(() => document.body.replaceChildren());
 describe('native landing validation', () => {
   it('rejects a visible prompt below the preceding answer, and a clipped tall prompt', () => {
     position(400);
-    expect(measureNativeMessageLanding(feed, prompt)).toMatchObject({ visible: true, aligned: false, topDelta: 390 });
+    expect(measureNativeMessageLanding(feed, prompt)).toMatchObject({ visible: true, aligned: false, topDelta: 300 });
     position(-100, 800);
     expect(measureNativeMessageLanding(feed, prompt)).toMatchObject({ visible: true, aligned: false });
-    position(9.333);
+    position(99.333);
+    expect(measureNativeMessageLanding(feed, prompt).aligned).toBe(true);
+  });
+
+  it('computes a host-controller distance that lands the prompt at the configured top offset', () => {
+    position(10);
+    expect(getNativeMessageLandingDistanceFromBottomPx(feed, prompt)).toBe(1490);
+    feed.scrollTop = 890;
+    position(100);
     expect(measureNativeMessageLanding(feed, prompt).aligned).toBe(true);
   });
 

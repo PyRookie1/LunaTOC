@@ -116,7 +116,11 @@ export function installChatGptNativeScrollBridge(): () => void {
               // Verification runs in the background, without a snapshot gate.
               void settleNativeMessage({
                 container, api: native.api, turnKey: native.turnKey, messageId, edge,
-                signal: abort.signal, prepare: () => controller.holdViewport(), onReady,
+                signal: abort.signal,
+                prepare: () => controller.holdViewport(),
+                scrollToDistanceFromBottomPx: distance =>
+                  controller.scrollToDistanceFromBottomPx(distance, 'instant', 'user'),
+                onReady,
               }).then(result => complete(result.success), () => { abort.abort(); complete(false); });
               handled = true; reason = 'native-message-navigation-accepted';
             }
