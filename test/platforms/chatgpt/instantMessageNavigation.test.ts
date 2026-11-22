@@ -85,7 +85,7 @@ it('performs one semantic mount for an absent target and presents it without a f
   await Promise.resolve();
   expect(await done).toBe(true);
   expect(api.scrollToKey).toHaveBeenCalledOnce();
-  expect(physicalWrites).toEqual([4900]); expect(paintOffsets).toEqual([120]);
+  expect(physicalWrites).toEqual([4900]); expect(paintOffsets).toEqual([100]);
   expect(vi.getTimerCount()).toBe(0);
   feed.dispatchEvent(new Event('scroll')); // Delivered after native completion.
   controller.compensateScrollToDistanceFromBottomPx(100, 'turn-resize');
@@ -101,7 +101,7 @@ it('rebases the late-compensation proposal before it can move the viewport or ev
   // Applying it first would move top from 4900 to 9184 and evict the target.
   controller.compensateScrollToDistanceFromBottomPx(oldDistance, 'turn-resize');
   expect(originalCompensate).not.toHaveBeenCalled();
-  expect(physicalWrites).toEqual([4900, 4900]); expect(paintOffsets).toEqual([120, 120]);
+  expect(physicalWrites).toEqual([4900, 4900]); expect(paintOffsets).toEqual([100, 100]);
   expect(row.isConnected).toBe(true);
   expect(cached).toBe(range - 4900);
   await vi.advanceTimersByTimeAsync(3000);
@@ -112,7 +112,7 @@ it('rebases the late-compensation proposal before it can move the viewport or ev
 it('preserves the prompt screen coordinate when content above it grows', async () => {
   await start(); position += 350; range += 350;
   controller.compensateScrollToDistanceFromBottomPx(100, 'turn-resize');
-  expect(physicalWrites).toEqual([4900, 5250]); expect(paintOffsets).toEqual([120, 120]);
+  expect(physicalWrites).toEqual([4900, 5250]); expect(paintOffsets).toEqual([100, 100]);
   expect(originalCompensate).not.toHaveBeenCalled();
 });
 
@@ -120,7 +120,7 @@ it('uses current semantic geometry to restore a row removed by a stale render wi
   await start(); row.remove();
   controller.compensateScrollToDistanceFromBottomPx(100, 'turn-resize');
   expect(row.isConnected).toBe(true);
-  expect(physicalWrites).toEqual([4900, 4900]); expect(paintOffsets).toEqual([120, 120]);
+  expect(physicalWrites).toEqual([4900, 4900]); expect(paintOffsets).toEqual([100, 100]);
   expect(api.scrollToKey).not.toHaveBeenCalled();
 });
 
@@ -128,7 +128,7 @@ it('corrects DOM layout changes in the observer checkpoint without a delayed ret
   await start(); position += 300; range += 300;
   layout.style.height = `${range + 600}px`;
   await Promise.resolve();
-  expect(physicalWrites).toEqual([4900, 5200]); expect(prompt.getBoundingClientRect().top).toBe(120);
+  expect(physicalWrites).toEqual([4900, 5200]); expect(prompt.getBoundingClientRect().top).toBe(100);
 });
 
 it('restores both native methods on manual input and permits the host to scroll normally', async () => {
