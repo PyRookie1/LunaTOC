@@ -62,10 +62,11 @@ export interface BoldFixController {
  * those belong to the next integration stage.
  */
 export function createBoldFixController(doc: Document = document): BoldFixController {
-  const view = doc.defaultView;
-  if (!view) {
+  const pageWindow = doc.defaultView;
+  if (!pageWindow) {
     throw new Error('Bold repair requires a document with a browsing context.');
   }
+  const view = pageWindow as Window & typeof globalThis;
 
   const patches = new Map<Text, TextPatch>();
   const codeStyles = new Map<HTMLElement, CodeStylePatch>();
