@@ -17,7 +17,7 @@ LunaTOC 是面向 ChatGPT 长对话的 Chrome/Edge 扩展，用于整理提问�
 
 ## 安装与开发
 
-1.从 [最新正式版](https://github.com/PyRookie1/LunaTOC/releases/latest) 下载 `lunatoc-v1.0.2.zip`；
+1.从 [最新正式版](https://github.com/PyRookie1/LunaTOC/releases/latest) 下载 `lunatoc-v1.0.3.zip`；
 2.在 Chrome 打开 `chrome://extensions/`，或在 Edge 打开 `edge://extensions/`，启用开发者模式并加载解压后的文件夹。
 
 浏览器自动化测试使用本地模拟的 ChatGPT 页面，不会登录真实账号，也不会把测试流量发送到 ChatGPT 服务。完整命令和验收范围见 [测试说明](docs/TESTING.md)。
