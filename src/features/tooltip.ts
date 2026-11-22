@@ -60,6 +60,14 @@ export const previewTooltip = (() => {
       display: block;
     }
 
+    #${TOOLTIP_ID}.luna-toc-tooltip-hiding {
+      opacity: 0;
+      background: transparent;
+      border-color: transparent;
+      box-shadow: none;
+      transition: none;
+    }
+
     .navigator-preview-tooltip-title {
       font-weight: 600;
       color: var(--ct-text-tooltip-title);
@@ -106,6 +114,7 @@ export const previewTooltip = (() => {
       hideTimer = null;
       if (activeContent !== null) {
         renderContent(tooltip, activeContent);
+        tooltip.classList.remove('luna-toc-tooltip-hiding');
         tooltip.classList.add('luna-toc-tooltip-visible');
       }
     });
@@ -166,7 +175,7 @@ export const previewTooltip = (() => {
     hideTimer = null;
     showTimer = null;
     activeContent = text;
-    tooltip.classList.remove('luna-toc-tooltip-visible');
+    tooltip.classList.remove('luna-toc-tooltip-visible', 'luna-toc-tooltip-hiding');
 
     const clientX = event.clientX;
     const clientY = event.clientY;
@@ -180,8 +189,9 @@ export const previewTooltip = (() => {
   }
 
   /**
-   * Removes prompt text from the DOM immediately. A short hide window is
-   * retained so pointer transitions into the tooltip can restore it safely.
+   * Removes prompt text and the visible surface immediately. The transparent
+   * hit area remains briefly so pointer transitions into the tooltip can
+   * restore the preview without flashing an empty bordered card.
    */
   function hide(): void {
     if (hideTimer !== null) clearTimeout(hideTimer);
@@ -195,8 +205,9 @@ export const previewTooltip = (() => {
     }
 
     tooltip.replaceChildren();
+    tooltip.classList.add('luna-toc-tooltip-hiding');
     hideTimer = setTimeout(() => {
-      tooltip.classList.remove('luna-toc-tooltip-visible');
+      tooltip.classList.remove('luna-toc-tooltip-visible', 'luna-toc-tooltip-hiding');
       activeContent = null;
       hideTimer = null;
     }, HIDE_DELAY_MS);
