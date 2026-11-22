@@ -295,7 +295,7 @@ describe('prompt navigation strategy', () => {
     document.body.append(container);
     const mount = (): HTMLElement => {
       const node = document.createElement('div');
-      node.scrollIntoView = vi.fn(() => { container.scrollTop = reverse ? -2216 : 184; });
+      node.scrollIntoView = vi.fn(() => { container.scrollTop = reverse ? -2320 : 80; });
       node.getBoundingClientRect = () => {
         const top = 200 - container.scrollTop - (reverse ? 2400 : 0);
         return { top, bottom: top + 50, height: 50 } as DOMRect;
@@ -308,11 +308,11 @@ describe('prompt navigation strategy', () => {
     mocks.findPrompt.mockImplementation(() => live);
     const message = { id: 'prompt-1', text: 'Prompt', canMatchByText: true, createTime: 0 };
     jumpToMessage(message, 0);
-    expect(live.getBoundingClientRect().top).toBe(16);
+    expect(live.getBoundingClientRect().top).toBe(120);
     setTimeout(() => { live = mount(); container.scrollTop = bottom; }, 300);
     await vi.advanceTimersByTimeAsync(1700);
-    expect(live.getBoundingClientRect().top).toBe(16);
-    expect(container.scrollTo).toHaveBeenCalledWith({ top: reverse ? -2216 : 184, behavior: 'instant' });
+    expect(live.getBoundingClientRect().top).toBe(120);
+    expect(container.scrollTo).toHaveBeenCalledWith({ top: reverse ? -2320 : 80, behavior: 'instant' });
     expect(mocks.notifyJumpFailed).not.toHaveBeenCalled();
     expect(mocks.logEvent).toHaveBeenCalledWith(expect.anything(), 'JUMP_FINISHED', expect.objectContaining({status:'found-and-settled'}), undefined);
   });
