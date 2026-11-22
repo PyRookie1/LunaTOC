@@ -97,8 +97,11 @@ describe('boldFixController', () => {
 
     expect(controller.running).toBe(false);
     expect(thread.querySelector('[data-chatgpt-md-fix]')).toBeNull();
-    expect(thread.querySelector('[data-message-author-role="assistant"]')?.innerHTML)
-      .toBe(original);
+    const paragraphs = thread.querySelectorAll('p');
+    expect(paragraphs[0].textContent).toBe('before **bold text** after');
+    expect(paragraphs[1].childNodes[0]?.textContent).toBe('**');
+    expect(paragraphs[1].querySelector('code')?.textContent).toBe('inline code');
+    expect(paragraphs[1].lastChild?.textContent).toBe('**');
     expect(thread.querySelector('code')?.style.fontWeight).toBe('400');
   });
 
