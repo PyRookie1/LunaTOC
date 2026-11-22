@@ -83,8 +83,8 @@ describe('semantic native message navigation', () => {
     expect(api.scrollToKey).toHaveBeenCalledOnce();
     pending[0].complete(); await vi.advanceTimersByTimeAsync(0);
     expect(await navigation.ready).toBe(true);
-    expect(feed.scrollTop).toBe(4880);
-    expect(feed.querySelector('[data-chatgpt-search-message-ids="message-4"]')?.getBoundingClientRect().top).toBe(120);
+    expect(feed.scrollTop).toBe(4900);
+    expect(feed.querySelector('[data-chatgpt-search-message-ids="message-4"]')?.getBoundingClientRect().top).toBe(100);
     expect(snapshot).not.toHaveBeenCalled(); expect(verified).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1300);
     expect(await navigation.finished).toBe('found');
@@ -116,7 +116,7 @@ describe('semantic native message navigation', () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(await navigation.finished).toBe('found');
     owned.compensateScrollToDistanceFromBottomPx(100);
-    expect(positions).toEqual([4880, 4880]); expect(compensate).not.toHaveBeenCalled();
+    expect(positions).toEqual([4900, 4900]); expect(compensate).not.toHaveBeenCalled();
     expect(api.scrollToKey).not.toHaveBeenCalled(); expect(snapshot).not.toHaveBeenCalled();
     window.dispatchEvent(new WheelEvent('wheel', { deltaY: 100 }));
     expect(owned.compensateScrollToDistanceFromBottomPx).toBe(compensate);
