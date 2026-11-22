@@ -6,6 +6,7 @@ on:
       - main
       - 'rebuild/**'
       - 'phase/**'
+      - 'feature/chatgpt-bold-fix'
   pull_request:
     branches:
       - main
