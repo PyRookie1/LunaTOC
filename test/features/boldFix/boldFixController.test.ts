@@ -39,6 +39,8 @@ describe('boldFixController', () => {
     expect(paragraph?.querySelector('strong[data-chatgpt-md-fix="bold"]')?.textContent)
       .toBe('bold text');
     expect(controller.running).toBe(true);
+    expect(controller.scanAll()).toBe(1);
+    expect(paragraph?.querySelectorAll('strong[data-chatgpt-md-fix="bold"]')).toHaveLength(1);
   });
 
   it('leaves user messages, escaped markers, code and excluded controls untouched', () => {
@@ -98,6 +100,23 @@ describe('boldFixController', () => {
     expect(thread.querySelector('[data-message-author-role="assistant"]')?.innerHTML)
       .toBe(original);
     expect(thread.querySelector('code')?.style.fontWeight).toBe('400');
+  });
+
+  it('preserves later inline-code style changes during restoration', () => {
+    const thread = mountThread(
+      '<div data-message-author-role="assistant"><p>**<code style="font-weight: 400">inline code</code>**</p></div>'
+    );
+    controller = createBoldFixController(document);
+    controller.start();
+
+    const code = thread.querySelector('code');
+    expect(code?.style.fontWeight).toBe('600');
+    if (!code) throw new Error('Expected inline code element');
+    code.style.fontWeight = '700';
+
+    controller.stop();
+
+    expect(code.style.fontWeight).toBe('700');
   });
 
   it('re-scans changed message text without restoring stale content over the update', async () => {
