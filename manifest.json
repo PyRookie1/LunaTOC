@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "LunaTOC",
   "short_name": "LunaTOC",
-  "version": "1.0.3",
+  "version": "1.1.0",
   "description": "LunaTOC：为 ChatGPT 长对话提供目录、回答标题导航。",
   "icons": {
     "16": "src/icons/icon16.png",
