@@ -402,7 +402,7 @@ export function createBoldFixController(doc: Document = document): BoldFixContro
       if (!segment.node?.parentElement?.closest('strong,b')) continue;
 
       for (const match of segment.node.data.matchAll(/([^\s*])(\*{4})(?=[^\s*])/g)) {
-        const starStart = match.index + match[1].length;
+        const starStart = (match.index ?? 0) + match[1].length;
         let slashes = 0;
         for (
           let index = starStart - 1;
