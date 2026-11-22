@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { LocalBackupSettings } from './LocalBackupSettings';
 import { LocalAliasCleanupSettings } from './LocalAliasCleanupSettings';
 import { CloudSyncSettings } from './CloudSyncSettings';
+import { BoldFixSettings } from './BoldFixSettings';
 import { SettingsHelp } from './SettingsHelp';
 import {
   loadPlatformRuntimeConfig,
@@ -225,6 +226,7 @@ export function OptionsApp(): React.JSX.Element {
         </div>
       </section>
 
+      <BoldFixSettings />
       <LocalBackupSettings />
       <LocalAliasCleanupSettings />
       <section className="settings-section" aria-label="ChatGPT 兼容性警告设置">

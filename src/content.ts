@@ -3,6 +3,7 @@
  * from the Chrome Content Script entry.
  */
 import { initializeApplication } from '@/app/applicationShell';
+import { initializeBoldFixLifecycle } from '@/features/boldFix/boldFixLifecycle';
 import { initializeConversationLifecycle } from '@/navigation/lifecycle/conversationLifecycle';
 import { observeExternalOverlays } from '@/features/externalOverlay';
 import { startPageHookMismatchBridge, startChatGptConfigSync } from '@/features/contractAlert/pageHookBridge';
@@ -12,6 +13,9 @@ import { startToolbarCompatibilityMonitor } from '@/features/contractAlert/toolb
 
 // Bind the isolated conversation receiver before the application starts.
 connectPageHookMessageTransport();
+
+// Repair the current conversation and keep the controller synchronized with SPA navigation.
+initializeBoldFixLifecycle();
 
 // Start the one-time reconciliation listener before sidebar setup.
 initializeConversationLifecycle();

@@ -6,6 +6,7 @@ on:
       - main
       - 'rebuild/**'
       - 'phase/**'
+      - 'feature/**'
   pull_request:
     branches:
       - main
@@ -66,6 +67,9 @@ jobs:
 
       - name: Type-check
         run: npm run typecheck
+
+      - name: Run bold-fix controller tests
+        run: npm test -- test/features/boldFix/boldFixController.test.ts
 
       - name: Run unit tests
         run: npm test
