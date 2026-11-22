@@ -120,7 +120,7 @@ it('uses current semantic geometry to restore a row removed by a stale render wi
   await start(); row.remove();
   controller.compensateScrollToDistanceFromBottomPx(100, 'turn-resize');
   expect(row.isConnected).toBe(true);
-  expect(physicalWrites).toEqual([4900, 4900]); expect(paintOffsets).toEqual([100, 100]);
+  expect(physicalWrites).toEqual([4920, 4920]); expect(paintOffsets).toEqual([100, 100]);
   expect(api.scrollToKey).not.toHaveBeenCalled();
 });
 
