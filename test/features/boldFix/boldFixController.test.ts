@@ -158,6 +158,97 @@ describe('boldFixController', () => {
     });
   });
 
+  it('preserves React updates made inside the generated bold wrapper when restoring', () => {
+    const thread = mountThread(
+      '<div data-message-author-role="assistant"><p>before **bold text** after</p></div>'
+    );
+    controller = createBoldFixController(document);
+    controller.start();
+
+    const paragraph = thread.querySelector('p');
+    const boldText = paragraph?.querySelector('strong[data-chatgpt-md-fix="bold"]')?.firstChild;
+    if (!(boldText instanceof Text)) throw new Error('Expected generated bold text');
+
+    boldText.data = 'React-updated';
+    controller.stop();
+
+    expect(paragraph?.textContent).toBe('before React-updated after');
+    expect(paragraph?.querySelector('[data-chatgpt-md-fix]')).toBeNull();
+  });
+
+  it('does not resurrect stale source text after React replaces the generated wrapper', () => {
+    const thread = mountThread(
+      '<div data-message-author-role="assistant"><p>before **old value** after</p></div>'
+    );
+    controller = createBoldFixController(document);
+    controller.start();
+
+    const paragraph = thread.querySelector('p');
+    const rendered = paragraph?.querySelector('span[data-chatgpt-md-fix="text"]');
+    if (!paragraph || !rendered) throw new Error('Expected generated text wrapper');
+
+    rendered.remove();
+    paragraph.append(document.createTextNode('server replacement'));
+    controller.stop();
+
+    expect(paragraph.textContent).toBe('server replacement');
+    expect(paragraph.textContent).not.toContain('old value');
+    expect(paragraph.querySelector('[data-chatgpt-md-fix]')).toBeNull();
+  });
+
+  it('restores original text when React replaces the source node but retains the generated wrapper', () => {
+    const thread = mountThread(
+      '<div data-message-author-role="assistant"><p>before **bold text** after</p></div>'
+    );
+    controller = createBoldFixController(document);
+    controller.start();
+
+    const paragraph = thread.querySelector('p');
+    const originalNode = paragraph?.firstChild;
+    if (!(originalNode instanceof Text)) throw new Error('Expected original source text node');
+
+    originalNode.remove();
+    controller.stop();
+
+    expect(paragraph?.textContent).toBe('before **bold text** after');
+    expect(paragraph?.querySelector('[data-chatgpt-md-fix]')).toBeNull();
+  });
+
+  it('restores detached messages before releasing their repair patches', async () => {
+    const thread = mountThread(
+      '<div data-message-author-role="assistant"><p>before **bold text** after</p></div>'
+    );
+    controller = createBoldFixController(document);
+    controller.start();
+
+    const assistant = thread.querySelector('[data-message-author-role="assistant"]');
+    if (!assistant) throw new Error('Expected assistant message');
+    assistant.remove();
+
+    await vi.waitFor(() => {
+      expect(assistant.querySelector('p')?.textContent).toBe('before **bold text** after');
+      expect(assistant.querySelector('[data-chatgpt-md-fix]')).toBeNull();
+    });
+  });
+
+  it('can restart after stop without duplicating wrappers or losing source markers', () => {
+    const thread = mountThread(
+      '<div data-message-author-role="assistant"><p>before **bold text** after</p></div>'
+    );
+    controller = createBoldFixController(document);
+    controller.start();
+    controller.stop();
+
+    expect(thread.querySelector('p')?.textContent).toBe('before **bold text** after');
+
+    controller.start();
+    expect(thread.querySelectorAll('strong[data-chatgpt-md-fix="bold"]')).toHaveLength(1);
+    controller.stop();
+
+    expect(thread.querySelector('p')?.textContent).toBe('before **bold text** after');
+    expect(thread.querySelector('[data-chatgpt-md-fix]')).toBeNull();
+  });
+
   it('does not process further mutations after stop', async () => {
     const thread = mountThread('<div data-message-author-role="assistant"></div>');
     controller = createBoldFixController(document);

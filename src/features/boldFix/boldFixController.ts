@@ -33,6 +33,9 @@ interface TextView {
 interface TextPatch {
   original: string;
   rendered: HTMLSpanElement;
+  /** Text currently represented by the generated wrapper when the patch was applied. */
+  renderedText: string;
+  /** True when the source Text node itself was subsequently changed by the host page. */
   updated: boolean;
   owner: Element;
 }
@@ -194,12 +197,55 @@ export function createBoldFixController(doc: Document = document): BoldFixContro
     }
   }
 
+  /**
+   * Restores one patched text node without discarding a newer React-rendered
+   * value. React may update the generated span instead of the original (now
+   * empty) Text node, or replace that source node while retaining our wrapper.
+   */
+  function restoreTextPatch(node: Text, patch: TextPatch): void {
+    const ownerContainsRendered = patch.owner.contains(patch.rendered);
+    const ownerContainsSource = patch.owner.contains(node);
+    const renderedText = patch.rendered.textContent ?? '';
+    const renderedWasUpdated = renderedText !== patch.renderedText;
+
+    if (patch.updated && ownerContainsSource) {
+      // The host page wrote a newer value into the original node. Keep it.
+      patch.rendered.remove();
+      return;
+    }
+
+    if (ownerContainsRendered) {
+      const value = patch.updated
+        ? node.data
+        : renderedWasUpdated
+          ? renderedText
+          : patch.original;
+
+      if (ownerContainsSource) {
+        node.data = value;
+        patch.rendered.remove();
+      } else {
+        // React replaced the original Text node but left the generated wrapper.
+        patch.rendered.replaceWith(doc.createTextNode(value));
+      }
+      return;
+    }
+
+    patch.rendered.remove();
+
+    // A connected owner whose wrapper was removed by React represents a
+    // deliberate host-page replacement. Do not resurrect the stale source.
+    // Detached owners are restored because they may be reattached by the host.
+    if (!patch.updated && !patch.owner.isConnected) {
+      node.data = patch.original;
+    }
+  }
+
   function restoreOwner(owner: Element): void {
     for (const [node, patch] of patches) {
       if (patch.owner !== owner) continue;
 
-      patch.rendered.remove();
-      if (!patch.updated) node.data = patch.original;
+      restoreTextPatch(node, patch);
       patches.delete(node);
     }
 
@@ -215,8 +261,7 @@ export function createBoldFixController(doc: Document = document): BoldFixContro
 
   function restoreAll(): void {
     for (const [node, patch] of patches) {
-      patch.rendered.remove();
-      if (!patch.updated) node.data = patch.original;
+      restoreTextPatch(node, patch);
     }
     patches.clear();
 
@@ -488,6 +533,7 @@ export function createBoldFixController(doc: Document = document): BoldFixContro
         patches.set(node, {
           original: node.data,
           rendered,
+          renderedText: rendered.textContent ?? '',
           updated: false,
           owner,
         });
