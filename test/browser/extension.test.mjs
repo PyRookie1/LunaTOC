@@ -61,7 +61,7 @@ async function installFixture(context){
     const p=new URL(route.request().url()).pathname;
     if(route.request().isNavigationRequest()){
       const path=new URL(route.request().url()).pathname;
-       await route.fulfill({status:200,contentType:'text/html; charset=utf-8',body:path.includes('lunatoc-large-e2e')?largeHtml:path.includes('lunatoc-virtual-e2e')?virtualHtml:html});
+       await route.fulfill({status:200,contentType:'text/html; charset=utf-8',body:path.includes('lunatoc-large-')?largeHtml:path.includes('lunatoc-virtual-e2e')?virtualHtml:html});
     }else if(/^\/backend-api\/conversations\/[^/]+$/.test(p)){
       const id=p.split('/').pop();
        await route.fulfill({status:200,contentType:'application/json',body:(id.startsWith('lunatoc-large-')||id.startsWith('lunatoc-virtual-'))?largePayload:payload});
@@ -82,6 +82,107 @@ async function installFixture(context){
 async function extensionWorker(context){
   return context.serviceWorkers()[0]??context.waitForEvent('serviceworker',{timeout:20000});
 }
+
+test('bottom and consecutive navigation release follow and stale reading anchors',{timeout:90000},async t=>{
+  const profile=mkdtempSync(join(tmpdir(),'luna-bottom-'));
+  const context=await chromium.launchPersistentContext(profile,{
+    channel:'chromium',headless:true,viewport:{width:1280,height:800},
+    args:['--disable-extensions-except='+dist,'--load-extension='+dist],
+  });
+  try{
+    await installFixture(context);
+    await extensionWorker(context);
+    const page=await context.newPage();
+    for(const reverse of [false,true]){
+      await t.test(reverse?'column-reverse':'normal column',async()=>{
+        await page.goto('https://chatgpt.com/c/lunatoc-large-bottom-e2e');
+        await page.locator('#luna-toc-sidebar.luna-toc-navigator-ready').waitFor({state:'attached'});
+        await page.evaluate(()=>fetch('/backend-api/conversations/lunatoc-large-bottom-e2e?num_turns=500'));
+        await page.waitForFunction(()=>document.querySelectorAll('.navigator-item').length===500);
+        if(await page.locator('#luna-toc-sidebar').getAttribute('aria-hidden')!=='false'){
+          await page.locator('#luna-toc-toggle-btn').click({force:true});
+        }
+        await page.evaluate(reverse=>{
+          const feed=document.querySelector('.thread-scroll-container');
+          if(reverse){
+            const content=document.createElement('div');
+            content.style.flexShrink='0';
+            content.append(...feed.childNodes);
+            feed.append(content);
+            Object.assign(feed.style,{display:'flex',flexDirection:'column-reverse'});
+          }
+          feed.style.scrollBehavior='smooth';
+          feed.scrollTo({top:reverse?0:feed.scrollHeight,behavior:'instant'});
+        },reverse);
+        await page.waitForTimeout(100);
+        await page.evaluate(reverse=>{
+          const feed=document.querySelector('.thread-scroll-container');
+          window.__hostFollowing=true;
+          // Model host follow-growth as persistent state, independently of
+          // scrollTop, with resize work continuing beyond the settle window.
+          feed.addEventListener('wheel',event=>{
+            if(event.deltaY<0)window.__hostFollowing=false;
+          });
+          setInterval(()=>{
+            if(window.__hostFollowing){
+              feed.scrollTo({top:reverse?0:feed.scrollHeight,behavior:'instant'});
+            }
+          },240);
+          let armed=true;
+          feed.addEventListener('scroll',()=>{
+            if(!armed)return;
+            armed=false;
+            setTimeout(()=>{
+              const target=document.querySelector('[data-chatgpt-search-message-ids="user-1"]');
+              target.replaceWith(target.cloneNode(true));
+              feed.scrollTo({top:reverse?0:feed.scrollHeight,behavior:'instant'});
+              window.__bottomSnapRan=true;
+            },300);
+          });
+        },reverse);
+        await page.locator('.navigator-item').first().click();
+        await page.waitForFunction(()=>window.__bottomSnapRan===true);
+        await page.waitForTimeout(3000);
+        assert.equal(await page.evaluate(()=>window.__hostFollowing),false);
+        await waitForTurnVisible(page,'user-1',1000);
+
+        await page.evaluate(()=>{
+          const feed=document.querySelector('.thread-scroll-container');
+          window.__retainedScrollTop=feed.scrollTop;
+          feed.addEventListener('pointerdown',event=>{
+            if(event.pointerType==='mouse'&&event.target===feed){
+              window.__retainedScrollTop=null;
+              window.__scrollbarDragArmed=true;
+            }
+          });
+          feed.addEventListener('pointerup',()=>{window.__scrollbarDragArmed=false;});
+        });
+        for(let n=2;n<=5;n++){
+          await page.locator('.navigator-item').nth(n-1).click();
+          if(n===5){
+            await page.evaluate(()=>{
+              setTimeout(()=>{
+                const retained=window.__retainedScrollTop;
+                if(retained!==null){
+                  document.querySelector('.thread-scroll-container').scrollTo({top:retained,behavior:'instant'});
+                }
+              },2500);
+            });
+          }
+          await page.waitForTimeout(n===5?3000:1800);
+          await waitForTurnVisible(page,'user-'+n,1000);
+          assert.equal(await page.evaluate(()=>window.__scrollbarDragArmed),false);
+          await page.evaluate(()=>{
+            window.__retainedScrollTop=document.querySelector('.thread-scroll-container').scrollTop;
+          });
+        }
+      });
+    }
+  }finally{
+    await context.close();
+    rmSync(profile,{recursive:true,force:true});
+  }
+});
 
 test('Chromium MV3: TOC, search, layout, SPA and failure paths',{timeout:150000},async t=>{
   assert.ok(existsSync(join(dist,'manifest.json')),'build dist/ before E2E');

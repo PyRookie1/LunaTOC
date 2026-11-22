@@ -7,6 +7,7 @@ import { cancelPromptNavigation, jumpToPromptIndex } from './promptNavigation';
 import { keepFollowing } from '../follow/follow';
 import { logOutlineDiagnostic } from './outlineDiagnostics';
 import { NAVIGATION_HIGHLIGHT_DURATION_MS } from './highlightTiming';
+import { settleTarget } from './settleTarget';
 
 export interface OutlineNavigationEntry {
   element?: HTMLElement;
@@ -20,17 +21,19 @@ const HEADING_HIGHLIGHT_CLASS = 'chat-toc-outline-heading-highlight';
 const OUTLINE_JUMP_RETRY_DELAY_MS = 250;
 const OUTLINE_JUMP_MAX_ATTEMPTS = 40;
 const HEADING_TOP_OFFSET_PX = 72;
-const POSITION_TOLERANCE_PX = 10;
 
 let highlightedHeadingElement: HTMLElement | null = null;
 let headingHighlightTimeoutId: number | null = null;
 let outlineJumpVersion = 0;
+let stopActiveLanding: (() => void) | null = null;
 
 export function jumpToOutlineEntry(
   entry: OutlineNavigationEntry,
   promptIndex: number,
   resolveCurrentHeading: OutlineHeadingResolver
 ): void {
+  stopActiveLanding?.();
+  stopActiveLanding = null;
   const jumpVersion = ++outlineJumpVersion;
   logOutlineDiagnostic('OUTLINE_JUMP_STARTED', {
     promptIndex,
@@ -66,6 +69,8 @@ export function jumpToOutlineEntry(
 
 export function cancelOutlineNavigation(): void {
   outlineJumpVersion += 1;
+  stopActiveLanding?.();
+  stopActiveLanding = null;
   clearHighlightedHeading();
 }
 
@@ -114,7 +119,23 @@ function finishOutlineEntryJump(
   cancelPromptNavigation();
   keepFollowing();
   highlightHeading(heading);
-  positionHeading(heading);
+  const container = findHeadingContainer(heading);
+  if (container) {
+    getActivePlatform().navigation.prepareForNavigation?.(container);
+    stopActiveLanding = settleTarget({
+      container,
+      resolveTarget: resolveCurrentHeading,
+      edge: 'top',
+      topOffset: HEADING_TOP_OFFSET_PX,
+      isCancelled: () => jumpVersion !== outlineJumpVersion,
+      onSettled: (found) => logOutlineDiagnostic(
+        found ? 'OUTLINE_JUMP_SETTLED' : 'OUTLINE_JUMP_EXHAUSTED',
+        { promptIndex, jumpVersion }
+      ),
+    });
+  } else {
+    heading.scrollIntoView?.({ behavior: 'instant', block: 'start' });
+  }
 
   logOutlineDiagnostic('OUTLINE_JUMP_RESOLVED', {
     promptIndex,
@@ -122,23 +143,6 @@ function finishOutlineEntryJump(
     sectionId: heading.dataset.sectionId || null,
     jumpVersion,
   });
-
-  // ChatGPT can reflow or remount the answer immediately after landing.
-  // Make one guarded, next-frame correction against the live heading.
-  if (typeof requestAnimationFrame === 'function') {
-    requestAnimationFrame(() => {
-      if (jumpVersion !== outlineJumpVersion) return;
-      const freshHeading = resolveCurrentHeading();
-      if (!freshHeading?.isConnected) return;
-      const container = findHeadingContainer(freshHeading);
-      if (!container) return;
-      const offset = freshHeading.getBoundingClientRect().top -
-        container.getBoundingClientRect().top - HEADING_TOP_OFFSET_PX;
-      if (Math.abs(offset) > POSITION_TOLERANCE_PX) {
-        positionHeading(freshHeading);
-      }
-    });
-  }
 }
 
 function findHeadingContainer(heading: HTMLElement): HTMLElement | null {
@@ -150,25 +154,6 @@ function findHeadingContainer(heading: HTMLElement): HTMLElement | null {
   return candidates.find((candidate): candidate is HTMLElement =>
     !!candidate?.isConnected && candidate.contains(heading)
   ) ?? null;
-}
-
-function positionHeading(heading: HTMLElement): void {
-  const container = findHeadingContainer(heading);
-  if (!container) {
-    // Fallback for host DOM revisions where the scroll container is unknown.
-    heading.scrollIntoView?.({ behavior: 'auto', block: 'start' });
-    return;
-  }
-
-  const targetTop = container.scrollTop +
-    heading.getBoundingClientRect().top -
-    container.getBoundingClientRect().top -
-    HEADING_TOP_OFFSET_PX;
-  const scrollRange = Math.max(0, container.scrollHeight - container.clientHeight);
-  const reverse = window.getComputedStyle(container).flexDirection === 'column-reverse';
-  container.scrollTop = reverse
-    ? Math.max(-scrollRange, Math.min(0, targetTop))
-    : Math.max(0, Math.min(scrollRange, targetTop));
 }
 
 function highlightHeading(heading: HTMLElement): void {

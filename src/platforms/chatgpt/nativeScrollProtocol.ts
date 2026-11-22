@@ -1,0 +1,6 @@
+/** Synchronous, string-valued DOM messages between extension worlds. */
+export const NATIVE_SCROLL_REQUEST = 'LUNATOC_CHATGPT_NATIVE_SCROLL_REQUEST_V1';
+export const NATIVE_SCROLL_RESPONSE = 'LUNATOC_CHATGPT_NATIVE_SCROLL_RESPONSE_V1';
+export const NATIVE_NAVIGATION_COMPLETE = 'LUNATOC_CHATGPT_NATIVE_NAVIGATION_COMPLETE_V1';
+export const NATIVE_NAVIGATION_PROGRESS = 'LUNATOC_CHATGPT_NATIVE_NAVIGATION_PROGRESS_V1';
+export const CHATGPT_FEED_SELECTOR = '.thread-scroll-container, [data-app-action-timeline-scroll]';

@@ -14,6 +14,7 @@ vi.mock('@/navigation/follow/follow', () => followMocks);
 vi.mock('@/platforms', () => platformMocks);
 
 import { cancelOutlineNavigation, jumpToOutlineEntry } from '@/navigation/jump/outlineNavigation';
+import { prepareChatGptNavigation } from '@/platforms/chatgpt/scrollIntent';
 
 let container: HTMLElement;
 
@@ -36,6 +37,7 @@ beforeEach(() => {
     navigation: {
       getThreadScrollContainer: () => container,
       getScrollContainer: () => container,
+      prepareForNavigation: prepareChatGptNavigation,
     },
   });
 });
@@ -56,6 +58,35 @@ function headingAt(top: number): HTMLElement {
 }
 
 describe('outline navigation', () => {
+  it('releases persistent host follow before a mounted heading jump', () => {
+    const heading = headingAt(0);
+    heading.getBoundingClientRect = () => ({ top: 500 - container.scrollTop, bottom: 530 - container.scrollTop, height: 30 } as DOMRect);
+    container.scrollTop = 2400;
+    let following = true;
+    container.addEventListener('wheel', (event) => { if (event.deltaY < 0) following = false; });
+    jumpToOutlineEntry({ element: heading, text: 'Section' }, 3, () => heading);
+    setTimeout(() => { if (following) container.scrollTop = 2400; }, 2500);
+    vi.advanceTimersByTime(4000);
+    expect(heading.getBoundingClientRect().top).toBe(172);
+  });
+
+  it('corrects a delayed bottom snap against a newly mounted heading', () => {
+    const mount = (): HTMLElement => {
+      const node = headingAt(0);
+      node.getBoundingClientRect = () => ({ top: 500 - container.scrollTop, bottom: 530 - container.scrollTop, height: 30 } as DOMRect);
+      return node;
+    };
+    let live = mount();
+    jumpToOutlineEntry({ element: live, text: 'Section' }, 3, () => live);
+    vi.advanceTimersByTime(300);
+    live.remove();
+    live = mount();
+    container.scrollTop = 2400;
+    vi.advanceTimersByTime(1400);
+    expect(live.getBoundingClientRect().top).toBe(172);
+    expect(container.scrollTop).toBe(328);
+  });
+
   it('positions a live heading inside the conversation scroll container, without animation', () => {
     const heading = headingAt(400);
     const resolveCurrentHeading = vi.fn(() => heading);

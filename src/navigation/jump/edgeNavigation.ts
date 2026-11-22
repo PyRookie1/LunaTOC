@@ -241,6 +241,9 @@ export function executeAbsoluteEdgeJump(
     window.getComputedStyle(container).flexDirection === 'column-reverse';
   // Replace any previous jump's event listeners before tracking this attempt.
   stopActiveScrollIntentTracking?.();
+  if (edge === 'top') {
+    platform().navigation.prepareForNavigation?.(container);
+  }
   const jumpVersion = ++activeEdgeJumpVersion;
   const stopListening = trackManualScrollIntent(container, () => {
     if (jumpVersion !== activeEdgeJumpVersion) return;

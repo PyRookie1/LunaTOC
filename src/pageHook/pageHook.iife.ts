@@ -38,6 +38,7 @@ import { installHistoryHook } from './historyHook';
 import { installPageHookMessageTransport, postPageHookMessage } from './messageTransport';
 import { installTitleObserver } from './titleObserver';
 import { PAGE_HOOK_HEALTH_PING, PAGE_HOOK_HEALTH_PONG } from '@/features/contractAlert/toolbarWarning';
+import { installChatGptNativeScrollBridge } from './nativeScrollBridge';
 
 (() => {
   const platform = getActivePlatform();
@@ -50,6 +51,7 @@ import { PAGE_HOOK_HEALTH_PING, PAGE_HOOK_HEALTH_PONG } from '@/features/contrac
 
   hookWindow[HOOK_FLAG] = true;
   installPageHookMessageTransport();
+  if (platform.id === 'chatgpt') installChatGptNativeScrollBridge();
 
   const originalFetch = window.fetch.bind(window);
 

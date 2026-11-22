@@ -2,6 +2,8 @@
  * Handles low-level viewport stepping and DOM mount synchronization for unmounted prompts.
  */
 import { getActivePlatform } from '@/platforms';
+import { scrollInstantly } from './settleTarget';
+import { waitForViewportRender } from './viewportRender';
 import {
   detectNewMounts,
   findTargetInQueue,
@@ -39,19 +41,6 @@ function clampScrollTo(
   return isReverse
     ? Math.max(-maxScrollTop, Math.min(0, next))
     : Math.max(0, Math.min(maxScrollTop, next));
-}
-
-/**
- * Pacing helper: yields one browser animation frame between scroll writes.
- */
-function nextAnimationFrame(): Promise<void> {
-  return new Promise((resolve) => {
-    if (typeof requestAnimationFrame === 'function') {
-      requestAnimationFrame(() => resolve());
-    } else {
-      setTimeout(resolve, 16);
-    }
-  });
 }
 
 /**
@@ -148,17 +137,11 @@ async function handleBoundaryOrBackfillStall(
   const preCheck = findExactTarget(mountQueue, targetId, targetIndex, root);
   if (preCheck) return preCheck;
 
-  // Send small burst of edge flick writes (up to 5 writes spaced 10ms)
-  // to stimulate host infinite-scroll / pagination observers at the boundary
-  const MAX_BATCH_SIZE = 5;
-  const BATCH_INTERVAL_MS = 10;
+  // A single edge write is enough; bursts race the same pending host commit.
   const step = direction * window.innerHeight;
-  for (let i = 0; i < MAX_BATCH_SIZE; i++) {
-    if (isCancelled()) return null;
-    const next = container.scrollTop + step;
-    container.scrollTop = clampScrollTo(container, next, isReverse);
-    await new Promise<void>((r) => setTimeout(r, BATCH_INTERVAL_MS));
-  }
+  if (isCancelled()) return null;
+  scrollInstantly(container, clampScrollTo(container, container.scrollTop + step, isReverse));
+  await waitForViewportRender(container, isCancelled);
 
   const postBatchCheck = findExactTarget(mountQueue, targetId, targetIndex, root);
   if (postBatchCheck) return postBatchCheck;
@@ -229,6 +212,8 @@ export async function loadUntilMountedViaViewport(
   isCancelled: () => boolean = () => false
 ): Promise<HTMLElement | null> {
   const LOAD_SETTLE_MS = 1500;
+  const deadline = Date.now() + 30_000;
+  const cancelledOrExpired = (): boolean => isCancelled() || Date.now() >= deadline;
   const root = document;
 
   function logLoadStep(details: Record<string, unknown>): void {
@@ -274,7 +259,7 @@ export async function loadUntilMountedViaViewport(
     targetObserver.observe(root, { childList: true, subtree: true });
 
     let stepIndex = 0;
-    while (!isCancelled()) {
+    while (!cancelledOrExpired()) {
       const currentStep = stepIndex++;
 
       // Check if target was detected by passive observer or direct check
@@ -289,11 +274,17 @@ export async function loadUntilMountedViaViewport(
 
       const beforeScrollTop = container.scrollTop;
       const stepDirection = direction;
-      const step = stepDirection * window.innerHeight;
+      const currentMounted = queueSidebarIndices(mountQueue);
+      const distance = currentMounted.length
+        ? Math.min(...currentMounted.map(index => Math.abs(index - targetIndex))) : 0;
+      // Coarse steps keep far searches bounded in time; approach nearby
+      // prompts one viewport at a time, using fresh indices after each commit.
+      const viewports = distance > 12 ? Math.min(6, Math.ceil(distance / 12)) : 1;
+      const step = stepDirection * window.innerHeight * viewports;
       const nextScrollTop = beforeScrollTop + step;
       const clampedScrollTop = clampScrollTo(container, nextScrollTop, isReverse);
 
-      container.scrollTop = clampedScrollTop;
+      scrollInstantly(container, clampedScrollTop);
       logLoadStep({
         step: currentStep,
         phase: 'fast-step',
@@ -302,10 +293,10 @@ export async function loadUntilMountedViaViewport(
         afterScrollTop: clampedScrollTop,
       });
 
-      // Pacing: yield one browser animation frame
-      await nextAnimationFrame();
+      // Wait for the render window and measured heights, not merely one paint.
+      await waitForViewportRender(container, cancelledOrExpired);
 
-      if (isCancelled()) {
+      if (cancelledOrExpired()) {
         return null;
       }
 
@@ -342,7 +333,7 @@ export async function loadUntilMountedViaViewport(
 
       if (movedTowardTarget) {
         // Physical scroll moved freely in the requested direction.
-        // Keep fast-walking without any MutationObserver or settle delay.
+        // The host has reconciled this step; only now consider another write.
         continue;
       }
 
@@ -354,7 +345,7 @@ export async function loadUntilMountedViaViewport(
         targetIndex,
         direction,
         isReverse,
-        isCancelled,
+        cancelledOrExpired,
         LOAD_SETTLE_MS,
         root
       );

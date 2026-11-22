@@ -8,6 +8,7 @@ import { loadUntilMountedViaViewport } from './viewportWalker';
 import { executeAbsoluteEdgeJump } from './edgeNavigation';
 import { findNextAssistantMessage } from './headingExtractor';
 import { NAVIGATION_HIGHLIGHT_DURATION_MS } from './highlightTiming';
+import { settleTarget } from './settleTarget';
 
 function platform() {
   return getActivePlatform();
@@ -115,6 +116,8 @@ let setJumpProgress: (progress: {
 let clearJumpProgress: () => void = () => {};
 let notifyJumpFailed: () => void = () => {};
 let navigationJumpVersion = 0;
+let stopActiveLanding: (() => void) | null = null;
+const TARGET_REMOUNT_RECOVERIES = 2;
 
 /**
  * Connects jump behavior to navigator state and native TOC helpers.
@@ -192,7 +195,9 @@ export function jumpToMessage(
 function jumpWithIndependentVirtualNavigation(
   message: NavigatorMessage,
   index: number,
-  edge: 'top' | 'bottom' = 'top'
+  edge: 'top' | 'bottom' = 'top',
+  remountRecoveries = TARGET_REMOUNT_RECOVERIES,
+  deadline = Date.now() + 30_000
 ): void {
   const jumpId = createChatGptNavigationJumpId();
   const context = getVirtualSearchContext();
@@ -205,9 +210,8 @@ function jumpWithIndependentVirtualNavigation(
     promptCount: context.prompts.length,
   });
 
-  // Far jumps slide the virtual render window over several seconds. Keep the
-  // sidebar follow window open for the slide duration so the sidebar list can
-  // scroll to track the target once it reaches the viewport.
+  // Keep sidebar selection tracking active across native mounting or a legacy
+  // virtual search. This follow window does not gate the conversation jump.
   keepFollowing(15_000);
   setJumpProgress({
     active: true,
@@ -220,6 +224,35 @@ function jumpWithIndependentVirtualNavigation(
     logChatGptNavigationEvent(jumpId, 'JUMP_FINISHED', {
       status: 'missing-context',
       hasContainer: Boolean(container),
+    });
+    return;
+  }
+
+  // Changing pixels does not clear the host's independent follow-growth flag.
+  // Release it before both the mounted fast path and the virtual viewport walk.
+  platform().navigation.prepareForNavigation?.(container);
+
+  // A semantic host jump selects the render window by turn key. Pixel scans
+  // and settleTarget must never run alongside an accepted native request.
+  const native = edge === 'top' ? platform().navigation.navigateToMessage?.(container, message.id) : null;
+  if (native) {
+    const version = navigationJumpVersion;
+    stopActiveLanding = native.cancel;
+    let readyTarget: HTMLElement | null = null;
+    void native.ready?.then(shown => {
+      if (!shown || version !== navigationJumpVersion) return;
+      readyTarget = findRenderedChatGptPrompt(message.id, container);
+      if (readyTarget) highlightMatchedElement(readyTarget);
+    });
+    void native.finished.then(result => {
+      if (version !== navigationJumpVersion) return;
+      stopActiveLanding = null;
+      clearJumpProgress();
+
+      if (result === 'found') {
+        const target = findRenderedChatGptPrompt(message.id, container);
+        if (target && target !== readyTarget) highlightMatchedElement(target);
+      } else if (result === 'failed') notifyJumpFailed();
     });
     return;
   }
@@ -244,7 +277,6 @@ function jumpWithIndependentVirtualNavigation(
   const renderedTarget = idHit ?? textHit;
 
   if (renderedTarget) {
-    clearJumpProgress();
     logChatGptNavigationEvent(jumpId, 'JUMP_FAST_PATH_RESULT', {
       idHit: Boolean(idHit),
       textHit: Boolean(textHit),
@@ -253,7 +285,7 @@ function jumpWithIndependentVirtualNavigation(
     if (isJumpVizDebugEnabled()) {
       logMountedPromptViz('fast-path');
     }
-    finishIndependentVirtualJump(renderedTarget, message, index, edge);
+    finishIndependentVirtualJump(renderedTarget, message, index, edge, remountRecoveries, deadline);
     return;
   }
 
@@ -266,14 +298,13 @@ function jumpWithIndependentVirtualNavigation(
       context.prompts,
       container,
       jumpId,
-      () => myNavVersion !== navigationJumpVersion
+      () => myNavVersion !== navigationJumpVersion || Date.now() >= deadline
     );
     // A heading jump may cancel the older viewport scan. Do not report
     // a spurious jump failure or move the page after cancellation.
     if (myNavVersion !== navigationJumpVersion) return;
     if (loaded) {
-      clearJumpProgress();
-      finishIndependentVirtualJump(loaded, message, index, edge);
+      finishIndependentVirtualJump(loaded, message, index, edge, remountRecoveries, deadline);
       return;
     }
 
@@ -291,85 +322,79 @@ function jumpWithIndependentVirtualNavigation(
 
 /**
  * Completes an independent jump by highlighting the target and waiting for
- * ChatGPT's virtual rendering to settle. Highlights the target as soon
- * as it scrolls into the viewport, with a short fallback in case the
- * settle never triggers a visible change.
+ * ChatGPT's virtual rendering to settle. Re-resolves the live target during
+ * a bounded verification window before reporting success.
  */
 function finishIndependentVirtualJump(
   target: HTMLElement,
   message: NavigatorMessage,
   index: number,
-  edge: 'top' | 'bottom'
+  edge: 'top' | 'bottom',
+  remountRecoveries: number,
+  deadline: number
 ): void {
   const jumpVersion = ++navigationJumpVersion;
-  const targetAttempts = 8;
+  const container = getChatGptScrollContainer();
   keepFollowing(1800);
 
-  // Scroll the target to the top of the chat viewport (with the
-  // configured top padding so it doesn't sit flush against the edge),
-  // then highlight it.
-  const scrollTargetIntoView = function (el: HTMLElement): boolean {
-    if (!el.isConnected) return false;
-    const previousScrollMarginTop = el.style.scrollMarginTop;
-    el.style.scrollMarginTop = `${platform().navigation.promptTopOffsetPx}px`;
+  const resolvePrompt = (): HTMLElement | null => {
+    const fresh = findRenderedChatGptPrompt(message.id);
+    // The initial node may have been matched by unique text. Reuse it only
+    // while it is connected; never navigate to a stale detached reference.
+    return fresh ?? (target.isConnected ? target : null);
+  };
+  const resolveLanding = (): HTMLElement | null => {
+    const prompt = resolvePrompt();
+    if (!prompt) return null;
+    return edge === 'bottom' ? findNextAssistantMessage(prompt) ?? prompt : prompt;
+  };
+  const finish = (found: boolean): void => {
+    if (jumpVersion !== navigationJumpVersion) return;
+    clearJumpProgress();
 
-    if (edge === 'bottom') {
-      const assistant = findNextAssistantMessage(el);
-      const landing = assistant ?? el;
-      landing.scrollIntoView({ behavior: 'auto', block: 'end' });
+    if (found) {
+      const prompt = resolvePrompt();
+      if (prompt) highlightMatchedElement(prompt);
     } else {
-      el.scrollIntoView({ behavior: 'auto', block: 'start' });
+      notifyJumpFailed();
     }
-    el.style.scrollMarginTop = previousScrollMarginTop;
-    highlightMatchedElement(el);
-    return true;
+    logChatGptNavigationEvent(createChatGptNavigationJumpId(), 'JUMP_FINISHED', {
+      status: found ? 'found-and-settled' : 'landing-not-settled',
+      targetPromptId: message.id,
+      targetPromptIndex: index,
+    });
   };
 
-  if (scrollTargetIntoView(target)) {
-    // A virtualized or generating answer might mount shortly after its prompt.
-    // Never scroll into the next user's turn when the answer is unavailable.
-    if (edge === 'bottom' && !findNextAssistantMessage(target)) {
-      const retryAnswer = (attempts: number): void => {
-        if (jumpVersion !== navigationJumpVersion || attempts === 0) return;
-        const fresh = findRenderedChatGptPrompt(message.id);
-        if (!fresh?.isConnected) return;
-        const answer = findNextAssistantMessage(fresh);
-        if (answer?.isConnected) {
-          answer.scrollIntoView({ behavior: 'auto', block: 'end' });
-        } else {
-          window.setTimeout(() => retryAnswer(attempts - 1), 200);
-        }
+  if (!container?.contains(target)) {
+    // Unknown host layout: scope the fallback to the nearest scroller.
+    const landing = resolveLanding();
+    if (landing) {
+      const scrollOptions: ScrollIntoViewOptions & { container: 'nearest' } = {
+        behavior: 'instant', block: edge === 'top' ? 'start' : 'end', container: 'nearest',
       };
-      window.setTimeout(() => retryAnswer(6), 200);
+      landing.scrollIntoView(scrollOptions);
     }
-    logChatGptNavigationEvent(
-      createChatGptNavigationJumpId(),
-      'JUMP_FINISHED',
-      { status: 'found', attempts: targetAttempts }
-    );
+    clearJumpProgress();
+    if (landing) highlightMatchedElement(target);
     return;
   }
 
-  // Re-poll briefly in case ChatGPT replaces the bubble during virtual
-  // scroll. Each attempt polls once; bail after the budget.
-  setTimeout(() => {
-    if (jumpVersion !== navigationJumpVersion) return;
-    const latest = findRenderedChatGptPrompt(message.id);
-    if (latest && latest.isConnected) {
-      scrollTargetIntoView(latest);
-      logChatGptNavigationEvent(
-        createChatGptNavigationJumpId(),
-        'JUMP_FINISHED',
-        { status: 'found-after-repoll', attempts: targetAttempts }
-      );
-      return;
-    }
-    logChatGptNavigationEvent(
-      createChatGptNavigationJumpId(),
-      'JUMP_FINISHED',
-      { status: 'target-disappeared-after-search' }
-    );
-  }, 600);
+  highlightMatchedElement(target);
+  stopActiveLanding = settleTarget({
+    container,
+    resolveTarget: resolveLanding,
+    edge,
+    topOffset: platform().navigation.promptTopOffsetPx,
+    isCancelled: () => jumpVersion !== navigationJumpVersion,
+    onSettled: finish,
+    onInterrupted: clearJumpProgress,
+    onTargetMissing: remountRecoveries > 0 ? () => {
+      if (jumpVersion !== navigationJumpVersion) return;
+      if (Date.now() >= deadline) { finish(false); return; }
+
+      jumpWithIndependentVirtualNavigation(message, index, edge, remountRecoveries - 1, deadline);
+    } : undefined,
+  });
 }
 
 /**
@@ -400,6 +425,8 @@ export function jumpToPromptIndex(
  */
 function cancelActiveNavigationSearch(): void {
   navigationJumpVersion += 1;
+  stopActiveLanding?.();
+  stopActiveLanding = null;
 }
 
 /** Cancels a pending parent-prompt walk before a child-heading landing. */

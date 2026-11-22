@@ -8,6 +8,8 @@
  * `src/platforms/chatgpt/` are wrapped rather than rewritten.
  */
 import { APP_CONFIG } from '@/config/config';
+import { prepareChatGptNavigation } from './scrollIntent';
+import { navigateChatGptMessageNatively, scrollChatGptNatively } from './nativeScrollClient';
 import { CHATGPT_MESSAGE_TYPES } from './messages';
 import {
   getConversationIdFromApiPath,
@@ -112,6 +114,9 @@ export const chatGptPlatform: Platform = {
   },
   navigation: {
     getScrollContainer: getChatGptScrollContainer,
+    prepareForNavigation: prepareChatGptNavigation,
+    scrollToPosition: scrollChatGptNatively,
+    navigateToMessage: navigateChatGptMessageNatively,
     getThreadScrollContainer: getChatGptThreadScrollContainer,
     findRenderedPrompt: findRenderedChatGptPrompt,
     findRenderedPromptByText: findRenderedChatGptPromptByText,

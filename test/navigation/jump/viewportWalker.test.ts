@@ -5,6 +5,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadUntilMountedViaViewport } from '@/navigation/jump/viewportWalker';
 
+// These tests isolate queue/direction/boundary behavior. Real host render
+// delays and height compensation are covered by viewportRender.test.ts and
+// virtualRemountRegression.test.ts using the production pacing helper.
+vi.mock('@/navigation/jump/viewportRender', () => ({
+  waitForViewportRender: () => new Promise<void>(resolve => {
+    requestAnimationFrame(() => resolve());
+  }),
+}));
+
 describe('viewportWalker', () => {
   let container: HTMLElement;
 
@@ -31,6 +40,26 @@ describe('viewportWalker', () => {
 
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  it('uses instant writes and stops when repeated host resets prevent progress', async () => {
+    const prompt = document.createElement('div');
+    prompt.setAttribute('data-chatgpt-search-unit-key', 'msg-2:user');
+    prompt.setAttribute('data-chatgpt-search-message-ids', 'msg-2');
+    container.append(prompt);
+    container.scrollTop = 1200;
+    container.style.scrollBehavior = 'smooth';
+    container.scrollTo = vi.fn((options?: ScrollToOptions | number, y?: number) => {
+      container.scrollTop = typeof options === 'number' ? y! : options?.top ?? 0;
+      setTimeout(() => { container.scrollTop = 1200; }, 1);
+    });
+    const result = loadUntilMountedViaViewport('msg-1', 0, [{ id: 'msg-1' }, { id: 'msg-2' }], container);
+    await vi.advanceTimersByTimeAsync(32_000);
+    expect(await result).toBeNull();
+    expect(container.scrollTo).toHaveBeenCalledWith(expect.objectContaining({behavior:'instant'}));
+    const calls = vi.mocked(container.scrollTo).mock.calls.length;
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(container.scrollTo).toHaveBeenCalledTimes(calls);
   });
 
   it('returns target element immediately when it is already in the seed queue (zero writes)', async () => {
@@ -66,7 +95,7 @@ describe('viewportWalker', () => {
     expect(hit).toBeNull();
   });
 
-  it('keeps fast-scrolling through long assistant content without 500ms waits or settle path', async () => {
+  it('advances through long assistant content after each host render yield', async () => {
     document.body.innerHTML = `
       <div data-chatgpt-search-unit-key="msg-1:user" data-chatgpt-search-message-ids="msg-1">Prompt 1</div>
     `;

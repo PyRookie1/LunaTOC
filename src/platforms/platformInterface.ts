@@ -167,6 +167,17 @@ export interface PlatformRenderedFingerprintCollector {
  */
 export interface PlatformNavigationAdapter {
   getScrollContainer(root?: ParentNode): HTMLElement | null;
+  /** Release host follow/reading state before independent TOC scroll writes. */
+  prepareForNavigation?(container: HTMLElement): void;
+  /** Return true only after the host updated its scroll controller state. */
+  scrollToPosition?(container: HTMLElement, top: number): boolean;
+  /** Accepted native virtual-list jumps own all scrolling until completion. */
+  navigateToMessage?(container: HTMLElement, messageId: string): {
+    /** First presentation, independent of later background verification. */
+    ready?: Promise<boolean>;
+    finished: Promise<'found' | 'failed' | 'cancelled'>;
+    cancel(): void;
+  } | null;
   /**
    * Resolves the container whose `scrollTop` maps to the chat feed's absolute
    * top/bottom (used by the jump-to-edge controls). Distinct from
