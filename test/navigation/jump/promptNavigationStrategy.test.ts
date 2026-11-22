@@ -34,7 +34,6 @@ vi.mock('@/platforms', () => ({
       findRenderedPromptByText: mocks.findText,
       readMountedWithSidebarIdx: vi.fn(() => []),
       promptTopOffsetPx: 16,
-      promptScrollMarginTopPx: 120,
     },
     diagnostics: {
       createJumpId: mocks.createJumpId,
@@ -239,7 +238,7 @@ describe('prompt navigation strategy', () => {
         }, 2500);
       }
       await vi.advanceTimersByTimeAsync(3000);
-      expect(elements[i].getBoundingClientRect().top).toBe(120);
+      expect(elements[i].getBoundingClientRect().top).toBe(16);
       expect(dragging).toBe(false);
       // The host captures a new passage after each settled scroll.
       readingScrollTop = feed.scrollTop;
@@ -274,7 +273,7 @@ describe('prompt navigation strategy', () => {
       setTimeout(() => { if (following) feed.scrollTop = 2400; }, delay);
     }
     await vi.advanceTimersByTimeAsync(5000);
-    expect(prompt.getBoundingClientRect().top).toBe(120);
+    expect(prompt.getBoundingClientRect().top).toBe(16);
     expect(intent).toHaveBeenCalledOnce();
     expect(mocks.notifyJumpFailed).not.toHaveBeenCalled();
   });
@@ -295,7 +294,7 @@ describe('prompt navigation strategy', () => {
     document.body.append(container);
     const mount = (): HTMLElement => {
       const node = document.createElement('div');
-      node.scrollIntoView = vi.fn(() => { container.scrollTop = reverse ? -2320 : 80; });
+      node.scrollIntoView = vi.fn(() => { container.scrollTop = reverse ? -2216 : 184; });
       node.getBoundingClientRect = () => {
         const top = 200 - container.scrollTop - (reverse ? 2400 : 0);
         return { top, bottom: top + 50, height: 50 } as DOMRect;
@@ -308,11 +307,11 @@ describe('prompt navigation strategy', () => {
     mocks.findPrompt.mockImplementation(() => live);
     const message = { id: 'prompt-1', text: 'Prompt', canMatchByText: true, createTime: 0 };
     jumpToMessage(message, 0);
-    expect(live.getBoundingClientRect().top).toBe(120);
+    expect(live.getBoundingClientRect().top).toBe(16);
     setTimeout(() => { live = mount(); container.scrollTop = bottom; }, 300);
     await vi.advanceTimersByTimeAsync(1700);
-    expect(live.getBoundingClientRect().top).toBe(120);
-    expect(container.scrollTo).toHaveBeenCalledWith({ top: reverse ? -2320 : 80, behavior: 'instant' });
+    expect(live.getBoundingClientRect().top).toBe(16);
+    expect(container.scrollTo).toHaveBeenCalledWith({ top: reverse ? -2216 : 184, behavior: 'instant' });
     expect(mocks.notifyJumpFailed).not.toHaveBeenCalled();
     expect(mocks.logEvent).toHaveBeenCalledWith(expect.anything(), 'JUMP_FINISHED', expect.objectContaining({status:'found-and-settled'}), undefined);
   });
@@ -387,7 +386,6 @@ describe('prompt navigation strategy', () => {
       container: 'nearest',
       block: 'start',
     });
-    expect(target.style.scrollMarginTop).toBe('120px');
     expect(target.style.outline).toBe('2px solid #60a5fa');
     expect(mocks.clearJumpProgress).toHaveBeenCalled();
     expect(mocks.notifyJumpFailed).not.toHaveBeenCalled();

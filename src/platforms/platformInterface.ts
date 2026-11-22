@@ -220,8 +220,6 @@ export interface PlatformNavigationAdapter {
   /** Per-platform numeric tuning values. */
   settleAttempts: number;
   promptTopOffsetPx: number;
-  /** CSS scroll-margin-top used to keep directory targets below the host's top fade. */
-  promptScrollMarginTopPx?: number;
 }
 
 /**

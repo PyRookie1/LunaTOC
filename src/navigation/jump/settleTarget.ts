@@ -17,14 +17,6 @@ const CHECK_COUNT = 20;
 const POSITION_TOLERANCE_PX = 4;
 const SCROLL_KEYS = new Set(['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' ']);
 
-/** Apply a minimum CSS scroll-margin-top while preserving a larger host value. */
-export function applyScrollMarginTop(target: HTMLElement, minimumOffsetPx: number): number {
-  const current = Number.parseFloat(getComputedStyle(target).scrollMarginTop);
-  const offset = Math.max(minimumOffsetPx, Number.isFinite(current) ? current : 0, 0);
-  target.style.scrollMarginTop = `${offset}px`;
-  return offset;
-}
-
 /** Explicit instant writes cannot inherit the host's CSS smooth scrolling. */
 export function scrollInstantly(container: HTMLElement, top: number): void {
   if (getActivePlatform().navigation.scrollToPosition?.(container, top)) return;
@@ -78,17 +70,8 @@ export function settleTarget(options: SettleTargetOptions): () => void {
     if (connected) {
       const bounds = container.getBoundingClientRect();
       const rect = target.getBoundingClientRect();
-      const topOffset = options.edge === 'top'
-        ? applyScrollMarginTop(
-            target,
-            Math.max(
-              options.topOffset,
-              getActivePlatform().navigation.promptScrollMarginTopPx ?? 0
-            )
-          )
-        : options.topOffset;
       const delta = options.edge === 'top'
-        ? rect.top - bounds.top - container.clientTop - topOffset
+        ? rect.top - bounds.top - container.clientTop - options.topOffset
         : rect.bottom - bounds.top - container.clientTop - container.clientHeight;
       const range = Math.max(0, container.scrollHeight - container.clientHeight);
       const reverse = getComputedStyle(container).flexDirection === 'column-reverse';

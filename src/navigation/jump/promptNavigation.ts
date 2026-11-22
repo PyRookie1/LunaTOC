@@ -8,7 +8,7 @@ import { loadUntilMountedViaViewport } from './viewportWalker';
 import { executeAbsoluteEdgeJump } from './edgeNavigation';
 import { findNextAssistantMessage } from './headingExtractor';
 import { NAVIGATION_HIGHLIGHT_DURATION_MS } from './highlightTiming';
-import { applyScrollMarginTop, settleTarget } from './settleTarget';
+import { settleTarget } from './settleTarget';
 
 function platform() {
   return getActivePlatform();
@@ -369,13 +369,6 @@ function finishIndependentVirtualJump(
     // Unknown host layout: scope the fallback to the nearest scroller.
     const landing = resolveLanding();
     if (landing) {
-      if (edge === 'top') {
-        applyScrollMarginTop(
-          landing,
-          platform().navigation.promptScrollMarginTopPx ??
-            platform().navigation.promptTopOffsetPx
-        );
-      }
       const scrollOptions: ScrollIntoViewOptions & { container: 'nearest' } = {
         behavior: 'instant', block: edge === 'top' ? 'start' : 'end', container: 'nearest',
       };

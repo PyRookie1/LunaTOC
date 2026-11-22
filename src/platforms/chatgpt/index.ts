@@ -10,7 +10,6 @@
 import { APP_CONFIG } from '@/config/config';
 import { prepareChatGptNavigation } from './scrollIntent';
 import { navigateChatGptMessageNatively, scrollChatGptNatively } from './nativeScrollClient';
-import { CHATGPT_PROMPT_SCROLL_MARGIN_TOP_PX } from './nativeMessageLanding';
 import { CHATGPT_MESSAGE_TYPES } from './messages';
 import {
   getConversationIdFromApiPath,
@@ -130,7 +129,6 @@ export const chatGptPlatform: Platform = {
     getJumpTargetElement: getChatGptJumpTargetElement,
     settleAttempts: APP_CONFIG.platforms.chatgpt.settleAttempts,
     promptTopOffsetPx: APP_CONFIG.platforms.chatgpt.promptTopOffsetPx,
-    promptScrollMarginTopPx: CHATGPT_PROMPT_SCROLL_MARGIN_TOP_PX,
   },
   routing: {
     getCurrentRouteKey,

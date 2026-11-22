@@ -1,10 +1,6 @@
 /** @vitest-environment jsdom */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import {
-  applyChatGptPromptScrollMargin,
-  CHATGPT_PROMPT_SCROLL_MARGIN_TOP_PX,
-  measureNativeMessageLanding,
-} from '@/platforms/chatgpt/nativeMessageLanding';
+import { measureNativeMessageLanding } from '@/platforms/chatgpt/nativeMessageLanding';
 
 let feed: HTMLDivElement;
 let prompt: HTMLDivElement;
@@ -28,18 +24,6 @@ describe('native landing validation', () => {
     expect(measureNativeMessageLanding(feed, prompt)).toMatchObject({ visible: true, aligned: false });
     position(9.333);
     expect(measureNativeMessageLanding(feed, prompt).aligned).toBe(true);
-  });
-
-  it('uses scroll-margin-top to keep a directory target below the top fade', () => {
-    applyChatGptPromptScrollMargin(prompt);
-    expect(prompt.style.scrollMarginTop).toBe(`${CHATGPT_PROMPT_SCROLL_MARGIN_TOP_PX}px`);
-    position(CHATGPT_PROMPT_SCROLL_MARGIN_TOP_PX);
-    expect(measureNativeMessageLanding(feed, prompt)).toMatchObject({
-      aligned: true,
-      topDelta: 0,
-    });
-    position(10);
-    expect(measureNativeMessageLanding(feed, prompt).aligned).toBe(false);
   });
 
   it('accepts the closest attainable position at the physical bottom boundary', () => {
