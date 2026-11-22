@@ -33,7 +33,7 @@ vi.mock('@/platforms', () => ({
       findRenderedPrompt: mocks.findPrompt,
       findRenderedPromptByText: mocks.findText,
       readMountedWithSidebarIdx: vi.fn(() => []),
-      promptTopOffsetPx: 120,
+      promptTopOffsetPx: 100,
     },
     diagnostics: {
       createJumpId: mocks.createJumpId,
@@ -238,7 +238,7 @@ describe('prompt navigation strategy', () => {
         }, 2500);
       }
       await vi.advanceTimersByTimeAsync(3000);
-      expect(elements[i].getBoundingClientRect().top).toBe(120);
+      expect(elements[i].getBoundingClientRect().top).toBe(100);
       expect(dragging).toBe(false);
       // The host captures a new passage after each settled scroll.
       readingScrollTop = feed.scrollTop;
@@ -273,7 +273,7 @@ describe('prompt navigation strategy', () => {
       setTimeout(() => { if (following) feed.scrollTop = 2400; }, delay);
     }
     await vi.advanceTimersByTimeAsync(5000);
-    expect(prompt.getBoundingClientRect().top).toBe(120);
+    expect(prompt.getBoundingClientRect().top).toBe(100);
     expect(intent).toHaveBeenCalledOnce();
     expect(mocks.notifyJumpFailed).not.toHaveBeenCalled();
   });
@@ -307,10 +307,10 @@ describe('prompt navigation strategy', () => {
     mocks.findPrompt.mockImplementation(() => live);
     const message = { id: 'prompt-1', text: 'Prompt', canMatchByText: true, createTime: 0 };
     jumpToMessage(message, 0);
-    expect(live.getBoundingClientRect().top).toBe(120);
+    expect(live.getBoundingClientRect().top).toBe(100);
     setTimeout(() => { live = mount(); container.scrollTop = bottom; }, 300);
     await vi.advanceTimersByTimeAsync(1700);
-    expect(live.getBoundingClientRect().top).toBe(120);
+    expect(live.getBoundingClientRect().top).toBe(100);
     expect(container.scrollTo).toHaveBeenCalledWith({ top: reverse ? -2320 : 80, behavior: 'instant' });
     expect(mocks.notifyJumpFailed).not.toHaveBeenCalled();
     expect(mocks.logEvent).toHaveBeenCalledWith(expect.anything(), 'JUMP_FINISHED', expect.objectContaining({status:'found-and-settled'}), undefined);
