@@ -1,4 +1,8 @@
-import { measureNativeMessageLanding } from '@/platforms/chatgpt/nativeMessageLanding';
+import {
+  CHATGPT_PROMPT_SCROLL_MARGIN_TOP_PX,
+  getChatGptPromptScrollMarginTop,
+  measureNativeMessageLanding,
+} from '@/platforms/chatgpt/nativeMessageLanding';
 import { findNativeMessageTarget, type NativeTurnList } from './nativeMessageNavigation';
 import type { ThreadScrollController } from './nativeScrollBridge';
 
@@ -102,7 +106,8 @@ export function createInstantMessageNavigation(options: {
         let delta: number;
         if (current) {
           rowOffset = (current.target.getBoundingClientRect().top - current.row.getBoundingClientRect().top) / scale;
-          delta = (current.target.getBoundingClientRect().top - feed.top) / scale - container.clientTop - 10;
+          delta = (current.target.getBoundingClientRect().top - feed.top) / scale -
+            container.clientTop - getChatGptPromptScrollMarginTop(current.target);
           if (observedRow !== current.row) {
             if (observedRow) resize?.unobserve(observedRow);
             observedRow = current.row; resize?.observe(current.row);
@@ -110,7 +115,8 @@ export function createInstantMessageNavigation(options: {
         } else {
           const geometry = api.getEntryGeometry(turnKey) as { startPx?: unknown } | null;
           if (typeof geometry?.startPx !== 'number' || !Number.isFinite(geometry.startPx)) return null;
-          delta = (root.getBoundingClientRect().top - feed.top) / scale + geometry.startPx + rowOffset - container.clientTop - 10;
+          delta = (root.getBoundingClientRect().top - feed.top) / scale + geometry.startPx +
+            rowOffset - container.clientTop - CHATGPT_PROMPT_SCROLL_MARGIN_TOP_PX;
         }
         const range = Math.max(0, container.scrollHeight - container.clientHeight);
         return range - Math.max(0, Math.min(range, container.scrollTop + delta));

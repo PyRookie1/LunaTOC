@@ -77,11 +77,13 @@ describe('previewTooltip privacy', () => {
     expect(closedRoot?.textContent).toContain('Private prompt body');
     previewTooltip.hide();
     expect(closedRoot?.textContent).not.toContain('Private prompt body');
+    const tooltip = closedRoot?.querySelector('#luna-toc-preview-tooltip');
+    expect(tooltip?.classList.contains('luna-toc-tooltip-hiding')).toBe(true);
+    expect(closedRoot?.querySelector('style')?.textContent).toContain('opacity: 0;');
 
     vi.advanceTimersByTime(200);
-    expect(closedRoot?.querySelector('#luna-toc-preview-tooltip')?.classList.contains(
-      'luna-toc-tooltip-visible'
-    )).toBe(false);
+    expect(tooltip?.classList.contains('luna-toc-tooltip-visible')).toBe(false);
+    expect(tooltip?.classList.contains('luna-toc-tooltip-hiding')).toBe(false);
   });
 
   it('restores the preview only when the pointer enters its private tooltip during the hide window', () => {
@@ -94,6 +96,7 @@ describe('previewTooltip privacy', () => {
 
     const tooltip = closedRoot?.querySelector('#luna-toc-preview-tooltip');
     tooltip?.dispatchEvent(new MouseEvent('mouseenter'));
+    expect(tooltip?.classList.contains('luna-toc-tooltip-hiding')).toBe(false);
     expect(closedRoot?.textContent).toContain('Private prompt body');
   });
 });

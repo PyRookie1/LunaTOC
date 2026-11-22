@@ -39,7 +39,7 @@ beforeEach(async () => {
         const prompt = document.createElement('div');
         prompt.setAttribute('data-chatgpt-search-unit-key', `${key}:user`);
         prompt.setAttribute('data-chatgpt-search-message-ids', rows.find(row => row.turnKey === key)!.turn.messageIds.join(' '));
-        prompt.getBoundingClientRect = () => ({ top: 10, bottom: 60, height: 50 } as DOMRect);
+        prompt.getBoundingClientRect = () => ({ top: 120, bottom: 170, height: 50 } as DOMRect);
         row.append(prompt); feed.append(row);
         expect(target(row)).toBe(prompt);
         resolve();
@@ -77,6 +77,7 @@ describe('semantic native message navigation', () => {
     expect(api.scrollToKey).toHaveBeenCalledOnce();
     pending[0].complete(); await vi.advanceTimersByTimeAsync(0);
     expect(await navigation.ready).toBe(true);
+    expect(feed.querySelector<HTMLElement>('[data-chatgpt-search-message-ids="message-4"]')?.style.scrollMarginTop).toBe('120px');
     expect(snapshot).not.toHaveBeenCalled(); expect(verified).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1300);
     expect(await navigation.finished).toBe('found');
@@ -103,12 +104,12 @@ describe('semantic native message navigation', () => {
     const owned = Object.assign(controller, { compensateScrollToDistanceFromBottomPx: compensate });
     const snapshot = vi.fn(); Object.defineProperty(feed, 'startViewTransition', { value: snapshot });
     const navigation = navigateChatGptMessageNatively(feed, 'message-4')!;
-    expect(feed.scrollTop).toBe(4990); // No time or frame has advanced.
+    expect(feed.scrollTop).toBe(4880); // The target is held below the 120px top fade.
     expect(await navigation.ready).toBe(true);
     await vi.advanceTimersByTimeAsync(0);
     expect(await navigation.finished).toBe('found');
     owned.compensateScrollToDistanceFromBottomPx(100);
-    expect(positions).toEqual([4990, 4990]); expect(compensate).not.toHaveBeenCalled();
+    expect(positions).toEqual([4880, 4880]); expect(compensate).not.toHaveBeenCalled();
     expect(api.scrollToKey).not.toHaveBeenCalled(); expect(snapshot).not.toHaveBeenCalled();
     window.dispatchEvent(new WheelEvent('wheel', { deltaY: 100 }));
     expect(owned.compensateScrollToDistanceFromBottomPx).toBe(compensate);

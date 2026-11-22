@@ -34,6 +34,7 @@ vi.mock('@/platforms', () => ({
       findRenderedPromptByText: mocks.findText,
       readMountedWithSidebarIdx: vi.fn(() => []),
       promptTopOffsetPx: 16,
+      promptScrollMarginTopPx: 120,
     },
     diagnostics: {
       createJumpId: mocks.createJumpId,
@@ -238,7 +239,7 @@ describe('prompt navigation strategy', () => {
         }, 2500);
       }
       await vi.advanceTimersByTimeAsync(3000);
-      expect(elements[i].getBoundingClientRect().top).toBe(16);
+      expect(elements[i].getBoundingClientRect().top).toBe(120);
       expect(dragging).toBe(false);
       // The host captures a new passage after each settled scroll.
       readingScrollTop = feed.scrollTop;
@@ -273,7 +274,7 @@ describe('prompt navigation strategy', () => {
       setTimeout(() => { if (following) feed.scrollTop = 2400; }, delay);
     }
     await vi.advanceTimersByTimeAsync(5000);
-    expect(prompt.getBoundingClientRect().top).toBe(16);
+    expect(prompt.getBoundingClientRect().top).toBe(120);
     expect(intent).toHaveBeenCalledOnce();
     expect(mocks.notifyJumpFailed).not.toHaveBeenCalled();
   });
@@ -386,6 +387,7 @@ describe('prompt navigation strategy', () => {
       container: 'nearest',
       block: 'start',
     });
+    expect(target.style.scrollMarginTop).toBe('120px');
     expect(target.style.outline).toBe('2px solid #60a5fa');
     expect(mocks.clearJumpProgress).toHaveBeenCalled();
     expect(mocks.notifyJumpFailed).not.toHaveBeenCalled();

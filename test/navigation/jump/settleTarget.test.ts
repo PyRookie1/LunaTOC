@@ -1,7 +1,9 @@
 /** @vitest-environment jsdom */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { settleTarget } from '@/navigation/jump/settleTarget';
-vi.mock('@/platforms', () => ({ getActivePlatform: () => ({ navigation: {} }) }));
+vi.mock('@/platforms', () => ({
+  getActivePlatform: () => ({ navigation: { promptScrollMarginTopPx: 120 } }),
+}));
 
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => { vi.clearAllTimers(); vi.useRealTimers(); document.body.replaceChildren(); });
@@ -21,6 +23,13 @@ function fixture() {
 }
 
 describe('landing settlement', () => {
+  it('sets scroll-margin-top and lands below the ChatGPT top fade', () => {
+    const { container, target, options } = fixture();
+    settleTarget(options);
+    expect(target.style.scrollMarginTop).toBe('120px');
+    expect(container.scrollTop).toBe(280);
+  });
+
   it.each(['wheel', 'touchstart', 'pointerdown'])('stops correcting immediately on %s', (type) => {
     const { container, options, onSettled, onInterrupted } = fixture();
     settleTarget(options);

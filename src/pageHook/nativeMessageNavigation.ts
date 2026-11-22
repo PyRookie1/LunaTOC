@@ -1,4 +1,5 @@
 /** Read-only discovery of the host virtual list's semantic navigation API. */
+import { applyChatGptPromptScrollMargin } from '@/platforms/chatgpt/nativeMessageLanding';
 export interface NativeTurnList {
   scrollToKey(key: string, target: (row: HTMLElement) => HTMLElement | null,
     options: { align: 'top'; signal: AbortSignal }): Promise<void>;
@@ -89,7 +90,11 @@ export function findNativeMessageTarget(row: HTMLElement, id: string, edge: 'top
   const prompt = elements.find(element =>
     element.getAttribute('data-chatgpt-search-unit-key')?.endsWith(':user') &&
     element.getAttribute('data-chatgpt-search-message-ids')?.split(/\s+/).includes(id));
-  if (!prompt || edge === 'top') return prompt ?? null;
+  if (!prompt) return null;
+  if (edge === 'top') {
+    applyChatGptPromptScrollMargin(prompt);
+    return prompt;
+  }
   return elements.find(element =>
     element.getAttribute('data-chatgpt-search-unit-key')?.endsWith(':assistant') &&
     Boolean(prompt.compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING)) ?? prompt;
