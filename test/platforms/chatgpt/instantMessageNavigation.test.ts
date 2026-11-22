@@ -54,7 +54,7 @@ beforeEach(() => {
     scrollToKey: vi.fn(async (_key, target, { signal }) => {
       if (signal.aborted) return;
       flow.append(row); expect(target(row)).toBe(prompt);
-      controller.scrollToDistanceFromBottomPx(range - position - 120, 'instant', 'user');
+      controller.scrollToDistanceFromBottomPx(range - position + 100, 'instant', 'user');
     }),
   };
 });
