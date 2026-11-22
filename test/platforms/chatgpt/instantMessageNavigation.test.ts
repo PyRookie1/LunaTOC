@@ -75,7 +75,7 @@ it('moves a mounted target synchronously with one native write and no animation 
 });
 
 it('does not move or wait when the mounted message is already aligned', async () => {
-  feed.scrollTop = 5010; cached = range - feed.scrollTop;
+  feed.scrollTop = 4900; cached = range - feed.scrollTop;
   expect(await start()).toBe(true);
   expect(physicalWrites).toEqual([]); expect(vi.getTimerCount()).toBe(0);
 });
@@ -98,12 +98,12 @@ it('rebases the late-compensation proposal before it can move the viewport or ev
   const oldDistance = cached;
   range += 4284;
   // D14 pattern: total height grows while the old cached distance is proposed.
-  // Applying it first would move top from 5010 to 9294 and evict the target.
+  // Applying it first would move top from 4900 to 9184 and evict the target.
   controller.compensateScrollToDistanceFromBottomPx(oldDistance, 'turn-resize');
   expect(originalCompensate).not.toHaveBeenCalled();
   expect(physicalWrites).toEqual([4900, 4900]); expect(paintOffsets).toEqual([120, 120]);
   expect(row.isConnected).toBe(true);
-  expect(cached).toBe(range - 5010);
+  expect(cached).toBe(range - 4900);
   await vi.advanceTimersByTimeAsync(3000);
   expect(api.scrollToKey).not.toHaveBeenCalled();
   expect(physicalWrites).toEqual([4900, 4900]); // No delayed semantic recovery.
@@ -128,7 +128,7 @@ it('corrects DOM layout changes in the observer checkpoint without a delayed ret
   await start(); position += 300; range += 300;
   layout.style.height = `${range + 600}px`;
   await Promise.resolve();
-  expect(physicalWrites).toEqual([5010, 5310]); expect(prompt.getBoundingClientRect().top).toBe(120);
+  expect(physicalWrites).toEqual([4900, 5200]); expect(prompt.getBoundingClientRect().top).toBe(120);
 });
 
 it('restores both native methods on manual input and permits the host to scroll normally', async () => {
