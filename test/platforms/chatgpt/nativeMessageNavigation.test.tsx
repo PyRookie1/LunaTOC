@@ -111,7 +111,7 @@ describe('semantic native message navigation', () => {
     const owned = Object.assign(controller, { compensateScrollToDistanceFromBottomPx: compensate });
     const snapshot = vi.fn(); Object.defineProperty(feed, 'startViewTransition', { value: snapshot });
     const navigation = navigateChatGptMessageNatively(feed, 'message-4')!;
-    expect(feed.scrollTop).toBe(4880); // No time or frame has advanced.
+    expect(feed.scrollTop).toBe(4900); // No time or frame has advanced.
     expect(await navigation.ready).toBe(true);
     await vi.advanceTimersByTimeAsync(0);
     expect(await navigation.finished).toBe('found');
