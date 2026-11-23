@@ -787,6 +787,10 @@ test('Chromium MV3: TOC, search, layout, SPA and failure paths',{timeout:150000}
         await settings.goto('chrome-extension://'+extensionId+'/'+optionsPage);
         const toggle=settings.locator('#navigation-trace-toggle');
         await toggle.waitFor({state:'attached'});
+        await settings.waitForFunction(() => {
+          const toggle = document.querySelector('#navigation-trace-toggle');
+          return toggle && !toggle.disabled;
+        });
         await settings.locator('label.settings-choice:has(#navigation-trace-toggle)').click();
         await settings.waitForFunction(() => {
           const toggle = document.querySelector('#navigation-trace-toggle');
