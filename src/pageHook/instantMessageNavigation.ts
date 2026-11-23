@@ -1,6 +1,7 @@
 import { CHATGPT_PROMPT_TOP_OFFSET_PX, measureNativeMessageLanding } from '@/platforms/chatgpt/nativeMessageLanding';
 import { findNativeMessageTarget, type NativeTurnList } from './nativeMessageNavigation';
 import type { ThreadScrollController } from './nativeScrollBridge';
+import { recordMainNavigationTrace } from './navigationTraceMain';
 
 type CompensatingController = ThreadScrollController & {
   compensateScrollToDistanceFromBottomPx(distance: number, cause?: unknown): void;
@@ -59,6 +60,7 @@ export function createInstantMessageNavigation(options: {
       };
       const releaseLease = (): void => {
         if (released) return;
+        recordMainNavigationTrace('instant-anchor-released');
         released = true;
         nativeAbort.abort();
         if (raf !== null) cancelAnimationFrame(raf);
@@ -119,7 +121,9 @@ export function createInstantMessageNavigation(options: {
         writing = true;
         try {
           // This updates the host cache and notifies its virtual-window listeners.
+          recordMainNavigationTrace('instant-scroll-write', { distance, beforeTop: container.scrollTop });
           nativeScroll.call(controller, distance, 'instant', 'user');
+          recordMainNavigationTrace('instant-scroll-applied', { distance, afterTop: container.scrollTop });
           lastTop = container.scrollTop; lastRange = container.scrollHeight - container.clientHeight;
           const cached = controller.getLastScrollDistanceFromBottomPx();
           if (!Number.isFinite(cached) || Math.abs(cached - Math.max(0, lastRange - lastTop)) > 2) {
@@ -129,12 +133,14 @@ export function createInstantMessageNavigation(options: {
       };
       function compensate(this: CompensatingController, distance: number, cause?: unknown): void {
         if (released || !armed) return nativeCompensate.call(this, distance, cause);
+        recordMainNavigationTrace('compensation-proposed', { distance, source: typeof cause === 'string' ? cause : 'host' });
         if (writing) return;
         try {
           const anchored = destination();
           if (anchored === null) { releaseLease(); return nativeCompensate.call(this, distance, cause); }
           // Correct the proposal before any host scroll write. Do not first
           // apply the old-layout distance and then visibly undo that move.
+          recordMainNavigationTrace('compensation-rebased', { distance: anchored });
           write(anchored);
         } catch { releaseLease(); nativeCompensate.call(this, distance, cause); }
       }
@@ -159,6 +165,7 @@ export function createInstantMessageNavigation(options: {
           }
           const current = live();
           if (!finished && !nativePending && measureNativeMessageLanding(container, current?.target ?? null).aligned) {
+            recordMainNavigationTrace('instant-landing-ready', { aligned: true });
             options.onReady();
             finish(true);
           }
@@ -188,6 +195,7 @@ export function createInstantMessageNavigation(options: {
           if (!finished && !released) raf = requestAnimationFrame(awaitMounted);
         } else {
           nativePending = true;
+          recordMainNavigationTrace('native-scroll-to-key', { strategy: 'instant-anchor' });
           void api.scrollToKey(turnKey, row => {
             const target = findNativeMessageTarget(row, messageId, edge);
             if (target && !released) armed = true;

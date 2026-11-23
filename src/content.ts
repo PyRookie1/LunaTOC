@@ -3,6 +3,7 @@
  * from the Chrome Content Script entry.
  */
 import { initializeApplication } from '@/app/applicationShell';
+import { installNavigationTraceCollector } from '@/features/navigationTrace/traceCollector';
 import { initializeBoldFixLifecycle } from '@/features/boldFix/boldFixLifecycle';
 import { initializeConversationLifecycle } from '@/navigation/lifecycle/conversationLifecycle';
 import { observeExternalOverlays } from '@/features/externalOverlay';
@@ -10,6 +11,9 @@ import { startPageHookMismatchBridge, startChatGptConfigSync } from '@/features/
 import { initializeReactHost } from '@/reactHost/reactHost';
 import { connectPageHookMessageTransport } from '@/navigation/pageHookMessageTransport';
 import { startToolbarCompatibilityMonitor } from '@/features/contractAlert/toolbarMonitor';
+
+// Opt-in diagnostic collector does not modify host navigation.
+installNavigationTraceCollector();
 
 // Bind the isolated conversation receiver before the application starts.
 connectPageHookMessageTransport();

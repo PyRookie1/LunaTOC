@@ -3,6 +3,7 @@ import { CHATGPT_FEED_SELECTOR, NATIVE_NAVIGATION_COMPLETE, NATIVE_NAVIGATION_PR
 import { findNativeMessageNavigation } from './nativeMessageNavigation';
 import { settleNativeMessage } from './settleNativeMessage';
 import { createInstantMessageNavigation, type InstantMessageNavigation } from './instantMessageNavigation';
+import { recordMainNavigationTrace, setMainNavigationTraceTarget } from './navigationTraceMain';
 
 export interface ThreadScrollController {
   getScrollElement(): HTMLElement | null;
@@ -51,6 +52,7 @@ export function installChatGptNativeScrollBridge(): () => void {
   const active = new Map<HTMLElement, { requestId: string; abort: AbortController }>();
   const anchors = new Map<HTMLElement, { requestId: string; navigation: InstantMessageNavigation }>();
   const releaseAnchor = (container: HTMLElement): void => {
+    if (anchors.has(container)) recordMainNavigationTrace('anchor-release');
     anchors.get(container)?.navigation.dispose(); anchors.delete(container);
   };
   const listener = (event: Event): void => {
@@ -61,6 +63,7 @@ export function installChatGptNativeScrollBridge(): () => void {
     let data: { requestId?: unknown; operation?: unknown; top?: unknown; messageId?: unknown; edge?: unknown };
     try { data = JSON.parse(detail); } catch { return; }
     if (typeof data?.requestId !== 'string' || !/^luna-scroll-\d+$/.test(data.requestId)) return;
+    recordMainNavigationTrace('native-request', { operation: data.operation });
     let handled = false;
     let reason = 'controller-not-found';
     let distance: number | undefined;
@@ -80,6 +83,8 @@ export function installChatGptNativeScrollBridge(): () => void {
         const native = findNativeMessageNavigation(container, data.messageId);
         reason = 'native-turn-list-or-message-not-found';
         if (native && controller) {
+          setMainNavigationTraceTarget(native.turnKey);
+          recordMainNavigationTrace('native-target-resolved', { hasController: true });
           releaseAnchor(container);
           active.get(container)?.abort.abort();
           const abort = new AbortController();
@@ -90,6 +95,7 @@ export function installChatGptNativeScrollBridge(): () => void {
           const complete = (success: boolean): void => {
             if (active.get(container)?.abort !== abort) return;
             active.delete(container);
+            recordMainNavigationTrace('native-navigation-complete', { success: success && !abort.signal.aborted });
             container.dispatchEvent(new CustomEvent(NATIVE_NAVIGATION_COMPLETE, {
               detail: JSON.stringify({ requestId, success: success && !abort.signal.aborted }),
             }));
@@ -111,6 +117,7 @@ export function installChatGptNativeScrollBridge(): () => void {
               anchors.set(container, { requestId, navigation: anchor });
               void anchor.run().then(complete, () => { abort.abort(); complete(false); });
               handled = true; reason = 'native-instant-anchor-accepted';
+              recordMainNavigationTrace('native-navigation-path', { strategy: 'instant-anchor' });
             } else {
               // Compatibility path: render the first landing immediately.
               // Verification runs in the background, without a snapshot gate.
@@ -123,6 +130,7 @@ export function installChatGptNativeScrollBridge(): () => void {
                 onReady,
               }).then(result => complete(result.success), () => { abort.abort(); complete(false); });
               handled = true; reason = 'native-message-navigation-accepted';
+              recordMainNavigationTrace('native-navigation-path', { strategy: 'legacy-settle' });
             }
           } catch {
             abort.abort(); active.delete(container); reason = 'native-message-navigation-error';
@@ -131,6 +139,7 @@ export function installChatGptNativeScrollBridge(): () => void {
       } else if (controller && data.operation === 'prepare') {
         releaseAnchor(container);
         controller.holdViewport();
+        recordMainNavigationTrace('viewport-held');
         handled = true; reason = 'native-prepared';
       } else if (controller && data.operation === 'scroll' && typeof data.top === 'number' && Number.isFinite(data.top)) {
         releaseAnchor(container);
@@ -148,6 +157,9 @@ export function installChatGptNativeScrollBridge(): () => void {
         reason = handled ? 'native-state-updated' : 'native-state-not-updated';
       }
     } catch { reason = 'native-controller-error'; }
+    recordMainNavigationTrace('native-response', {
+      operation: data.operation, handled, reason, distance, cachedDistance, actualDistance,
+    });
     container.dispatchEvent(new CustomEvent(NATIVE_SCROLL_RESPONSE, {
       detail: JSON.stringify({ requestId: data.requestId, handled, reason, distance, cachedDistance, actualDistance }),
     }));

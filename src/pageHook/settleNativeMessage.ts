@@ -3,6 +3,7 @@ import {
   measureNativeMessageLanding,
 } from '@/platforms/chatgpt/nativeMessageLanding';
 import { findNativeMessageTarget, type NativeTurnList } from './nativeMessageNavigation';
+import { recordMainNavigationTrace } from './navigationTraceMain';
 
 /** Cancellation must release even a host Promise that never resolves on abort. */
 async function untilAbort(pending: Promise<void>, signal: AbortSignal): Promise<void> {
@@ -48,6 +49,7 @@ export async function settleNativeMessage(options: {
   let notifiedReady = false;
   const jump = async (): Promise<void> => {
     attempts++;
+    recordMainNavigationTrace('native-scroll-to-key', { strategy: 'legacy-settle', attempt: attempts });
     options.prepare();
     await untilAbort(api.scrollToKey(turnKey, row => findNativeMessageTarget(row, messageId, edge),
       { align: 'top', signal }), signal);
@@ -84,6 +86,7 @@ export async function settleNativeMessage(options: {
     previous = state; previousTarget = target;
     if (state.aligned && !notifiedReady) {
       notifiedReady = true;
+      recordMainNavigationTrace('legacy-landing-ready', { attempt: attempts, aligned: true });
       options.onReady?.();
     }
     // Keep watching beyond the observed ~1.1s delayed eviction after native
@@ -91,6 +94,7 @@ export async function settleNativeMessage(options: {
     if (state.aligned && now - firstCompletion! >= 1200 && now - lastChange >= 600) return finish(true, 'aligned-and-stable');
     if (!state.aligned && now - lastChange >= 300 && now - lastCompletion >= 400) {
       if (attempts >= 3) return finish(false, 'native-reacquire-limit');
+      recordMainNavigationTrace('native-reacquire', { attempt: attempts + 1 });
       await jump();
     }
     await tick(signal);

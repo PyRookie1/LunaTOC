@@ -60,7 +60,7 @@ async function flushNavigationTrace(): Promise<void> {
   }
 }
 function notifyMain(): void {
-  document.dispatchEvent(new CustomEvent(TRACE_CONTROL_EVENT, { detail: { enabled } }));
+  document.dispatchEvent(new CustomEvent(TRACE_CONTROL_EVENT, { detail: JSON.stringify({ enabled }) }));
 }
 function resetSession(): void {
   if (timer !== null) { clearTimeout(timer); timer = null; }
@@ -73,10 +73,11 @@ function resetSession(): void {
 }
 function collectMain(event: Event): void {
   if (!enabled || event.target !== document || !activeJumpId) return;
-  const data = (event as CustomEvent).detail as {
-    jumpId?: unknown; event?: unknown; details?: unknown; timestamp?: unknown;
-  } | null;
-  if (data?.jumpId !== activeJumpId) return;
+  const raw = (event as CustomEvent).detail;
+  if (typeof raw !== 'string' || raw.length > 2048) return;
+  let data: { jumpId?: unknown; event?: unknown; details?: unknown; timestamp?: unknown };
+  try { data = JSON.parse(raw); } catch { return; }
+  if (data.jumpId !== activeJumpId) return;
   append('main', data.event, data.details,
     typeof data.timestamp === 'number' ? data.timestamp : performance.now());
 }
@@ -128,7 +129,7 @@ export function beginNavigationTrace(source: string, targetIndex: number | null,
   if (!enabled) return;
   activeJumpId = crypto.randomUUID();
   document.dispatchEvent(new CustomEvent(TRACE_CONTEXT_EVENT, {
-    detail: { jumpId: activeJumpId, targetIndex, edge, source },
+    detail: JSON.stringify({ jumpId: activeJumpId, targetIndex, edge, source }),
   }));
   append('isolated', 'navigation-start', { source, targetIndex, edge });
 }

@@ -6,6 +6,7 @@ import { keepFollowing } from '../follow/follow';
 import { getActivePlatform } from '@/platforms';
 import { loadUntilMountedViaViewport } from './viewportWalker';
 import { executeAbsoluteEdgeJump } from './edgeNavigation';
+import { beginNavigationTrace, recordNavigationTrace } from '@/features/navigationTrace/traceCollector';
 import { findNextAssistantMessage } from './headingExtractor';
 import { NAVIGATION_HIGHLIGHT_DURATION_MS } from './highlightTiming';
 import { settleTarget } from './settleTarget';
@@ -185,6 +186,7 @@ export function jumpToMessage(
   index: number,
   edge: 'top' | 'bottom' = 'top'
 ): void {
+  beginNavigationTrace('toc', index, edge);
   cancelActiveNavigationSearch();
   jumpWithIndependentVirtualNavigation(message, index, edge);
 }
@@ -236,16 +238,19 @@ function jumpWithIndependentVirtualNavigation(
   // and settleTarget must never run alongside an accepted native request.
   const native = edge === 'top' ? platform().navigation.navigateToMessage?.(container, message.id) : null;
   if (native) {
+    recordNavigationTrace('native-navigation-accepted', { strategy: 'semantic', index });
     const version = navigationJumpVersion;
     stopActiveLanding = native.cancel;
     let readyTarget: HTMLElement | null = null;
     void native.ready?.then(shown => {
       if (!shown || version !== navigationJumpVersion) return;
+      recordNavigationTrace('native-navigation-ready', { index });
       readyTarget = findRenderedChatGptPrompt(message.id, container);
       if (readyTarget) highlightMatchedElement(readyTarget);
     });
     void native.finished.then(result => {
       if (version !== navigationJumpVersion) return;
+      recordNavigationTrace('navigation-finished', { result, index });
       stopActiveLanding = null;
       clearJumpProgress();
 
@@ -257,6 +262,7 @@ function jumpWithIndependentVirtualNavigation(
     return;
   }
 
+  recordNavigationTrace('native-navigation-unavailable', { strategy: 'fallback', index });
   // Fast path: if the target prompt is already mounted anywhere in the
   // DOM (id match exact, text match as fallback for id-string mismatches),
   // scroll straight to it.
@@ -414,6 +420,7 @@ export function jumpToPromptIndex(
   const context = getVirtualSearchContext();
   const message = context.prompts[index];
   if (!message) return false;
+  beginNavigationTrace('outline-parent', index, 'top');
   cancelActiveNavigationSearch();
   keepFollowing(duration);
   jumpWithIndependentVirtualNavigation(message, index);
@@ -449,6 +456,7 @@ export function jumpToAbsoluteEdge(
   edge: 'top' | 'bottom',
   behavior: ScrollBehavior = 'auto'
 ): void {
+  beginNavigationTrace('edge-button', null, edge);
   keepFollowing();
   // A new absolute-edge jump supersedes any in-flight independent virtual
   // jump; otherwise the highlight from a previous TOC click would linger.

@@ -22,7 +22,7 @@ let getController: ((container: HTMLElement) => ThreadScrollController | null) |
 export function recordMainNavigationTrace(event: string, details: Record<string, unknown> = {}): void {
   if (!enabled || !jumpId || performance.now() > activeUntil) return;
   document.dispatchEvent(new CustomEvent(TRACE_MAIN_EVENT, {
-    detail: { jumpId, event, details, timestamp: performance.now() },
+    detail: JSON.stringify({ jumpId, event, details, timestamp: performance.now() }),
   }));
 }
 export function setMainNavigationTraceTarget(turnKey: string): void {
@@ -166,18 +166,27 @@ function startCapture(): void {
     stopCapture(); jumpId = null;
   }, 16000);
 }
+function parseTraceDetail(event: Event): Record<string, unknown> | null {
+  const raw = (event as CustomEvent).detail;
+  if (typeof raw !== 'string' || raw.length > 2048) return null;
+  try {
+    const value: unknown = JSON.parse(raw);
+    return value && typeof value === 'object' && !Array.isArray(value)
+      ? value as Record<string, unknown> : null;
+  } catch { return null; }
+}
 export function installNavigationTraceMain(
   controllerLookup: (container: HTMLElement) => ThreadScrollController | null
 ): void {
   getController = controllerLookup;
   document.addEventListener(TRACE_CONTROL_EVENT, event => {
-    const detail = (event as CustomEvent).detail;
+    const detail = parseTraceDetail(event);
     if (typeof detail?.enabled !== 'boolean') return;
     enabled = detail.enabled;
     if (!enabled) { stopCapture(); jumpId = null; }
   });
   document.addEventListener(TRACE_CONTEXT_EVENT, event => {
-    const detail = (event as CustomEvent).detail as { jumpId?: unknown } | null;
+    const detail = parseTraceDetail(event);
     if (!enabled || typeof detail?.jumpId !== 'string' ||
       !/^[a-f0-9-]{36}$/.test(detail.jumpId)) return;
     jumpId = detail.jumpId; activeUntil = performance.now() + 16000;

@@ -2,6 +2,7 @@
  * Handles page-edge navigation (To Top / To Bottom) with column-reverse scroll mathematics and settle verification.
  */
 import { getActivePlatform } from '@/platforms';
+import { recordNavigationTrace } from '@/features/navigationTrace/traceCollector';
 
 function platform() {
   return getActivePlatform();
@@ -143,6 +144,10 @@ async function retryEdgeUntilSettled(
       ? (isReverse ? -maxScrollTop : 0)
       : (isReverse ? 0 : maxScrollTop);
 
+    recordNavigationTrace('edge-scroll-write', {
+      edge, attempt, beforeTop: beforeScrollTop, targetTop,
+      scrollHeight: beforeHeight, clientHeight: container.clientHeight, isReverse,
+    });
     container.scrollTop = targetTop;
 
     logEdgeSettle({
@@ -184,6 +189,10 @@ async function retryEdgeUntilSettled(
       const isAtBottom =
         Math.abs(container.scrollTop - currentBottomTarget) <=
         EDGE_JUMP_BOTTOM_TOLERANCE_PX;
+      recordNavigationTrace('edge-settle-check', {
+        edge, attempt, atBottom: isAtBottom, scrollTop: container.scrollTop,
+        scrollHeight: container.scrollHeight,
+      });
       logEdgeSettle({
         attempt,
         phase: isAtBottom ? 'bottom-settled' : 'bottom-displaced',
@@ -239,6 +248,10 @@ export function executeAbsoluteEdgeJump(
 
   const isReverse =
     window.getComputedStyle(container).flexDirection === 'column-reverse';
+  recordNavigationTrace('edge-navigation-invoked', {
+    edge, isReverse, scrollTop: container.scrollTop,
+    scrollHeight: container.scrollHeight, clientHeight: container.clientHeight,
+  });
   // Replace any previous jump's event listeners before tracking this attempt.
   stopActiveScrollIntentTracking?.();
   if (edge === 'top') {
