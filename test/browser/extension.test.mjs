@@ -787,7 +787,7 @@ test('Chromium MV3: TOC, search, layout, SPA and failure paths',{timeout:150000}
         await settings.goto('chrome-extension://'+extensionId+'/'+optionsPage);
         const toggle=settings.locator('#navigation-trace-toggle');
         await toggle.waitFor({state:'attached'});
-        await toggle.check();
+        await settings.locator('label.settings-choice:has(#navigation-trace-toggle)').click();
         await settings.waitForFunction(() => {
           const toggle = document.querySelector('#navigation-trace-toggle');
           return toggle && toggle.checked && !toggle.disabled;
@@ -826,7 +826,7 @@ test('Chromium MV3: TOC, search, layout, SPA and failure paths',{timeout:150000}
         );
         const after=await worker.evaluate(()=>chrome.storage.local.get(null));
         assert.equal(Object.keys(after).filter(key=>key.startsWith('lunatoc:navigationTrace:session:v1:')).length,0);
-        await toggle.uncheck();
+        await settings.locator('label.settings-choice:has(#navigation-trace-toggle)').click();
       }finally{await settings.close();}
     });
 
