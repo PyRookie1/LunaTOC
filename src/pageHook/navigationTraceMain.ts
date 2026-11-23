@@ -125,9 +125,10 @@ function startCapture(): void {
     '.thread-scroll-container, [data-app-action-timeline-scroll]'
   );
   if (!feed) { recordMainNavigationTrace('feed-unavailable'); return; }
-  recordMainNavigationTrace('capture-start', {
-    hasController: Boolean(getController?.(feed)), ...metrics(),
-  });
+  let hasController = false;
+  try { hasController = Boolean(getController?.(feed)); }
+  catch { /* A transient React fiber must not break diagnostics. */ }
+  recordMainNavigationTrace('capture-start', { hasController, ...metrics() });
   feed.addEventListener('scroll', onScroll, { passive: true });
   observer = new MutationObserver(mutations => {
     const rowsSelector = '[data-turn-key]';

@@ -788,6 +788,10 @@ test('Chromium MV3: TOC, search, layout, SPA and failure paths',{timeout:150000}
         const toggle=settings.locator('#navigation-trace-toggle');
         await toggle.waitFor({state:'attached'});
         await toggle.check();
+        await settings.waitForFunction(() => {
+          const toggle = document.querySelector('#navigation-trace-toggle');
+          return toggle && toggle.checked && !toggle.disabled;
+        });
         await page.goto('https://chatgpt.com/c/lunatoc-large-e2e',{waitUntil:'domcontentloaded'});
         await page.locator('#luna-toc-sidebar.luna-toc-navigator-ready').waitFor({state:'attached'});
         await page.evaluate(async()=>fetch('/backend-api/conversations/lunatoc-large-e2e?num_turns=500'));
@@ -817,6 +821,9 @@ test('Chromium MV3: TOC, search, layout, SPA and failure paths',{timeout:150000}
         assert.ok(exported.sessions.some(session=>session.events.some(event=>event.layer==='main')));
 
         await settings.getByRole('button',{name:'清空诊断日志'}).click();
+        await settings.waitForFunction(() =>
+          document.querySelector('[role="status"]')?.textContent?.startsWith('已清空 ')
+        );
         const after=await worker.evaluate(()=>chrome.storage.local.get(null));
         assert.equal(Object.keys(after).filter(key=>key.startsWith('lunatoc:navigationTrace:session:v1:')).length,0);
         await toggle.uncheck();
