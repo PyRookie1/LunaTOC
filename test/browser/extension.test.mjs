@@ -780,6 +780,49 @@ test('Chromium MV3: TOC, search, layout, SPA and failure paths',{timeout:150000}
       }));
     });
 
+    await t.test('opt-in navigation trace exports sanitized MAIN and ISOLATED events and clears them',async()=>{
+      const settings=await context.newPage();
+      try{
+        const optionsPage=await worker.evaluate(()=>chrome.runtime.getManifest().options_ui.page);
+        await settings.goto('chrome-extension://'+extensionId+'/'+optionsPage);
+        const toggle=settings.locator('#navigation-trace-toggle');
+        await toggle.waitFor({state:'attached'});
+        await toggle.check();
+        await page.goto('https://chatgpt.com/c/lunatoc-large-e2e',{waitUntil:'domcontentloaded'});
+        await page.locator('#luna-toc-sidebar.luna-toc-navigator-ready').waitFor({state:'attached'});
+        await page.evaluate(async()=>fetch('/backend-api/conversations/lunatoc-large-e2e?num_turns=500'));
+        await page.waitForFunction(()=>document.querySelectorAll('.navigator-item').length===500);
+        if(await page.locator('#luna-toc-sidebar').getAttribute('aria-hidden')!=='false'){
+          await page.locator('#luna-toc-toggle-btn').click({force:true});
+        }
+        await page.locator('.navigator-item').nth(1).click();
+        await page.waitForTimeout(1200);
+        const stored=await worker.evaluate(()=>chrome.storage.local.get(null));
+        const entries=Object.entries(stored).filter(([key])=>key.startsWith('lunatoc:navigationTrace:session:v1:'));
+        assert.ok(entries.length>0,'trace session must be persisted');
+        const events=entries.flatMap(([,record])=>record.events??[]);
+        assert.ok(events.some(event=>event.event==='navigation-start'&&event.layer==='isolated'));
+        assert.ok(events.some(event=>event.layer==='main'),'MAIN-world trace events must cross the world boundary');
+        const raw=JSON.stringify(entries);
+        assert.ok(!raw.includes('第二条测试问题'),'never persist prompt content');
+        assert.ok(!raw.includes('user-2'),'never persist message IDs');
+        assert.ok(!raw.includes('/c/lunatoc-large-e2e'),'never persist conversation paths');
+
+        const downloadPromise=settings.waitForEvent('download');
+        await settings.getByRole('button',{name:'导出诊断 JSON'}).click();
+        const download=await downloadPromise, filename=await download.path();
+        assert.ok(filename,'exported trace must be available');
+        const exported=JSON.parse(readFileSync(filename,'utf8'));
+        assert.ok(Array.isArray(exported.sessions)&&exported.sessions.length>0);
+        assert.ok(exported.sessions.some(session=>session.events.some(event=>event.layer==='main')));
+
+        await settings.getByRole('button',{name:'清空诊断日志'}).click();
+        const after=await worker.evaluate(()=>chrome.storage.local.get(null));
+        assert.equal(Object.keys(after).filter(key=>key.startsWith('lunatoc:navigationTrace:session:v1:')).length,0);
+        await toggle.uncheck();
+      }finally{await settings.close();}
+    });
+
     await t.test('backup export and restore use the shared background writer',async()=>{
       const settings=await context.newPage();
       try{

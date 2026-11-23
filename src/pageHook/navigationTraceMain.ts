@@ -49,6 +49,8 @@ function metrics(): Record<string, unknown> {
     clientHeight: feed.clientHeight, scrollRange: range, isReverse: reverse,
     actualDistance, cachedDistance,
     cacheError: cachedDistance === null ? null : cachedDistance - actualDistance,
+    rowCount: feed.querySelectorAll('[data-turn-key]').length,
+    assistantCount: feed.querySelectorAll('[data-chatgpt-search-unit-key$=":assistant"]').length,
   };
 }
 function sample(reason: string): void {
@@ -74,7 +76,9 @@ function sample(reason: string): void {
   if (!row && watchedRow) { resize?.unobserve(watchedRow); watchedRow = null; }
   const rect = assistant?.getBoundingClientRect();
   const style = assistant ? getComputedStyle(assistant) : null;
+  const feedRect = feed.getBoundingClientRect();
   const visible = Boolean(rect && style && rect.height > 0 &&
+    rect.bottom > feedRect.top && rect.top < feedRect.bottom &&
     style.display !== 'none' && style.visibility !== 'hidden' &&
     Number(style.opacity) > 0 && !assistant?.hidden &&
     assistant?.getAttribute('aria-hidden') !== 'true');
