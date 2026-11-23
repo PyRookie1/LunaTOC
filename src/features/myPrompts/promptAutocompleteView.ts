@@ -2,6 +2,7 @@
  * Bridges ChatGPT composer autocomplete behavior to the React suggestion view.
  */
 import type { SavedPrompt } from './promptStore';
+import { subscribeActiveConversationOwner } from '@/navigation/lifecycle/conversationOwner';
 
 /** Viewport coordinates used to position the autocomplete menu. */
 export interface PromptAutocompletePosition {
@@ -58,6 +59,8 @@ function close(): void {
   currentState = null;
   emitChange();
 }
+
+subscribeActiveConversationOwner(close);
 
 function setSelectedIndex(
   selectedIndex: number,

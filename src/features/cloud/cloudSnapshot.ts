@@ -48,6 +48,7 @@ export function validateCloudSnapshot(value: unknown, ownerId: string): CloudSna
     data: {
       prompts: raw.prompts, promptUsage: {}, aliases: raw.aliases,
       settings: raw.settings === null ? {} : { [ownerId]: raw.settings },
+      deletions: { prompts: {}, conversations: {}, aliases: {} },
     },
   }));
   if (parsed.data.prompts.some((item) => item.ownerId !== ownerId || deletedPrompts.includes(item.id)) ||

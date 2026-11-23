@@ -20,6 +20,23 @@ describe('conversationStore', () => {
     cloneSpy.mockRestore();
   });
 
+  it('keeps unconfirmed destinations empty and applies late correlation only to its server destination', () => {
+    let route = 'new-chat:/';
+    const store = createConversationStore({ getCurrentRouteKey: () => route });
+    store.syncRouteState();
+    store.handleNewUserMessage({ id: 'created-user', content: { parts: ['Created'] } }, route);
+    route = 'unrelated-conversation';
+    const other = store.syncRouteState();
+    store.resetForCurrentRoute({ nextMessages: other.cachedMessages });
+    expect(store.getMessages()).toEqual([]);
+    expect(store.confirmNewChatRoute('new-chat:/', 'created-conversation')).toBe(false);
+    expect(store.getMessages()).toEqual([]);
+    route = 'created-conversation';
+    const created = store.syncRouteState();
+    store.resetForCurrentRoute({ nextMessages: created.cachedMessages });
+    expect(store.getMessages().map(m => m.id)).toEqual(['created-user']);
+  });
+
   it('uses injected route resolver when provided', () => {
     let activeRoute = 'custom-route-1';
     const store = createConversationStore({
@@ -156,101 +173,18 @@ describe('conversationStore', () => {
     expect(store.getMessages()).toHaveLength(1);
   });
 
-  it('preserves messages and copies snapshots when migrating from new-chat to permanent route', () => {
+  it('migrates messages only after the send stream confirms the permanent conversation', () => {
     let currentKey = 'new-chat:/';
-    const store = createConversationStore({
-      getCurrentRouteKey: () => currentKey,
-    });
-
-    // Initialize first route
-    store.syncRouteState('new-chat:/');
-
-    // User sends prompt in empty new chat
-    store.appendNavigatorMessage({
-      id: 'prompt-1',
-      author: { role: 'user' },
-      content: { parts: ['Initial prompt'] },
-      create_time: 100,
-    } as ChatMessage);
-
-    expect(store.getMessages()).toHaveLength(1);
-
-    // Stage 1: ChatGPT updates route to temporary local conversation key
-    currentKey = 'local-temp-123';
-    const transitionLocal = store.syncRouteState('local-temp-123');
-
-    expect(transitionLocal.isTransition).toBe(true);
-    expect(transitionLocal.isNewChatRouteTransition).toBe(true);
-    expect(transitionLocal.shouldPreserveMessages).toBe(true);
-    expect(store.getPendingNewChatRouteKey()).toBe('new-chat:/');
-
-    store.resetForCurrentRoute({
-      preserveMessages: transitionLocal.shouldPreserveMessages,
-      nextMessages: transitionLocal.cachedMessages,
-    });
-    expect(store.getMessages()).toHaveLength(1);
-    expect(store.getMessages()[0].id).toBe('prompt-1');
-
-    // Stage 2: ChatGPT updates route to permanent conversation URL
+    const store = createConversationStore({ getCurrentRouteKey: () => currentKey });
+    store.syncRouteState();
+    store.appendNavigatorMessage({ id: 'prompt-1', author: { role: 'user' }, content: { parts: ['Initial prompt'] }, create_time: 100 });
+    store.confirmNewChatRoute('new-chat:/', 'c-perm-456');
     currentKey = 'c-perm-456';
-    const transitionPerm = store.syncRouteState('c-perm-456');
-
-    expect(transitionPerm.isTransition).toBe(true);
-    expect(transitionPerm.isNewChatRouteTransition).toBe(true);
-    expect(transitionPerm.shouldPreserveMessages).toBe(true);
-    expect(store.getPendingNewChatRouteKey()).toBe('local-temp-123');
-
-    // Test 2: Verify temporary local state is cleaned after migration
-    expect(store.getCachedConversationMessages('local-temp-123')).toHaveLength(0);
-
-    store.resetForCurrentRoute({
-      preserveMessages: transitionPerm.shouldPreserveMessages,
-      nextMessages: transitionPerm.cachedMessages,
-    });
-
-    expect(store.getMessages()).toHaveLength(1);
-    expect(store.getMessages()[0].id).toBe('prompt-1');
-
-    // Empty conversation data arrives for permanent route
-    store.handleConversationData(
-      { messages: [] } as ConversationData,
-      'c-perm-456'
-    );
-    expect(store.getMessages()).toHaveLength(1);
-    expect(store.getMessages()[0].id).toBe('prompt-1');
-
-    // Server later returns prompt-1
-    store.handleConversationData(
-      {
-        messages: [
-          {
-            id: 'prompt-1',
-            author: { role: 'user' },
-            content: { parts: ['Initial prompt'] },
-            create_time: 100,
-          } as ChatMessage,
-        ],
-      } as ConversationData,
-      'c-perm-456'
-    );
-    expect(store.getMessages()).toHaveLength(1);
-    expect(store.getMessages()[0].id).toBe('prompt-1');
-
-    // Second prompt arrives under permanent route
-    store.appendNavigatorMessage(
-      {
-        id: 'prompt-2',
-        author: { role: 'user' },
-        content: { parts: ['Second prompt'] },
-        create_time: 200,
-      } as ChatMessage,
-      'c-perm-456'
-    );
-    expect(store.getMessages()).toHaveLength(2);
-    expect(store.getMessages().map((m) => m.id)).toEqual([
-      'prompt-1',
-      'prompt-2',
-    ]);
+    const transition = store.syncRouteState();
+    expect(transition.shouldPreserveMessages).toBe(true);
+    store.resetForCurrentRoute({ preserveMessages: transition.shouldPreserveMessages, nextMessages: transition.cachedMessages });
+    expect(store.getMessages().map(m => m.id)).toEqual(['prompt-1']);
+    expect(store.getCachedConversationMessages('new-chat:/')).toHaveLength(0);
   });
 
   it('handles late arriving newUserMessage destined for pending new chat key', () => {
@@ -262,6 +196,7 @@ describe('conversationStore', () => {
     store.syncRouteState('new-chat:/');
 
     // Switch route before message event fires
+    store.confirmNewChatRoute('new-chat:/', 'c-perm-789');
     currentKey = 'c-perm-789';
     store.syncRouteState('c-perm-789');
 
@@ -341,6 +276,7 @@ describe('conversationStore', () => {
     expect(store.getMessages()[0].id).toBe('prompt-A1');
 
     // Migrate to conversation-A
+    store.confirmNewChatRoute('new-chat:/', 'c-perm-A');
     currentKey = 'c-perm-A';
     const transitionA = store.syncRouteState('c-perm-A');
     store.resetForCurrentRoute({
@@ -377,6 +313,7 @@ describe('conversationStore', () => {
     expect(store.getMessages().map((m) => m.id)).toEqual(['prompt-B1']);
 
     // Migrate to conversation-B
+    store.confirmNewChatRoute('new-chat:/', 'c-perm-B');
     currentKey = 'c-perm-B';
     const transitionB2 = store.syncRouteState('c-perm-B');
     store.resetForCurrentRoute({
@@ -489,35 +426,18 @@ describe('conversationStore', () => {
     expect(store.isConversationComplete('conv-complete-preserve')).toBe(true);
   });
 
-  it('propagates completeness across route migration stages', () => {
+  it('propagates completeness only across a confirmed permanent route migration', () => {
     let currentKey = 'new-chat:/';
-    const store = createConversationStore({
-      getCurrentRouteKey: () => currentKey,
-    });
-
-    store.syncRouteState('new-chat:/');
-    store.appendNavigatorMessage({
-      id: 'prompt-initial',
-      author: { role: 'user' },
-      content: { parts: ['Initial prompt'] },
-      create_time: 100,
-    } as ChatMessage);
-
-    store.markConversationComplete('new-chat:/');
-    expect(store.isConversationComplete('new-chat:/')).toBe(true);
-
-    // Stage 1: migrate to local
-    currentKey = 'local-migration-key';
-    const transitionLocal = store.syncRouteState('local-migration-key');
-    expect(transitionLocal.isComplete).toBe(true);
-    expect(store.isConversationComplete('local-migration-key')).toBe(true);
-
-    // Stage 2: migrate to permanent
+    const store = createConversationStore({ getCurrentRouteKey: () => currentKey });
+    store.syncRouteState();
+    store.appendNavigatorMessage({ id: 'prompt-initial', author: { role: 'user' }, content: { parts: ['Initial prompt'] }, create_time: 100 });
+    store.markConversationComplete();
+    store.confirmNewChatRoute('new-chat:/', 'c-perm-migration-key');
     currentKey = 'c-perm-migration-key';
-    const transitionPerm = store.syncRouteState('c-perm-migration-key');
-    expect(transitionPerm.isComplete).toBe(true);
-    expect(store.isConversationComplete('c-perm-migration-key')).toBe(true);
+    expect(store.syncRouteState().isComplete).toBe(true);
+    expect(store.isConversationComplete(currentKey)).toBe(true);
   });
+
   it('invalidates incomplete refreshes without discarding cached prompts', () => {
     const store = createConversationStore({ getCurrentRouteKey: () => 'conversation-123' });
     store.setCurrentConversationKey('conversation-123');

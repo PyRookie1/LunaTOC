@@ -75,3 +75,15 @@ describe('concurrent SSE readers', () => {
     expect(emitted.sort()).toEqual([['route-a', 'a'], ['route-b', 'b']]);
   });
 });
+
+
+describe('new conversation correlation', () => {
+  it('confirms only the server ID from the corresponding temporary-route stream', async () => {
+    const postMessage = vi.fn();
+    vi.stubGlobal('window', { postMessage });
+    const data = 'data: ' + JSON.stringify({ conversation_id: 'created-conversation-123' }) + '\n';
+    await inspectStream(new Response(data + data), 'new-chat:/');
+    expect(postMessage).toHaveBeenCalledTimes(1);
+    expect(postMessage).toHaveBeenCalledWith({ type: 'LUNA_TOC_CONVERSATION_CREATED', sourceRouteKey: 'new-chat:/', conversationId: 'created-conversation-123' }, '*');
+  });
+});

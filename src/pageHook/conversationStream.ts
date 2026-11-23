@@ -9,6 +9,8 @@ import { postPageHookMessage } from './messageTransport';
  * `CHATGPT_NEW_USER_MESSAGE` message-type constant.
  */
 import type { FetchArgs } from './fetchHelpers';
+import { TOC_CONVERSATION_CREATED } from '@/navigation/refresh/refreshProtocol';
+import { isPermanentConversationId } from '@/navigation/lifecycle/protocol';
 
 const NEW_USER_MESSAGE_TYPE = 'CHATGPT_NEW_USER_MESSAGE';
 
@@ -93,13 +95,14 @@ export async function inspectStream(
   // Keep incomplete lines local to each response.
   let streamBuffer = '';
   const decoder = new TextDecoder();
+  const confirmedConversations = new Set<string>();
 
   while (true) {
     const { done, value } = await reader.read();
 
     if (done) {
       if (streamBuffer.trim()) {
-        processStreamLine(streamBuffer, routeKey, messageType);
+        processStreamLine(streamBuffer, routeKey, messageType, confirmedConversations);
         streamBuffer = '';
       }
 
@@ -110,7 +113,7 @@ export async function inspectStream(
       stream: true,
     });
 
-    streamBuffer = processBufferedStream(streamBuffer, routeKey, messageType);
+    streamBuffer = processBufferedStream(streamBuffer, routeKey, messageType, confirmedConversations);
   }
 }
 
@@ -119,12 +122,12 @@ export async function inspectStream(
  * trailing partial line for the next stream chunk.
  */
 function processBufferedStream(
-  buffer: string, routeKey: string, messageType: string
+  buffer: string, routeKey: string, messageType: string, confirmedConversations: Set<string>
 ): string {
   const lines = buffer.split('\n');
   const remainder = lines.pop() || '';
   for (const line of lines) {
-    processStreamLine(line, routeKey, messageType);
+    processStreamLine(line, routeKey, messageType, confirmedConversations);
   }
   return remainder;
 }
@@ -136,7 +139,8 @@ function processBufferedStream(
 function processStreamLine(
   line: string,
   routeKey: string,
-  messageType: string
+  messageType: string,
+  confirmedConversations: Set<string>
 ): void {
   if (!line.startsWith('data: ')) {
     return;
@@ -150,6 +154,11 @@ function processStreamLine(
 
   try {
     const data = JSON.parse(jsonText);
+    if ((routeKey.startsWith('new-chat:') || routeKey.startsWith('local-') || routeKey.startsWith('WEB:')) &&
+        isPermanentConversationId(data.conversation_id) && !confirmedConversations.has(data.conversation_id)) {
+      confirmedConversations.add(data.conversation_id);
+      postPageHookMessage({ type: TOC_CONVERSATION_CREATED, sourceRouteKey: routeKey, conversationId: data.conversation_id });
+    }
 
     if (data.type === 'input_message') {
       const message = data.input_message;

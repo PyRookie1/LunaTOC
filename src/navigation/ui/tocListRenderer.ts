@@ -35,6 +35,7 @@ export interface RenderOptions {
 }
 
 export interface TocListRendererOptions {
+  isActive?: () => boolean;
   getMessages: () => NavigatorMessage[];
   getActiveIndex: () => number | null;
   onItemClick: (message: NavigatorMessage, index: number) => void;
@@ -588,6 +589,8 @@ export function createTocListRenderer(
     refreshObservers = false,
     completed = null,
   }: RenderOptions = {}): void {
+    options.onPromptCountReported?.(options.getMessages().length);
+    if (options.isActive?.() === false) return;
     const list = document.getElementById('navigator-list');
     const hint = document.querySelector<HTMLElement>('.navigator-hint');
 

@@ -2,6 +2,7 @@
  * Bridges imperative My Prompts actions to the React prompt editor.
  */
 import type { SavedPrompt } from './promptStore';
+import { subscribeActiveConversationOwner } from '@/navigation/lifecycle/conversationOwner';
 
 /** Values submitted by the prompt editor form. */
 export interface PromptEditorValues {
@@ -42,6 +43,8 @@ function close(): void {
   currentRequest = null;
   emitChange();
 }
+
+subscribeActiveConversationOwner(close);
 
 function subscribe(listener: PromptEditorListener): () => void {
   listeners.add(listener);

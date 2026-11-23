@@ -11,13 +11,16 @@ import { isPermanentConversationId } from '@/navigation/lifecycle/protocol';
 import { isValidTocMessageId, parseTocAliasRecord, parseTocAliasDeletionFence,
   isLegacyTocAliasDeletionFence, TOC_ALIAS_RECORD_DELETED_PREFIX } from '@/features/conversationPrompts/tocAliasWriteCoordinator';
 import { PROMPT_DELETED_STORAGE_KEY, parsePromptDeletionMap } from '@/features/myPrompts/promptWriteCoordinator';
+import { emptyBackupDeletions, readBackupDeletions, validateBackupDeletions,
+  mergeBackupDeletions, deletionStorageValues, type BackupDeletions,
+} from './backupDeletions';
 
 const PROMPTS_KEY = 'lunatoc:prompts:v1';
 const USAGE_KEY = 'lunatoc:promptUsage:v1';
 const ALIAS_PREFIX = 'lunatoc:aliases:v1:';
 const ALIAS_DELETED_PREFIX = 'lunatoc:aliases:deleted:v1:';
 export const BACKUP_FORMAT = 'lunatoc-local-backup';
-export const BACKUP_VERSION = 1;
+export const BACKUP_VERSION = 2;
 export const MAX_BACKUP_BYTES = 12 * 1024 * 1024;
 const MAX_ENTRIES = 20_000;
 
@@ -31,11 +34,12 @@ export interface LocalBackupData {
   promptUsage: PromptUsageMap;
   aliases: Record<string, BackupAliasRecord>;
   settings: AccountSettingsMap;
+  deletions?: BackupDeletions;
 }
 
 export interface LocalBackup {
   format: typeof BACKUP_FORMAT;
-  version: typeof BACKUP_VERSION;
+  version: 1 | typeof BACKUP_VERSION;
   exportedAt: string;
   data: LocalBackupData;
 }
@@ -175,9 +179,9 @@ function validateSettingsMap(value: unknown): AccountSettingsMap {
   return settings;
 }
 
-function validateData(value: unknown): LocalBackupData {
+function validateData(value: unknown, legacy = false): LocalBackupData {
   const raw = record(value, '备份数据');
-  keysOnly(raw, ['prompts', 'promptUsage', 'aliases', 'settings'], '备份数据');
+  keysOnly(raw, ['prompts', 'promptUsage', 'aliases', 'settings', 'deletions'], '备份数据');
   for (const required of ['prompts', 'promptUsage', 'aliases', 'settings']) {
     if (!Object.hasOwn(raw, required)) throw new Error('备份缺少必需的数据类别。');
   }
@@ -187,8 +191,16 @@ function validateData(value: unknown): LocalBackupData {
   if (Object.keys(usage).some((id) => !validIds.has(id))) {
     throw new Error('备份的使用统计引用了不存在的提示词。');
   }
+  const deletions = legacy && raw.deletions === undefined ? emptyBackupDeletions() : validateBackupDeletions(raw.deletions);
+  const aliases = validateAliases(raw.aliases);
+  for (const prompt of prompts) {
+    if (Object.values(deletions.prompts).some(ids => ids.includes(prompt.id))) throw new Error('备份中的提示词与删除标记冲突。');
+  }
+  for (const route of Object.keys(aliases)) {
+    if (Object.hasOwn(deletions.conversations, route) || Object.hasOwn(deletions.aliases, route)) throw new Error('备份中的目录别名与删除标记冲突。');
+  }
   return {
-    prompts, promptUsage: usage, aliases: validateAliases(raw.aliases),
+    prompts, promptUsage: usage, aliases, deletions,
     settings: validateSettingsMap(raw.settings),
   };
 }
@@ -200,12 +212,12 @@ export function parseLocalBackup(source: string): LocalBackup {
   try { input = JSON.parse(source); } catch { throw new Error('文件不是有效的 JSON。'); }
   const raw = record(input, '备份文件');
   keysOnly(raw, ['format', 'version', 'exportedAt', 'data'], '备份文件');
-  if (raw.format !== BACKUP_FORMAT || raw.version !== BACKUP_VERSION) {
+  if (raw.format !== BACKUP_FORMAT || (raw.version !== 1 && raw.version !== BACKUP_VERSION)) {
     throw new Error('不支持的备份文件格式或版本。');
   }
   const exportedAt = text(raw.exportedAt, '导出时间', 64);
   if (!Number.isFinite(Date.parse(exportedAt))) throw new Error('导出时间无效。');
-  return { format: BACKUP_FORMAT, version: BACKUP_VERSION, exportedAt, data: validateData(raw.data) };
+  return { format: BACKUP_FORMAT, version: BACKUP_VERSION, exportedAt, data: validateData(raw.data, raw.version === 1) };
 }
 
 /** Reads only the known extension-owned keys. Never export ChatGPT content or credentials. */
@@ -255,6 +267,7 @@ export async function createLocalBackup(
   const data = validateData({
     prompts, promptUsage, aliases,
     settings: all[ACCOUNT_SETTINGS_KEY] ?? {},
+    deletions: readBackupDeletions(all),
   });
   const backup: LocalBackup = {
     format: BACKUP_FORMAT, version: BACKUP_VERSION, exportedAt: new Date().toISOString(), data,
@@ -286,6 +299,7 @@ export function storageValuesEqual(left: unknown, right: unknown): boolean {
 /** Previews validated content; no storage writes. */
 export function summarizeLocalBackup(backup: LocalBackup): {
   prompts: number; conversations: number; aliases: number; usage: number; settingsAccounts: number;
+  deletedPrompts: number; deletedConversations: number; deletedAliases: number;
 } {
   return {
     prompts: backup.data.prompts.length,
@@ -294,6 +308,9 @@ export function summarizeLocalBackup(backup: LocalBackup): {
       .reduce((count, record) => count + Object.keys(record.aliases).length, 0),
     usage: Object.keys(backup.data.promptUsage).length,
     settingsAccounts: Object.keys(backup.data.settings).length,
+    deletedPrompts: Object.values(backup.data.deletions?.prompts ?? {}).reduce((count, ids) => count + ids.length, 0),
+    deletedConversations: Object.keys(backup.data.deletions?.conversations ?? {}).length,
+    deletedAliases: Object.keys(backup.data.deletions?.aliases ?? {}).length,
   };
 }
 
@@ -310,11 +327,14 @@ export async function restoreLocalBackup(
   if (mode !== 'merge' && mode !== 'replace') throw new Error('恢复模式无效。');
   const validated = parseLocalBackup(JSON.stringify(backup));
   const original = await storage.get(null) as Record<string, unknown>;
+  const importedDeletions = validated.data.deletions ?? emptyBackupDeletions();
+  const combinedDeletions = mergeBackupDeletions(readBackupDeletions(original), importedDeletions);
+  const fencedOriginal = { ...original, ...deletionStorageValues(combinedDeletions) };
   // Do not trust the shape of storage-origin data when merging.
   const current = mode === 'merge'
-    ? await createLocalBackup({ ...storage, get: async () => original } as Storage)
+    ? await createLocalBackup({ ...storage, get: async () => fencedOriginal } as Storage)
     : null;
-  const originalPromptDeletions = parsePromptDeletionMap(original[PROMPT_DELETED_STORAGE_KEY]);
+  const originalPromptDeletions = combinedDeletions.prompts;
   const currentPrompts = mode === 'replace'
     ? validatePrompts(original[PROMPTS_KEY] ?? []).filter((prompt) => {
       const foreignFence = Object.entries(originalPromptDeletions).some(([fenceOwner, ids]) =>
@@ -356,9 +376,11 @@ export async function restoreLocalBackup(
     );
     nextData = {
       prompts: [...prompts.values()], aliases, promptUsage: usage, settings,
+      deletions: combinedDeletions,
     };
   }
   const values: Record<string, unknown> = {
+    ...deletionStorageValues(combinedDeletions),
     [PROMPTS_KEY]: nextData.prompts,
     [USAGE_KEY]: nextData.promptUsage,
     [ACCOUNT_SETTINGS_KEY]: nextData.settings,
@@ -419,16 +441,16 @@ export async function restoreLocalBackup(
       throw new Error('备份中的会话别名与本地账号归属不同，已取消恢复。');
     }
   }
-  const obsolete = mode === 'replace'
-    ? Object.keys(original).filter((key) => key.startsWith(ALIAS_PREFIX) && !Object.hasOwn(values, key))
-    : [];
+  const obsolete = Object.keys(original).filter((key) => key.startsWith(ALIAS_PREFIX) && !Object.hasOwn(values, key) &&
+    (mode === 'replace' || Object.hasOwn(importedDeletions.conversations, key.slice(ALIAS_PREFIX.length)) ||
+      Object.hasOwn(importedDeletions.aliases, key.slice(ALIAS_PREFIX.length))));
   for (const key of obsolete) {
     const route = key.slice(ALIAS_PREFIX.length);
     let existing: ReturnType<typeof parseTocAliasRecord>;
     try { existing = parseTocAliasRecord(original[key]); }
     catch { continue; }
     if (!existing) continue;
-    const conversationRaw = original[ALIAS_DELETED_PREFIX + route];
+    const conversationRaw = fencedOriginal[ALIAS_DELETED_PREFIX + route];
     if (isLegacyTocAliasDeletionFence(conversationRaw)) continue;
     const conversationFence = parseTocAliasDeletionFence(conversationRaw);
     if (conversationFence) {
@@ -438,7 +460,7 @@ export async function restoreLocalBackup(
       continue;
     }
     const recordKey = TOC_ALIAS_RECORD_DELETED_PREFIX + route;
-    const existingRecordFence = parseTocAliasDeletionFence(original[recordKey]);
+    const existingRecordFence = parseTocAliasDeletionFence(fencedOriginal[recordKey]);
     if (existingRecordFence && existingRecordFence.ownerId !== existing.ownerId) {
       throw new Error('本地目录别名删除标记属于另一个账号，已取消替换。');
     }
@@ -451,8 +473,8 @@ export async function restoreLocalBackup(
   const revived = Object.entries(nextData.aliases)
     .flatMap(([route, entry]) => {
       const conversationKey = ALIAS_DELETED_PREFIX + route;
-      if (Object.hasOwn(original, conversationKey)) {
-        const rawConversationFence = original[conversationKey];
+      if (Object.hasOwn(fencedOriginal, conversationKey)) {
+        const rawConversationFence = fencedOriginal[conversationKey];
         if (isLegacyTocAliasDeletionFence(rawConversationFence)) {
           throw new Error('该会话存在旧版删除标记，无法从备份恢复其目录别名。');
         }
@@ -465,14 +487,15 @@ export async function restoreLocalBackup(
         }
       }
       const recordKey = TOC_ALIAS_RECORD_DELETED_PREFIX + route;
-      if (!Object.hasOwn(original, recordKey)) return [];
-      const recordFence = parseTocAliasDeletionFence(original[recordKey]);
+      if (!Object.hasOwn(fencedOriginal, recordKey)) return [];
+      const recordFence = parseTocAliasDeletionFence(fencedOriginal[recordKey]);
       if (recordFence && recordFence.ownerId !== entry.ownerId) {
         throw new Error('备份中的目录别名删除标记属于另一个 ChatGPT 账号，已取消恢复。');
       }
       return recordFence?.ownerId === entry.ownerId ? [recordKey] : [];
     });
   const removals = [...obsolete, ...revived];
+  for (const key of revived) delete values[key];
   const changed = [...new Set([...Object.keys(values), ...removals])];
   await assertStorageCapacity(storage, changed, values);
   const oldValues = Object.fromEntries(changed

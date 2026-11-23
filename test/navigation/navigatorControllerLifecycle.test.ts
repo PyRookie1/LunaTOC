@@ -356,10 +356,10 @@ describe('navigatorController lifecycle and coordination', () => {
       })
     );
 
-    // Prompt #1 must be preserved in temporary local route
-    expect(list.children.length).toBe(1);
-    expect(list.children[0].textContent).toContain('My first prompt in new chat');
+    // An unconfirmed temporary URL cannot take ownership of the prompt.
+    expect(list.textContent).not.toContain('My first prompt in new chat');
 
+    activePageHookDispatcher({ type: 'LUNA_TOC_CONVERSATION_CREATED', sourceRouteKey: 'new-chat:/', conversationId: 'migrated-permanent-id' });
     // ChatGPT assigns permanent URL
     Object.defineProperty(window, 'location', {
       writable: true,

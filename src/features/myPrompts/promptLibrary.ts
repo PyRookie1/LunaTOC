@@ -7,7 +7,9 @@ import type {
   PromptStore,
   SavedPrompt,
 } from './promptStore';
-import { getActiveConversationOwner } from '@/navigation/lifecycle/conversationOwner';
+import { captureConversationOwner, isConversationOwnerCurrent,
+  subscribeActiveConversationOwner, type ConversationOwnerContext,
+} from '@/navigation/lifecycle/conversationOwner';
 import type { PromptUsageStore } from './promptUsageStore';
 import {
   promptEditorController,
@@ -58,6 +60,20 @@ let renderVersion = 0;
 let promptsStore: PromptStore | null = null;
 let promptUsageStore: PromptUsageStore | null = null;
 let insertIntoChatGPTInput: (text: string) => void = () => {};
+const pendingModals = new Set<() => void>();
+
+subscribeActiveConversationOwner(() => {
+  renderVersion += 1;
+  previewTooltip.hide();
+  for (const cancel of [...pendingModals]) cancel();
+});
+
+/** Invalidates a Tips render when another view takes ownership of the list. */
+export function cancelPromptLibraryRender(): void { renderVersion += 1; }
+
+function requireOwner(context: ConversationOwnerContext | null): asserts context is ConversationOwnerContext {
+  if (!isConversationOwnerCurrent(context)) throw new Error('ChatGPT 账号已变化，请重新执行操作。');
+}
 
 /**
  * Connects the prompt library to its storage and input dependencies.
@@ -110,8 +126,12 @@ function requirePromptUsageStore(): PromptUsageStore {
  * Downloads saved prompts as an editable Markdown file.
  * @returns {Promise<void>}
  */
-async function exportMyPrompts(): Promise<void> {
+async function exportMyPrompts(event: MouseEvent): Promise<void> {
+  if (!event.isTrusted) return;
+  const owner = captureConversationOwner();
+  if (!owner) return;
   const prompts = await getMyPrompts();
+  if (!isConversationOwnerCurrent(owner) || prompts.some(p => p.ownerId !== owner.ownerId)) return;
   const file = new Blob([formatPromptsAsMarkdown(prompts)], {
     type: 'text/markdown;charset=utf-8',
   });
@@ -133,6 +153,8 @@ async function exportMyPrompts(): Promise<void> {
  * @returns {void}
  */
 function importMyPrompts(onImport: VoidCallback): void {
+  const owner = captureConversationOwner();
+  if (!owner) return;
   const input = document.createElement('input');
   input.type = 'file';
   input.accept = '.md,text/markdown,text/plain';
@@ -145,6 +167,7 @@ function importMyPrompts(onImport: VoidCallback): void {
 
     try {
       const promptsToImport = await parseMarkdownImportFile(file);
+      requireOwner(owner);
       if (!promptsToImport.length) {
         await showPromptModal({
           title: '导入提示词',
@@ -153,8 +176,7 @@ function importMyPrompts(onImport: VoidCallback): void {
         return;
       }
 
-      const ownerId = getActiveConversationOwner();
-      if (!ownerId) throw new Error('ChatGPT 账号未验证，无法导入提示词。');
+      const ownerId = owner.ownerId;
       const importedAt = Date.now();
       const importedPrompts = promptsToImport.map((prompt, index) => ({
         id: `prompt-${importedAt}-${index}-${crypto.randomUUID()}`,
@@ -165,7 +187,10 @@ function importMyPrompts(onImport: VoidCallback): void {
         updatedAt: importedAt,
       }));
 
-      await requirePromptStore().update((existingPrompts) => [...existingPrompts, ...importedPrompts]);
+      await requirePromptStore().update((existingPrompts) => {
+        requireOwner(owner);
+        return [...existingPrompts, ...importedPrompts];
+      });
       onImport();
       await showPromptModal({
         title: '导入提示词',
@@ -224,6 +249,7 @@ function showPromptModal({
   cancelText = '取消',
 }: PromptDialogOptions): Promise<boolean> {
   return new Promise((resolve) => {
+    let settled = false;
     let modal = document.getElementById('chat-toc-myprompt-message-modal');
     if (!modal) {
       modal = document.createElement('div');
@@ -260,10 +286,15 @@ function showPromptModal({
     };
 
     const close = (result: boolean): void => {
+      if (settled) return;
+      settled = true;
+      pendingModals.delete(cancelForOwnerChange);
       modal.removeEventListener('click', handleBackdropClick);
       modal.style.display = 'none';
       resolve(result);
     };
+    const cancelForOwnerChange = (): void => close(false);
+    pendingModals.add(cancelForOwnerChange);
 
     const confirmButton = getRequiredElement<HTMLButtonElement>(
       modal,
@@ -341,7 +372,8 @@ function createSortBar(
     bar,
     '#myprompt-add-new-btn'
   );
-  addBtn.addEventListener('click', () => {
+  addBtn.addEventListener('click', (event) => {
+    if (!event.isTrusted) return;
     onAddNew();
   });
 
@@ -353,7 +385,8 @@ function createSortBar(
   getRequiredElement<HTMLButtonElement>(
     bar,
     '#myprompt-import-btn'
-  ).addEventListener('click', () => {
+  ).addEventListener('click', (event) => {
+    if (!event.isTrusted) return;
     importMyPrompts(onSortChange);
   });
 
@@ -371,8 +404,10 @@ function createSortBar(
 
 /** Clears the verified account's prompts and their associated usage metadata. */
 async function clearAllMyPrompts(onRefresh: VoidCallback): Promise<void> {
+  const owner = captureConversationOwner();
+  if (!owner) return;
   const prompts = await getMyPrompts();
-  if (!prompts.length) return;
+  if (!isConversationOwnerCurrent(owner) || !prompts.length) return;
 
   const shouldClear = await showPromptModal({
     title: '清空Tips',
@@ -380,7 +415,7 @@ async function clearAllMyPrompts(onRefresh: VoidCallback): Promise<void> {
     confirm: true,
     confirmText: '全部清空',
   });
-  if (!shouldClear) return;
+  if (!shouldClear || !isConversationOwnerCurrent(owner)) return;
 
   try {
     await requirePromptStore().clearAll();
@@ -447,11 +482,14 @@ export function showDialog(
   item: Partial<SavedPrompt> | null = null,
   onSave: VoidCallback = () => {}
 ): void {
+  const owner = captureConversationOwner();
+  if (!owner || (item?.ownerId && item.ownerId !== owner.ownerId)) return;
   // Stable across editor retries so an uncertain acknowledgement cannot create duplicate IDs.
   const createId = item?.id ?? `prompt-${Date.now()}-${crypto.randomUUID()}`;
   const original = item ? { ...item } : null;
   promptEditorController.open(original, async (values) => {
-    await savePromptEditorValues(original, values, createId);
+    requireOwner(owner);
+    await savePromptEditorValues(original, values, createId, owner);
     onSave();
   });
 }
@@ -462,12 +500,14 @@ export function showDialog(
 async function savePromptEditorValues(
   item: Partial<SavedPrompt> | null,
   { title, content }: PromptEditorValues,
-  createId: string
+  createId: string,
+  owner: ConversationOwnerContext
 ): Promise<void> {
   try {
-    const ownerId = getActiveConversationOwner();
-    if (!ownerId) throw new Error('ChatGPT 账号未验证，提示词未保存。');
+    requireOwner(owner);
+    const ownerId = owner.ownerId;
     await requirePromptStore().update((prompts) => {
+      requireOwner(owner);
       const isNew = !item?.id;
       if (isNew) {
         const existing = prompts.find((prompt) => prompt.id === createId);
@@ -524,6 +564,7 @@ export async function renderMyPrompts(
   onRefresh: VoidCallback = () => {}
 ): Promise<void> {
   const currentRenderVersion = ++renderVersion;
+  const owner = captureConversationOwner();
   // Remove any previous preview before replacing the prompt rows.
   previewTooltip.hide();
 
@@ -541,7 +582,7 @@ export async function renderMyPrompts(
   let list = await getMyPrompts();
   const savedPromptCount = list.length;
 
-  if (currentRenderVersion !== renderVersion) {
+  if (currentRenderVersion !== renderVersion || (owner && !isConversationOwnerCurrent(owner))) {
     return;
   }
 
@@ -626,6 +667,7 @@ export async function renderMyPrompts(
     editBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       if (!e.isTrusted) return;
+      if (!isConversationOwnerCurrent(owner)) return;
       previewTooltip.hide();
       showDialog(item, onRefresh);
     });
@@ -643,6 +685,7 @@ export async function renderMyPrompts(
     deleteBtn.addEventListener('click', async (e) => {
       e.stopPropagation();
       if (!e.isTrusted) return;
+      if (!isConversationOwnerCurrent(owner)) return;
       previewTooltip.hide();
       const shouldDelete = await showPromptModal({
         title: '删除提示词',
@@ -651,9 +694,10 @@ export async function renderMyPrompts(
         confirmText: '删除',
       });
 
-      if (shouldDelete) {
+      if (shouldDelete && isConversationOwnerCurrent(owner)) {
         try {
           await requirePromptStore().update((prompts) => {
+            requireOwner(owner);
             const latest = prompts.find((p) => p.id === item.id);
             if (latest && (latest.title !== item.title ||
                 latest.content !== item.content || latest.updatedAt !== item.updatedAt)) {
@@ -685,12 +729,14 @@ export async function renderMyPrompts(
       // Saved prompt rows live in the host-page DOM. Reject page-script
       // dispatchEvent()/element.click() calls before inserting private content.
       if (!event.isTrusted) return;
+      if (!isConversationOwnerCurrent(owner)) return;
       previewTooltip.hide();
       insertIntoChatGPTInput(item.content);
     });
 
     row.addEventListener('contextmenu', (event) => {
       if (!event.isTrusted) return;
+      if (!isConversationOwnerCurrent(owner)) return;
       event.preventDefault();
       event.stopPropagation();
       previewTooltip.hide();
@@ -707,6 +753,7 @@ export async function renderMyPrompts(
           },
         ],
         (itemId) => {
+          if (!isConversationOwnerCurrent(owner)) return;
           if (itemId === 'clear-all') {
             void clearAllMyPrompts(onRefresh);
           } else if (itemId === 'copy-prompt') {
@@ -718,6 +765,7 @@ export async function renderMyPrompts(
     });
 
     row.addEventListener('mouseenter', (event) => {
+      if (!isConversationOwnerCurrent(owner)) return;
       previewTooltip.show(
         {
           title: item.title,

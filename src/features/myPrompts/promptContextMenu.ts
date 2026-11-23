@@ -2,6 +2,7 @@
  * Bridges My Prompts context-menu requests to the shared React menu UI.
  */
 import type { ContextMenuItem } from '@/components/ui/context-menu';
+import { subscribeActiveConversationOwner } from '@/navigation/lifecycle/conversationOwner';
 
 export interface PromptContextMenuPosition {
   left: number;
@@ -50,6 +51,8 @@ function close(): void {
   emitChange();
   request.onClose?.();
 }
+
+subscribeActiveConversationOwner(close);
 
 function select(itemId: string): void {
   const request = currentRequest;

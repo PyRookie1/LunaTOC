@@ -6,6 +6,9 @@ import { getActivePlatform } from '@/platforms';
 import type { SavedPrompt } from './promptStore';
 import { promptAutocompleteViewController } from './promptAutocompleteView';
 import type { PromptUsageMap } from './promptUsageStore';
+import { captureConversationOwner, isConversationOwnerCurrent,
+  subscribeActiveConversationOwner, type ConversationOwnerContext,
+} from '@/navigation/lifecycle/conversationOwner';
 
 type PromptComposer = HTMLTextAreaElement | HTMLElement;
 
@@ -32,6 +35,8 @@ let getMyPrompts: () => Promise<SavedPrompt[]> = async () => [];
 let getPromptUsage: () => Promise<PromptUsageMap> = async () => ({});
 let recordPromptUse: (promptId: string) => Promise<void> = async () => {};
 let autocompleteRequestVersion = 0;
+let autocompleteOwner: ConversationOwnerContext | null = null;
+subscribeActiveConversationOwner(closeAutocompleteMenu);
 const autocompleteTriggerPattern =
   /(^|[\s.,!?;:()[\]{}<>"]|'|`|~|，|。|！|？|；|：|、|（|）|【|】|《|》])((?:\/\/)|#)([^\s]*)$/;
 
@@ -188,6 +193,8 @@ function placeCursorAtEnd(element: HTMLElement): void {
  */
 async function handleTextareaInput(textarea: PromptComposer): Promise<void> {
   const requestVersion = ++autocompleteRequestVersion;
+  const owner = captureConversationOwner();
+  if (!owner) { closeAutocompleteMenu(); return; }
   const context = getAutocompleteContext(textarea);
   if (!context) {
     closeAutocompleteMenu();
@@ -198,7 +205,8 @@ async function handleTextareaInput(textarea: PromptComposer): Promise<void> {
     getMyPrompts(),
     getPromptUsage(),
   ]);
-  if (requestVersion !== autocompleteRequestVersion) return;
+  if (requestVersion !== autocompleteRequestVersion || !isConversationOwnerCurrent(owner)) return;
+  autocompleteOwner = owner;
 
   const matches = getRankedAutocompletePrompts(prompts, usage, context.query);
   if (matches.length > 0) {
@@ -534,6 +542,10 @@ function showAutocompleteMenu(
  * @param {Object} prompt
  */
 function selectAutocompleteItem(prompt: SavedPrompt): void {
+  if (!isConversationOwnerCurrent(autocompleteOwner) || prompt.ownerId !== autocompleteOwner?.ownerId) {
+    closeAutocompleteMenu();
+    return;
+  }
   if (!currentTextarea || !currentAutocompleteContext) {
     return;
   }
@@ -627,6 +639,7 @@ function closeAutocompleteMenu(): void {
   promptAutocompleteViewController.close();
   filteredPromptsForMenu = [];
   currentAutocompleteContext = null;
+  autocompleteOwner = null;
   selectedMenuIndex = 0;
 }
 

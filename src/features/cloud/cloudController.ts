@@ -5,7 +5,8 @@ import { isPromptList, PROMPT_STORAGE_KEY, PROMPT_DELETED_STORAGE_KEY, parseProm
 import { TOC_ALIAS_PREFIX, TOC_ALIAS_DELETED_PREFIX, TOC_ALIAS_RECORD_DELETED_PREFIX, parseTocAliasRecord, parseTocAliasDeletionFence } from '@/features/conversationPrompts/tocAliasWriteCoordinator';
 import { CLOUD_MAX_BYTES, emptyCloudSnapshot, mergeAccountSnapshots, validateCloudSnapshot,
   type CloudSnapshot } from './cloudSnapshot';
-import type { SerialWriteQueue } from '@/features/storage/serialWriteQueue';
+import { createSerialWriteQueue, type SerialWriteQueue } from '@/features/storage/serialWriteQueue';
+import { CloudOperationError, type CloudErrorCode } from './cloudErrors';
 import { bundledFirebaseConfig } from './managedFirebaseConfig';
 import { pendingCloudSyncStatus } from './cloudSyncStatus';
 import { isPermanentConversationId } from '@/navigation/lifecycle/protocol';
@@ -57,7 +58,7 @@ export type CloudAction =
   | { type: typeof CLOUD_MESSAGE_TYPE; action: 'sign-out' | 'status'; ownerId?: string }
   | { type: typeof CLOUD_MESSAGE_TYPE; action: 'bind-account' | 'unbind-account' | 'sync'; ownerId: string };
 export type CloudResult = { ok: true; message: string; uid?: string; configured?: boolean; autoSyncEnabled?: boolean; autoSyncStatus?: CloudAutoSyncStatus; emailVerified?: boolean; email?: string; boundUid?: string; boundOwners?: string[] }
-  | { ok: false; error: string };
+  | { ok: false; error: string; code?: CloudErrorCode };
 
 function validConfig(value: unknown): value is Config {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
@@ -85,7 +86,10 @@ async function jsonResponse(response: Response): Promise<Record<string, unknown>
   if (!response.ok) {
     const nested = json.error as { message?: unknown } | undefined;
     const message = typeof nested?.message === 'string' ? nested.message : 'HTTP ' + response.status;
-    throw new Error('Firebase 请求失败：' + message.slice(0, 160));
+    const display = 'Firebase 请求失败：' + message.slice(0, 160);
+    if (response.status === 408 || response.status >= 500) throw new CloudOperationError('network', display);
+    if (response.status === 429) throw new CloudOperationError('rate-limit', display);
+    throw new Error(display);
   }
   return json;
 }
@@ -135,6 +139,26 @@ export function createCloudController(
   fetcher: Fetcher = fetch,
   managedConfig: Config | null = bundledFirebaseConfig()
 ) {
+  const authWrites = createSerialWriteQueue();
+  const cloudTransfers = createSerialWriteQueue();
+  let authGeneration = 0;
+  let refreshInFlight: { generation: number; promise: Promise<Session> } | null = null;
+  const checkAuthGeneration = (generation: number): void => {
+    if (generation !== authGeneration) throw new CloudOperationError('auth', 'LunaTOC 登录状态已变化，旧操作已取消');
+  };
+  const commitAuth = <T>(generation: number, write: () => Promise<T>): Promise<T> => authWrites.run(async () => {
+    checkAuthGeneration(generation);
+    const value = await write();
+    checkAuthGeneration(generation);
+    return value;
+  });
+  async function signOut(): Promise<void> {
+    const generation = ++authGeneration;
+    await commitAuth(generation, async () => {
+      await local.set({ [CLOUD_AUTO_SYNC_KEY]: false });
+      await sessionStorage.remove(SESSION_KEY);
+    });
+  }
   // Older builds accidentally stored the Firebase ID and refresh tokens in
   // chrome.storage.local. Do not migrate those tokens into the new session:
   // remove them and require a fresh login after a browser restart.
@@ -189,7 +213,7 @@ export function createCloudController(
     try {
       const deadline = new Promise<never>((_resolve, reject) => {
         timeoutId = setTimeout(() => {
-          reject(new Error('Firebase 网络请求超时（20 秒），本轮操作已停止；请检查网络后重试'));
+          reject(new CloudOperationError('timeout', 'Firebase 网络请求超时（20 秒），本轮操作已停止；请检查网络后重试'));
           controller.abort();
         }, FIREBASE_REQUEST_TIMEOUT_MS);
       });
@@ -222,7 +246,7 @@ export function createCloudController(
           // If permissions cannot be inspected, retain the original network diagnosis.
         }
       }
-      throw new Error('无法连接 Firebase（' + host +
+      throw new CloudOperationError('network', '无法连接 Firebase（' + host +
         '）：网络请求失败。请检查 Chrome 网络/代理、DNS、防火墙及拦截扩展，并确认 Firebase API 可访问；云同步未开启。');
     } finally {
       if (timeoutId !== undefined) clearTimeout(timeoutId);
@@ -277,8 +301,17 @@ export function createCloudController(
     return values[SESSION_KEY];
   }
   async function token(forceRefresh = false): Promise<Session> {
+    const generation = authGeneration;
     const existing = await session();
+    checkAuthGeneration(generation);
     if (!forceRefresh && existing.expiresAt - Date.now() > 60_000) return existing;
+    if (refreshInFlight?.generation === generation) return refreshInFlight.promise;
+    const current = { generation, promise: refreshSession(existing, generation) };
+    refreshInFlight = current;
+    try { return await current.promise; }
+    finally { if (refreshInFlight === current) refreshInFlight = null; }
+  }
+  async function refreshSession(existing: Session, generation: number): Promise<Session> {
     const cfg = await config();
     const response = await firebaseFetch('https://securetoken.googleapis.com/v1/token?key=' + encodeURIComponent(cfg.apiKey), {
       method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -294,7 +327,13 @@ export function createCloudController(
       uid: existing.uid, expiresAt: Date.now() + Number(payload.expires_in) * 1000,
       emailVerified: existing.emailVerified, email: existing.email,
     };
-    await sessionStorage.set({ [SESSION_KEY]: renewed });
+    await commitAuth(generation, async () => {
+      const latest = await session();
+      if (latest.uid !== existing.uid || latest.refreshToken !== existing.refreshToken) {
+        throw new CloudOperationError('auth', 'LunaTOC 登录会话已替换，旧令牌刷新已取消');
+      }
+      await sessionStorage.set({ [SESSION_KEY]: renewed });
+    });
     return renewed;
   }
   function emailAddress(value: unknown): string {
@@ -353,6 +392,7 @@ export function createCloudController(
     const email = emailAddress(rawEmail);
     const password = passwordValue(rawPassword);
     const cfg = await config();
+    const generation = ++authGeneration;
     const endpoint = mode === 'register' ? 'signUp' : 'signInWithPassword';
     const response = await firebaseFetch(
       'https://identitytoolkit.googleapis.com/v1/accounts:' + endpoint + '?key=' + encodeURIComponent(cfg.apiKey),
@@ -378,15 +418,18 @@ export function createCloudController(
     }
     // Reauthentication as the same Firebase UID must not interrupt an enabled sync.
     // Registration or switching Firebase UID must not inherit a different account's sync.
-    const previousAuth = await sessionStorage.get(SESSION_KEY);
-    if (mode === 'register' || !validSession(previousAuth[SESSION_KEY]) ||
-        previousAuth[SESSION_KEY].uid !== active.uid) {
-      await local.set({ [CLOUD_AUTO_SYNC_KEY]: false });
-    }
-    // Only the Firebase ID/refresh tokens are persisted. Never save the password.
-    await sessionStorage.set({ [SESSION_KEY]: active });
+    await commitAuth(generation, async () => {
+      const previousAuth = await sessionStorage.get(SESSION_KEY);
+      if (mode === 'register' || !validSession(previousAuth[SESSION_KEY]) ||
+          previousAuth[SESSION_KEY].uid !== active.uid) {
+        await local.set({ [CLOUD_AUTO_SYNC_KEY]: false });
+      }
+      checkAuthGeneration(generation);
+      await sessionStorage.set({ [SESSION_KEY]: active });
+    });
     if (mode === 'register') {
       await sendVerification(active);
+      checkAuthGeneration(generation);
       return { ok: true, uid: active.uid, email: active.email, emailVerified: false,
         message: 'LunaTOC 账号已创建。请打开 Firebase 验证邮件完成邮箱确认，再返回这里检查验证状态。' };
     }
@@ -396,10 +439,15 @@ export function createCloudController(
       message: active.emailVerified ? 'LunaTOC 账号密码登录成功' : '登录成功，但邮箱未验证。请先验证邮箱。' };
   }
   async function checkVerification(): Promise<CloudResult> {
+    const generation = authGeneration;
     const active = await token(true);
     const info = await lookupIdentity(active);
-    await sessionStorage.set({ [SESSION_KEY]: { ...active, emailVerified: info.verified,
-      email: info.email ?? active.email } });
+    await commitAuth(generation, async () => {
+      const latest = await session();
+      if (latest.uid !== active.uid) throw new CloudOperationError('auth', 'LunaTOC 登录账号已切换');
+      await sessionStorage.set({ [SESSION_KEY]: { ...latest, emailVerified: info.verified,
+        email: info.email ?? latest.email } });
+    });
     return { ok: true, uid: active.uid, email: info.email ?? active.email, emailVerified: info.verified,
       message: info.verified ? '邮箱已验证，可以开启云同步' : '邮箱尚未验证，请先打开验证邮件完成确认' };
   }
@@ -662,6 +710,7 @@ export function createCloudController(
   }
 
   async function syncAccount(ownerId: string): Promise<CloudResult> {
+    const generation = authGeneration;
     if (!isValidAccountOwnerId(ownerId) || !(await verifyOwner(ownerId))) {
       throw new Error('未找到该账号的已验证 ChatGPT 页面；请登录对应账号并保持页面打开');
     }
@@ -684,16 +733,18 @@ export function createCloudController(
     const commitUrl = 'https://firestore.googleapis.com/v1/' + documentsRoot + ':commit';
     const authHeaders = { Authorization: 'Bearer ' + user.idToken };
 
-    return queue.run(async () => {
+    return cloudTransfers.run(async () => {
+      checkAuthGeneration(generation);
       if (!(await verifyOwner(ownerId))) throw new Error('ChatGPT 账号验证已失效，同步已取消');
       if ((await accountBindings())[ownerId] !== user.uid) throw new Error('云账号绑定已变化，同步已取消');
-      const baselineValues = await local.get(baselineKey);
-      const base = baselineValues[baselineKey] === undefined
+      const baselineValues = await queue.run(() => local.get(baselineKey));
+      let base = baselineValues[baselineKey] === undefined
         ? emptyCloudSnapshot() : validateCloudSnapshot(baselineValues[baselineKey], ownerId);
-      const hasBaseline = baselineValues[baselineKey] !== undefined;
+      let hasBaseline = baselineValues[baselineKey] !== undefined;
 
       for (let attempt = 0; attempt < MAX_CLOUD_WRITE_ATTEMPTS; attempt += 1) {
-        const here = await currentLocal(ownerId, base);
+        checkAuthGeneration(generation);
+        const here = await queue.run(() => currentLocal(ownerId, base));
         const response = await firebaseFetch(accountUrl, { headers: authHeaders });
         let remote = emptyCloudSnapshot();
         let accountUpdateTime: string | null = null;
@@ -738,6 +789,7 @@ export function createCloudController(
         }
         if (!(await verifyOwner(ownerId))) throw new Error('ChatGPT 账号已切换，云端操作取消');
         const latestSession = await session();
+        checkAuthGeneration(generation);
         if (latestSession.uid !== user.uid) throw new Error('Firebase 登录账号已改变，同步取消');
 
         if (JSON.stringify(merged) !== JSON.stringify(remote)) {
@@ -790,6 +842,8 @@ export function createCloudController(
             updateTransforms,
             currentDocument: quota ? { updateTime: quota.updateTime } : { exists: false },
           };
+          checkAuthGeneration(generation);
+          if ((await accountBindings())[ownerId] !== user.uid) throw new Error('云账号绑定已变化，同步已取消');
           const committed = await firebaseFetch(commitUrl, {
             method: 'POST',
             headers: { ...authHeaders, 'Content-Type': 'application/json' },
@@ -797,14 +851,14 @@ export function createCloudController(
           });
           if (await isFirestorePreconditionFailure(committed)) {
             if (attempt < MAX_CLOUD_WRITE_ATTEMPTS - 1) continue;
-            throw new Error('云端数据或写入配额在同步期间被其他设备更新，已保留本地数据；请重试同步');
+            throw new CloudOperationError('precondition', '云端数据或写入配额在同步期间被其他设备更新，已保留本地数据；请重试同步');
           }
           if (committed.status === 403) {
             const detail = await committed.clone().json().catch(() => null) as
               { error?: { status?: unknown; message?: unknown } } | null;
             if (detail?.error?.status === 'PERMISSION_DENIED') {
               if (quota && Date.now() < Date.parse(quota.lastWriteAt) + CLOUD_WRITE_MIN_INTERVAL_MS) {
-                throw new Error('云同步写入过于频繁：同一 LunaTOC 云账号两次写入至少间隔 5 秒，请稍后重试');
+                throw new CloudOperationError('rate-limit', '云同步写入过于频繁：同一 LunaTOC 云账号两次写入至少间隔 5 秒，请稍后重试');
               }
               if (quota && quota.dailyWrites >= CLOUD_MAX_DAILY_WRITES_PER_USER &&
                   Date.now() < Date.parse(quota.windowStart) + CLOUD_WRITE_WINDOW_MS) {
@@ -819,15 +873,29 @@ export function createCloudController(
         if (!(await verifyOwner(ownerId)) || (await session()).uid !== user.uid) {
           throw new Error('同步期间登录账号发生变化；本地数据未覆盖，请重新核对并再次同步');
         }
-        await applySnapshot(ownerId, merged, base);
-        await local.set({ [baselineKey]: merged });
+        const changedDuringTransfer = await queue.run(async () => {
+          checkAuthGeneration(generation);
+          if ((await accountBindings())[ownerId] !== user.uid) throw new Error('云账号绑定已变化，同步已取消');
+          // Network I/O never owns the local writer queue. Rebase edits made
+          // during the transfer against the exact captured local snapshot.
+          const latest = await currentLocal(ownerId, base);
+          const target = mergeAccountSnapshots(here, latest, merged, ownerId);
+          await applySnapshot(ownerId, target, base);
+          await local.set({ [baselineKey]: merged });
+          return !storageValuesEqual(target, merged);
+        });
+        if (changedDuringTransfer) {
+          base = merged;
+          hasBaseline = true;
+          continue;
+        }
         return {
           ok: true,
           message: '同步完成：本地与 Firebase 已一致（提示词、目录别名、账号偏好）',
           uid: user.uid,
         };
       }
-      throw new Error('云端数据或写入配额在同步期间被其他设备更新，已保留本地数据；请重试同步');
+      throw new CloudOperationError('precondition', '云端数据或写入配额在同步期间被其他设备更新，已保留本地数据；请重试同步');
     });
   }
   async function execute(request: unknown): Promise<CloudResult> {
@@ -857,29 +925,29 @@ export function createCloudController(
         case 'set-auto-sync': {
           if (typeof command.enabled !== 'boolean') throw new Error('云同步开关状态无效');
           if (command.enabled) {
+            const generation = authGeneration;
             const active = await session();
             if (!active.emailVerified) throw new Error('请先验证 LunaTOC 注册邮箱');
             if (!Object.values(await accountBindings()).includes(active.uid)) {
               throw new Error('请先将当前 ChatGPT 账号明确绑定到 LunaTOC 云账号');
             }
-            await local.set({
+            await commitAuth(generation, () => local.set({
               [CLOUD_AUTO_SYNC_KEY]: true,
               [CLOUD_AUTO_SYNC_STATUS_KEY]: pendingCloudSyncStatus('自动云同步已开启，等待首次同步'),
-            });
+            }));
             return { ok: true, message: '云同步已开启；后续本地更改会自动同步', uid: active.uid, autoSyncEnabled: true };
           }
-          await local.set({ [CLOUD_AUTO_SYNC_KEY]: false });
-          await sessionStorage.remove(SESSION_KEY);
+          await signOut();
           return { ok: true, message: '云同步已关闭；本地数据保留，云端数据不会自动删除', autoSyncEnabled: false };
         }
         case 'sign-out':
-          await local.set({ [CLOUD_AUTO_SYNC_KEY]: false });
-          await sessionStorage.remove(SESSION_KEY);
+          await signOut();
           return { ok: true, message: '云同步已关闭；本地和云端数据均未删除', autoSyncEnabled: false };
         case 'bind-account':
         case 'unbind-account':
           return await changeBinding(command.ownerId as string, command.action);
         case 'status': {
+          const generation = authGeneration;
           const bindings = await accountBindings();
           const [auth, settings] = await Promise.all([
             sessionStorage.get(SESSION_KEY), local.get([CLOUD_AUTO_SYNC_KEY, CLOUD_AUTO_SYNC_STATUS_KEY]),
@@ -895,11 +963,16 @@ export function createCloudController(
                 const latest = await session();
                 if (latest.uid === user.uid) {
                   user = { ...latest, email: identity.email };
-                  await sessionStorage.set({ [SESSION_KEY]: user });
+                  const resolved = user;
+                  await commitAuth(generation, async () => {
+                    if ((await session()).uid !== resolved.uid) throw new CloudOperationError('auth', 'LunaTOC 登录账号已切换');
+                    await sessionStorage.set({ [SESSION_KEY]: resolved });
+                  });
                 }
               }
             } catch { /* Status stays available offline without the email. */ }
           }
+          if (generation !== authGeneration) user = null;
           return { ok: true, message: validSession(user) ? 'LunaTOC 云账号已登录' : 'LunaTOC 云账号未登录',
             configured: validConfig(managedConfig), autoSyncEnabled: settings[CLOUD_AUTO_SYNC_KEY] === true,
             ...(isValidAccountOwnerId(command.ownerId) && bindings[command.ownerId]
@@ -917,7 +990,8 @@ export function createCloudController(
         default: throw new Error('不支持的 Firebase 操作');
       }
     } catch (error) {
-      return { ok: false, error: error instanceof Error ? error.message : 'Firebase 操作失败' };
+      return { ok: false, error: error instanceof Error ? error.message : 'Firebase 操作失败',
+        ...(error instanceof CloudOperationError ? { code: error.code } : {}) };
     }
   }
   return { execute, initialize };

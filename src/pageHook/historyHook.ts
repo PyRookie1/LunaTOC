@@ -15,13 +15,17 @@ type RouteChangedMessageType = string;
  * Wraps `history.pushState` and `history.replaceState` so each call also posts
  * a route-changed message to the content-script world.
  */
-export function installHistoryHook(messageType: RouteChangedMessageType): void {
+export function installHistoryHook(
+  messageType: RouteChangedMessageType,
+  onRouteChanged: () => void = () => {}
+): void {
   const originalPushState = window.history.pushState;
   const originalReplaceState = window.history.replaceState;
 
   if (typeof originalPushState === 'function') {
     window.history.pushState = function (...args) {
       originalPushState.apply(this, args);
+      onRouteChanged();
       notifyRouteChanged(messageType);
     };
   }
@@ -29,6 +33,7 @@ export function installHistoryHook(messageType: RouteChangedMessageType): void {
   if (typeof originalReplaceState === 'function') {
     window.history.replaceState = function (...args) {
       originalReplaceState.apply(this, args);
+      onRouteChanged();
       notifyRouteChanged(messageType);
     };
   }

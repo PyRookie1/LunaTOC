@@ -46,12 +46,14 @@ import {
 import { cancelOutlineNavigation } from './jump/outlineNavigation';
 import { setSidebarStatus } from './ui/sidebarStatus';
 import { previewTooltip } from '@/features/tooltip';
+import { getSidebarViewMode } from '@/features/sidebar/sidebarViewState';
 import {
   TOC_REFRESH_CANCEL,
   TOC_REFRESH_REQUEST,
   TOC_REFRESH_RESULT,
   TOC_REFRESH_TIMEOUT_MS,
   TOC_EDIT_SUBMISSION,
+  TOC_CONVERSATION_CREATED,
 } from './refresh/refreshProtocol';
 import type { ConversationSnapshot } from './state/activeBranch';
 
@@ -123,6 +125,7 @@ export const navigatorController = (() => {
   });
 
   const tocListRenderer = createTocListRenderer({
+    isActive: () => getSidebarViewMode() === 'toc',
     getMessages: () => conversationStore.getMessages(),
     getActiveIndex: () => activePromptTracker.getActiveIndex(),
     onItemClick: (message, index) => {
@@ -606,6 +609,11 @@ export const navigatorController = (() => {
     // Page-authored window.postMessage messages are ignored.
     subscribeTrustedPageHookMessage((event) => {
       if (event.source !== window) return;
+      if (event.data?.type === TOC_CONVERSATION_CREATED) {
+        const { sourceRouteKey, conversationId } = event.data;
+        if (typeof sourceRouteKey === 'string' && typeof conversationId === 'string' &&
+            conversationStore.confirmNewChatRoute(sourceRouteKey, conversationId)) render({ refreshObservers: true });
+      }
       syncRouteState();
 
       if (event.data?.type === TOC_REFRESH_RESULT) {

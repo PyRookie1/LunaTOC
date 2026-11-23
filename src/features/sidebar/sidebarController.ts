@@ -10,6 +10,8 @@ import { promptContextMenuController } from '@/features/myPrompts/promptContextM
 import { previewTooltip } from '@/features/tooltip';
 import { scrollNavigatorListToEdge } from '@/features/sidebar/jumpToEdgeControls';
 import type { NavigatorMessage } from '@/features/conversationPrompts/message';
+import { setSidebarViewMode } from './sidebarViewState';
+import { cancelPromptLibraryRender } from '@/features/myPrompts/promptLibrary';
 
 type ViewMode = 'toc' | 'myPrompts';
 
@@ -40,6 +42,7 @@ export const sidebarController = (() => {
 
     previewTooltip.hide();
     viewMode = nextViewMode;
+    setSidebarViewMode(nextViewMode);
     const isMyPrompts = viewMode === 'myPrompts';
 
     button.classList.toggle('mode-myprompts-active', isMyPrompts);
@@ -52,6 +55,7 @@ export const sidebarController = (() => {
       : '切换到 Tips';
 
     if (!isMyPrompts) {
+      cancelPromptLibraryRender();
       const toolbar = document.getElementById('myprompts-toolbar-container');
       if (toolbar) toolbar.innerHTML = '';
       const list = document.getElementById('navigator-list');
