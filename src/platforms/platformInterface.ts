@@ -172,7 +172,7 @@ export interface PlatformNavigationAdapter {
   /** Return true only after the host updated its scroll controller state. */
   scrollToPosition?(container: HTMLElement, top: number): boolean;
   /** Accepted native virtual-list jumps own all scrolling until completion. */
-  navigateToMessage?(container: HTMLElement, messageId: string): {
+  navigateToMessage?(container: HTMLElement, messageId: string, edge?: 'top' | 'bottom'): {
     /** First presentation, independent of later background verification. */
     ready?: Promise<boolean>;
     finished: Promise<'found' | 'failed' | 'cancelled'>;

@@ -59,11 +59,52 @@ beforeEach(() => {
   };
 });
 afterEach(() => { lease?.dispose(); abort.abort(); vi.clearAllTimers(); vi.useRealTimers(); document.body.replaceChildren(); });
-function start() {
+function start(edge: 'top' | 'bottom' = 'top') {
   lease = createInstantMessageNavigation({ container: feed, controller, api, turnKey: 'target',
-    messageId: 'message', edge: 'top', signal: abort.signal, onReady });
+    messageId: 'message', edge, signal: abort.signal, onReady });
   return lease!.run();
 }
+
+it('keeps the final turn at the bottom when late host compensation changes total height', async () => {
+  position = range - 500;
+  const done = start('bottom');
+  expect(await done).toBe(true);
+  expect(physicalWrites).toEqual([19400]);
+  expect(api.scrollToKey).not.toHaveBeenCalled();
+  range += 4284; position += 4284;
+  controller.compensateScrollToDistanceFromBottomPx(1000, 'turn-resize');
+  expect(originalCompensate).not.toHaveBeenCalled();
+  expect(physicalWrites).toEqual([19400, 23684]);
+  expect(row.isConnected).toBe(true);
+  expect(cached).toBe(0);
+  controller.scrollToDistanceFromBottomPx(2000, 'instant', 'user');
+  expect(physicalWrites).toEqual([19400, 23684, 23684]);
+  expect(feed.scrollTop).toBe(23684);
+  window.dispatchEvent(new WheelEvent('wheel', { deltaY: -100 }));
+  controller.scrollToDistanceFromBottomPx(2000, 'instant', 'user');
+  expect(feed.scrollTop).toBe(21684);
+});
+
+it('anchors the final turn even when the host replaces its layout root', async () => {
+  position = range - 500; layout.style.height = '';
+  expect(await start('bottom')).toBe(true);
+  expect(physicalWrites).toEqual([19400]);
+  range += 500; position += 500;
+  controller.compensateScrollToDistanceFromBottomPx(200);
+  expect(originalCompensate).not.toHaveBeenCalled();
+  expect(feed.scrollTop).toBe(19900);
+});
+
+it('mounts the final turn before an anchored bottom landing', async () => {
+  position = range - 500; row.remove();
+  const done = start('bottom');
+  await Promise.resolve();
+  expect(await done).toBe(true);
+  expect(api.scrollToKey).toHaveBeenCalledOnce();
+  expect(physicalWrites).toEqual([18800, 19400]);
+  expect(cached).toBe(0);
+  expect(row.isConnected).toBe(true);
+});
 
 it('moves a mounted target synchronously with one native write and no animation or timer', async () => {
   const done = start();

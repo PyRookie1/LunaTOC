@@ -76,6 +76,57 @@ afterEach(async () => {
 });
 
 describe('semantic native message navigation', () => {
+  it('mounts the final virtual turn before committing a host-owned bottom position', async () => {
+    const navigation = navigateChatGptMessageNatively(feed, 'message-119', 'bottom')!;
+    expect(pending).toHaveLength(1);
+    expect(pending[0].key).toBe('turn-119');
+    pending[0].complete();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(await navigation.ready).toBe(true);
+    expect(feed.scrollTop).toBe(49400);
+    expect(cachedDistance).toBe(0);
+    expect(api.scrollToKey).toHaveBeenCalledOnce();
+    // The host remeasures the long thread after the final turn becomes visible.
+    Object.defineProperty(feed, 'scrollHeight', { value: 56000, configurable: true });
+    feed.scrollTop = feed.scrollHeight - feed.clientHeight - cachedDistance;
+    await vi.advanceTimersByTimeAsync(1300);
+    expect(await navigation.finished).toBe('found');
+    expect(feed.scrollTop).toBe(55400);
+    expect(api.scrollToKey).toHaveBeenCalledOnce();
+  });
+
+  it('scrolls a mounted final turn to the bottom without remounting it', async () => {
+    const row = feed.querySelector<HTMLElement>('[data-turn-key="turn-119"]')!;
+    const prompt = document.createElement('div');
+    prompt.setAttribute('data-chatgpt-search-unit-key', 'turn-119:user');
+    prompt.setAttribute('data-chatgpt-search-message-ids', 'message-119');
+    row.append(prompt);
+    feed.scrollTop = 300;
+    const navigation = navigateChatGptMessageNatively(feed, 'message-119', 'bottom')!;
+    expect(await navigation.ready).toBe(true);
+    expect(api.scrollToKey).not.toHaveBeenCalled();
+    expect(feed.scrollTop).toBe(49400);
+    await vi.advanceTimersByTimeAsync(1300);
+    expect(await navigation.finished).toBe('found');
+  });
+
+  it('lands at zero for a reverse-layout final turn', async () => {
+    feed.style.flexDirection = 'column-reverse';
+    feed.scrollTop = -1000;
+    controller.scrollToDistanceFromBottomPx = vi.fn(distance => {
+      feed.scrollTop = -distance;
+      cachedDistance = distance;
+    });
+    const navigation = navigateChatGptMessageNatively(feed, 'message-119', 'bottom')!;
+    pending[0].complete();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(await navigation.ready).toBe(true);
+    expect(Math.abs(feed.scrollTop)).toBe(0);
+    expect(cachedDistance).toBe(0);
+    await vi.advanceTimersByTimeAsync(1300);
+    expect(await navigation.finished).toBe('found');
+  });
+
   it('leaves a mounted, aligned turn and its answer untouched in the compatibility path', async () => {
     const row = document.createElement('div'); row.dataset.turnKey = 'turn-4';
     const prompt = document.createElement('div');

@@ -5,7 +5,7 @@ import type { NavigatorMessage } from '@/features/conversationPrompts/message';
 import { keepFollowing } from '../follow/follow';
 import { getActivePlatform } from '@/platforms';
 import { loadUntilMountedViaViewport } from './viewportWalker';
-import { executeAbsoluteEdgeJump } from './edgeNavigation';
+import { cancelAbsoluteEdgeJump, executeAbsoluteEdgeJump } from './edgeNavigation';
 import { findNextAssistantMessage } from './headingExtractor';
 import { NAVIGATION_HIGHLIGHT_DURATION_MS } from './highlightTiming';
 import { settleTarget } from './settleTarget';
@@ -425,6 +425,7 @@ export function jumpToPromptIndex(
  */
 function cancelActiveNavigationSearch(): void {
   navigationJumpVersion += 1;
+  cancelAbsoluteEdgeJump();
   stopActiveLanding?.();
   stopActiveLanding = null;
 }
@@ -438,9 +439,8 @@ export function cancelPromptNavigation(): void {
 /**
  * Scroll the ChatGPT chat feed to the absolute top or bottom.
  *
- * Each click re-asserts `scrollTop = -currentMaxScrollTop` against the
- * *current* scrollHeight and waits briefly for ChatGPT's lazy mount to
- * extend the window.
+ * Bottom jumps first resolve the final turn through the host virtual list;
+ * physical edge scrolling remains a fallback when that API is unavailable.
  *
  * @param edge Target edge: 'top' or 'bottom'.
  * @param behavior Optional ScrollBehavior (default 'auto').
@@ -463,6 +463,9 @@ export function jumpToAbsoluteEdge(
 
   executeAbsoluteEdgeJump(edge, {
     firstPromptId,
+    lastPromptId: edge === 'bottom'
+      ? getVirtualSearchContext().prompts.at(-1)?.id ?? null
+      : null,
     isCancelled: () => navVersionAtStart !== navigationJumpVersion,
     onFirstPromptVisible: highlightMatchedElement,
   });
