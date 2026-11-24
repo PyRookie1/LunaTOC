@@ -43,14 +43,28 @@ export async function settleNativeMessage(options: {
   let lastCompletion = started;
   let lastChange = started;
   let attempts = 0;
+  let corrections = 0;
   let previous: ReturnType<typeof measureNativeMessageLanding> | null = null;
   let previousTarget: HTMLElement | null = null;
   let notifiedReady = false;
   const jump = async (): Promise<void> => {
-    attempts++;
-    options.prepare();
-    await untilAbort(api.scrollToKey(turnKey, row => findNativeMessageTarget(row, messageId, edge),
-      { align: 'top', signal }), signal);
+    const row = api.getRowElement(turnKey);
+    const mounted = row && container.contains(row) ? findNativeMessageTarget(row, messageId, edge) : null;
+    const landing = measureNativeMessageLanding(container, mounted);
+    if (!landing.aligned && mounted && edge === 'top') {
+      // The turn is already rendered. Correct its pixels through the host
+      // controller instead of remounting the entire turn with scrollToKey.
+      const distance = getNativeMessageLandingDistanceFromBottomPx(container, mounted);
+      if (distance !== null) {
+        corrections++;
+        options.scrollToDistanceFromBottomPx(distance);
+      }
+    } else if (!landing.aligned) {
+      attempts++;
+      options.prepare();
+      await untilAbort(api.scrollToKey(turnKey, item => findNativeMessageTarget(item, messageId, edge),
+        { align: 'top', signal }), signal);
+    }
     if (signal.aborted) return;
     if (edge === 'top') {
       const row = api.getRowElement(turnKey);
@@ -90,7 +104,7 @@ export async function settleNativeMessage(options: {
     // completion. Geometry changes extend this through a separate quiet window.
     if (state.aligned && now - firstCompletion! >= 1200 && now - lastChange >= 600) return finish(true, 'aligned-and-stable');
     if (!state.aligned && now - lastChange >= 300 && now - lastCompletion >= 400) {
-      if (attempts >= 3) return finish(false, 'native-reacquire-limit');
+      if (attempts + corrections >= 3) return finish(false, 'native-reacquire-limit');
       await jump();
     }
     await tick(signal);

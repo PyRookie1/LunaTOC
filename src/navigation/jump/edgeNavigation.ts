@@ -15,6 +15,8 @@ let activeEdgeJumpVersion = 0;
 let stopActiveScrollIntentTracking: (() => void) | null = null;
 const SCROLL_KEYS = new Set(['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' ']);
 const EDGE_JUMP_HARD_CAP = 30;
+// A host that persistently rejects the bottom position must not be fought for 45s.
+const EDGE_JUMP_BOTTOM_ATTEMPTS = 3;
 const EDGE_JUMP_SETTLE_MS = 1500;
 const EDGE_JUMP_HEIGHT_GROWTH_EPSILON = 50;
 const EDGE_JUMP_BOTTOM_TOLERANCE_PX = 2;
@@ -127,7 +129,8 @@ async function retryEdgeUntilSettled(
     }
   };
 
-  for (let attempt = 0; attempt < EDGE_JUMP_HARD_CAP; attempt++) {
+  const maxAttempts = edge === 'bottom' ? EDGE_JUMP_BOTTOM_ATTEMPTS : EDGE_JUMP_HARD_CAP;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
     if (
       jumpVersion !== activeEdgeJumpVersion ||
       isCancelled?.()
@@ -143,7 +146,12 @@ async function retryEdgeUntilSettled(
       ? (isReverse ? -maxScrollTop : 0)
       : (isReverse ? 0 : maxScrollTop);
 
-    container.scrollTop = targetTop;
+    // The host virtualizer keeps its own distance-from-bottom cache. Update it
+    // through the native controller when available, so a later measurement
+    // cannot restore the old position after our DOM write.
+    if (!platform().navigation.scrollToPosition?.(container, targetTop)) {
+      container.scrollTop = targetTop;
+    }
 
     logEdgeSettle({
       attempt,

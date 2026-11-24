@@ -78,6 +78,7 @@ it('does not move or wait when the mounted message is already aligned', async ()
   feed.scrollTop = 4920; cached = range - feed.scrollTop;
   expect(await start()).toBe(true);
   expect(physicalWrites).toEqual([]); expect(vi.getTimerCount()).toBe(0);
+  expect(controller.holdViewport).not.toHaveBeenCalled();
 });
 
 it('performs one semantic mount for an absent target and presents it without a fixed stability wait', async () => {

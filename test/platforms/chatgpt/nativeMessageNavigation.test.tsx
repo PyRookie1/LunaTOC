@@ -76,6 +76,26 @@ afterEach(async () => {
 });
 
 describe('semantic native message navigation', () => {
+  it('leaves a mounted, aligned turn and its answer untouched in the compatibility path', async () => {
+    const row = document.createElement('div'); row.dataset.turnKey = 'turn-4';
+    const prompt = document.createElement('div');
+    prompt.setAttribute('data-chatgpt-search-unit-key', 'turn-4:user');
+    prompt.setAttribute('data-chatgpt-search-message-ids', 'message-4');
+    prompt.getBoundingClientRect = () => ({ top: 100, bottom: 150, height: 50 } as DOMRect);
+    const answer = document.createElement('div'); answer.textContent = 'Visible answer';
+    row.append(prompt, answer); feed.append(row);
+    feed.scrollTop = 4900;
+
+    const navigation = navigateChatGptMessageNatively(feed, 'message-4')!;
+    expect(await navigation.ready).toBe(true);
+    await vi.advanceTimersByTimeAsync(1300);
+    expect(await navigation.finished).toBe('found');
+    expect(api.scrollToKey).not.toHaveBeenCalled();
+    expect(controller.scrollToDistanceFromBottomPx).not.toHaveBeenCalled();
+    expect(controller.holdViewport).not.toHaveBeenCalled();
+    expect(answer.isConnected).toBe(true);
+  });
+
   it('presents a legacy native landing immediately without waiting for a snapshot or verification window', async () => {
     const snapshot = vi.fn(); Object.defineProperty(feed, 'startViewTransition', { value: snapshot });
     const navigation = navigateChatGptMessageNatively(feed, 'message-4')!;
@@ -203,17 +223,22 @@ describe('semantic native message navigation', () => {
     expect(feed.scrollTo).not.toHaveBeenCalled();
   });
 
-  it('reacquires a visible target whose top drifted into the preceding answer', async () => {
+  it('corrects a visible target that drifted without remounting its answer', async () => {
     const navigation = navigateChatGptMessageNatively(feed, 'message-4')!;
     pending[0].complete(); await vi.advanceTimersByTimeAsync(200);
     const prompt = feed.querySelector<HTMLElement>('[data-chatgpt-search-message-ids="message-4"]')!;
-    prompt.getBoundingClientRect = () => ({ top: 400, bottom: 450, height: 50 } as DOMRect);
+    prompt.getBoundingClientRect = () => ({
+      top: 5300 - feed.scrollTop, bottom: 5350 - feed.scrollTop, height: 50,
+    } as DOMRect);
     const completed = vi.fn(); void navigation.finished.then(completed);
     await vi.advanceTimersByTimeAsync(700);
-    expect(pending).toHaveLength(2);
+    expect(pending).toHaveLength(1);
+    expect(feed.scrollTop).toBe(5200);
     expect(completed).not.toHaveBeenCalled();
-    pending[1].complete(); await vi.advanceTimersByTimeAsync(1200);
+    await vi.advanceTimersByTimeAsync(1200);
     expect(await navigation.finished).toBe('found');
+    expect(prompt.isConnected).toBe(true);
+    expect(api.scrollToKey).toHaveBeenCalledOnce();
   });
 
   it('stops reacquisition after manual input during the measurement watch', async () => {

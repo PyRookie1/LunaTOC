@@ -36,18 +36,43 @@ export function createJumpToEdgeControls(
   cluster.prepend(topButton);
   cluster.append(bottomButton);
 
-  topButton.addEventListener('click', () =>
-    handleJumpControlClick('top', isMyPromptsView)
-  );
-  topButton.addEventListener('dblclick', () =>
-    handleJumpControlDoubleClick('top', isMyPromptsView)
-  );
-  bottomButton.addEventListener('click', () =>
-    handleJumpControlClick('bottom', isMyPromptsView)
-  );
-  bottomButton.addEventListener('dblclick', () =>
-    handleJumpControlDoubleClick('bottom', isMyPromptsView)
-  );
+  let pendingBottomClick: number | null = null;
+  const cancelPendingBottomClick = (): void => {
+    if (pendingBottomClick !== null) window.clearTimeout(pendingBottomClick);
+    pendingBottomClick = null;
+    document.removeEventListener('pointerdown', cancelOnOtherPointer, true);
+  };
+  const cancelOnOtherPointer = (event: PointerEvent): void => {
+    if (event.target !== bottomButton && !bottomButton.contains(event.target as Node)) {
+      cancelPendingBottomClick();
+    }
+  };
+
+  topButton.addEventListener('click', () => {
+    cancelPendingBottomClick();
+    handleJumpControlClick('top', isMyPromptsView);
+  });
+  topButton.addEventListener('dblclick', () => {
+    cancelPendingBottomClick();
+    handleJumpControlDoubleClick('top', isMyPromptsView);
+  });
+  bottomButton.addEventListener('click', (event) => {
+    cancelPendingBottomClick();
+    // Keyboard and synthetic activation have no double-click sequence.
+    if (event.detail === 0 || isMyPromptsView()) {
+      handleJumpControlClick('bottom', isMyPromptsView);
+    } else if (event.detail === 1) {
+      pendingBottomClick = window.setTimeout(() => {
+        cancelPendingBottomClick();
+        handleJumpControlClick('bottom', isMyPromptsView);
+      }, 300);
+      document.addEventListener('pointerdown', cancelOnOtherPointer, true);
+    }
+  });
+  bottomButton.addEventListener('dblclick', () => {
+    cancelPendingBottomClick();
+    handleJumpControlDoubleClick('bottom', isMyPromptsView);
+  });
 
   return cluster;
 }

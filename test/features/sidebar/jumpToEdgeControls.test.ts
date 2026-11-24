@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const navigatorMocks = vi.hoisted(() => ({
   jumpToAbsoluteEdge: vi.fn(),
@@ -14,6 +14,7 @@ vi.mock('@/navigation/navigatorController', () => ({
 import { createJumpToEdgeControls } from '@/features/sidebar/jumpToEdgeControls';
 
 beforeEach(() => {
+  vi.useFakeTimers();
   vi.clearAllMocks();
   document.body.innerHTML = `
     <div class="navigator-jump-controls">
@@ -22,6 +23,8 @@ beforeEach(() => {
     <div id="navigator-list"></div>
   `;
 });
+
+afterEach(() => { vi.clearAllTimers(); vi.useRealTimers(); });
 
 describe('jump-to-edge controls', () => {
   it('creates the two controls around the view-mode button', () => {
@@ -51,19 +54,39 @@ describe('jump-to-edge controls', () => {
     expect(navigatorMocks.jumpToLastPrompt).not.toHaveBeenCalled();
   });
 
-  it('delegates double-click on bottom to jumpToLastPrompt while click events invoke physical-bottom', () => {
+  it('runs only last-prompt navigation for a pointer double-click', async () => {
     createJumpToEdgeControls(() => false);
 
     const bottomBtn = document.getElementById('jump-chat-bottom-btn')!;
 
     // Browser event sequence: click -> click -> dblclick
-    bottomBtn.click();
-    bottomBtn.click();
+    bottomBtn.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
+    bottomBtn.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 2 }));
     bottomBtn.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
 
-    expect(navigatorMocks.jumpToEdge).toHaveBeenCalledTimes(2);
-    expect(navigatorMocks.jumpToEdge).toHaveBeenCalledWith('bottom');
+    await vi.advanceTimersByTimeAsync(350);
+    expect(navigatorMocks.jumpToEdge).not.toHaveBeenCalled();
     expect(navigatorMocks.jumpToLastPrompt).toHaveBeenCalledOnce();
+  });
+
+  it('runs a pointer single-click after the double-click decision window', async () => {
+    createJumpToEdgeControls(() => false);
+    document.getElementById('jump-chat-bottom-btn')?.dispatchEvent(
+      new MouseEvent('click', { bubbles: true, detail: 1 })
+    );
+    expect(navigatorMocks.jumpToEdge).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(300);
+    expect(navigatorMocks.jumpToEdge).toHaveBeenCalledExactlyOnceWith('bottom');
+  });
+
+  it('cancels a pending bottom jump when another target is chosen', async () => {
+    createJumpToEdgeControls(() => false);
+    document.getElementById('jump-chat-bottom-btn')?.dispatchEvent(
+      new MouseEvent('click', { bubbles: true, detail: 1 })
+    );
+    document.getElementById('jump-chat-top-btn')?.click();
+    await vi.advanceTimersByTimeAsync(350);
+    expect(navigatorMocks.jumpToEdge).toHaveBeenCalledExactlyOnceWith('top');
   });
 
   it('delegates double-click on top to jumpToAbsoluteEdge', () => {

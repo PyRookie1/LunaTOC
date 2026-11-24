@@ -4,6 +4,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { executeAbsoluteEdgeJump } from '@/navigation/jump/edgeNavigation';
+import { getActivePlatform } from '@/platforms';
 
 describe('edgeNavigation', () => {
   let container: HTMLElement;
@@ -30,6 +31,7 @@ describe('edgeNavigation', () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     vi.useRealTimers();
   });
 
@@ -46,6 +48,39 @@ describe('edgeNavigation', () => {
 
       executeAbsoluteEdgeJump('bottom', { container });
       expect(container.scrollTop).toBe(1200); // 2000 - 800
+    });
+
+    it('uses the host scroll controller so a delayed compensation sees the new bottom', async () => {
+      container.style.flexDirection = 'column';
+      let hostDistance = 700;
+      const native = vi.spyOn(getActivePlatform().navigation, 'scrollToPosition').mockImplementation((element, top) => {
+        element.scrollTop = top;
+        hostDistance = element.scrollHeight - element.clientHeight - top;
+        return true;
+      });
+
+      executeAbsoluteEdgeJump('bottom', { container });
+      expect(native).toHaveBeenCalledWith(container, 1200);
+      expect(hostDistance).toBe(0);
+      container.scrollTop = container.scrollHeight - container.clientHeight - hostDistance;
+      await vi.advanceTimersByTimeAsync(1600);
+      expect(container.scrollTop).toBe(1200);
+      expect(native).toHaveBeenCalledTimes(1);
+    });
+
+    it('stops correcting a host that persistently displaces the bottom', async () => {
+      container.style.flexDirection = 'column';
+      const native = vi.spyOn(getActivePlatform().navigation, 'scrollToPosition').mockImplementation((element, top) => {
+        element.scrollTop = top;
+        return true;
+      });
+      executeAbsoluteEdgeJump('bottom', { container });
+      for (let i = 0; i < 3; i++) {
+        container.scrollTop = 900;
+        await vi.advanceTimersByTimeAsync(1500);
+      }
+      await vi.advanceTimersByTimeAsync(10000);
+      expect(native).toHaveBeenCalledTimes(3);
     });
 
     it('scrolls to -maxScrollTop on column-reverse layout top jump', () => {

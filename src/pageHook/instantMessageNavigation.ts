@@ -182,8 +182,13 @@ export function createInstantMessageNavigation(options: {
         if (typeof ResizeObserver !== 'undefined') {
           resize = new ResizeObserver(refresh); resize.observe(container); resize.observe(root);
         }
-        controller.holdViewport();
-        if (live()) {
+        const mounted = live();
+        // Holding an already aligned viewport can ask the host to rebuild the
+        // turn window, briefly removing an answer that is already on screen.
+        if (!mounted || !measureNativeMessageLanding(container, mounted.target).aligned) {
+          controller.holdViewport();
+        }
+        if (mounted) {
           armed = true; refresh();
           if (!finished && !released) raf = requestAnimationFrame(awaitMounted);
         } else {
