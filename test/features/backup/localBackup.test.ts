@@ -26,6 +26,7 @@ function sample(): LocalBackup {
     format: BACKUP_FORMAT, version: BACKUP_VERSION,
     exportedAt: '2026-10-23T02:00:00.000Z',
     data: {
+      deletions: { prompts: {}, conversations: {}, aliases: {} },
       prompts: [prompt('saved')],
       promptUsage: { saved: { usageCount: 2, lastUsedAt: 3 } },
       aliases: {
@@ -87,6 +88,55 @@ function storageHarness(initial: Record<string, unknown> = {}) {
 beforeEach(() => vi.restoreAllMocks());
 
 describe('LunaTOC local backup', () => {
+  it('reads legacy v1 backups and normalizes them to the portable deletion format', () => {
+    const old = sample();
+    old.version = 1;
+    delete old.data.deletions;
+    const parsed = parseLocalBackup(JSON.stringify(old));
+    expect(parsed.version).toBe(BACKUP_VERSION);
+    expect(parsed.data.deletions).toEqual({ prompts: {}, conversations: {}, aliases: {} });
+  });
+
+  it('applies imported deletion markers to local records during merge without reviving them', async () => {
+    const box = storageHarness({ [PROMPTS]: [prompt('deleted-tip')], [ALIAS]: { ownerId: 'account-1', aliases: { 'msg-1': 'Local alias' } } });
+    const backup = sample();
+    backup.data.prompts = [];
+    backup.data.promptUsage = {};
+    backup.data.aliases = {};
+    backup.data.deletions = { prompts: { 'account-1': ['deleted-tip'] },
+      conversations: { 'conversation-123': { ownerId: 'account-1', deletedAt: 1 } }, aliases: {} };
+    await restoreLocalBackup(backup, 'merge', box.storage);
+    expect(box.state[PROMPTS]).toEqual([]);
+    expect(box.state[ALIAS]).toBeUndefined();
+    expect(box.state[PROMPT_DELETED_STORAGE_KEY]).toEqual({ 'account-1': ['deleted-tip'] });
+  });
+
+  it('rejects imported deletion ownership conflicts without modifying local data', async () => {
+    const box = storageHarness({ [PROMPTS]: [prompt('deleted-tip', 'Other', 'account-2')] });
+    const backup = sample();
+    backup.data.deletions = { prompts: { 'account-1': ['deleted-tip'] }, conversations: {}, aliases: {} };
+    const before = clone(box.state);
+    await expect(restoreLocalBackup(backup, 'merge', box.storage)).rejects.toThrow('账号');
+    expect(box.state).toEqual(before);
+  });
+
+  it('keeps permanent deletion markers whose valid route IDs collide with Object prototype names', async () => {
+    const backup = sample();
+    backup.data.deletions = { prompts: {}, conversations: Object.fromEntries([['__proto__', { ownerId: 'account-1', deletedAt: 1 }]]), aliases: {} };
+    const box = storageHarness();
+    await restoreLocalBackup(backup, 'merge', box.storage);
+    expect(box.state['lunatoc:aliases:deleted:v1:__proto__']).toEqual({ ownerId: 'account-1', deletedAt: 1 });
+  });
+
+  it('rolls back imported tombstones together with live data after a failed restore', async () => {
+    const box = storageHarness();
+    const backup = sample();
+    backup.data.deletions = { prompts: { 'account-1': ['deleted-tip'] }, conversations: {}, aliases: {} };
+    box.failSet('after');
+    await expect(restoreLocalBackup(backup, 'replace', box.storage)).rejects.toThrow('回滚');
+    expect(box.state).toEqual({});
+  });
+
   it('exports precisely the allowlisted local user data and supports round trip', async () => {
     const source = sample();
     const box = storageHarness({
@@ -107,6 +157,7 @@ describe('LunaTOC local backup', () => {
     expect(parseLocalBackup(serialized)).toEqual(backup);
     expect(summarizeLocalBackup(backup)).toEqual({
       prompts: 1, usage: 1, conversations: 1, aliases: 1, settingsAccounts: 1,
+      deletedPrompts: 0, deletedConversations: 0, deletedAliases: 0,
     });
     expect(box.set).not.toHaveBeenCalled();
     expect(box.remove).not.toHaveBeenCalled();
@@ -179,7 +230,7 @@ describe('LunaTOC local backup', () => {
   it('rejects unknown versions, invalid JSON, unknown fields and oversized input', () => {
     const saved = sample();
     expect(() => parseLocalBackup('not json')).toThrow('JSON');
-    expect(() => parseLocalBackup(JSON.stringify({ ...saved, version: 2 }))).toThrow('格式或版本');
+    expect(() => parseLocalBackup(JSON.stringify({ ...saved, version: 99 }))).toThrow('格式或版本');
     expect(() => parseLocalBackup(JSON.stringify({ ...saved, token: 'secret' }))).toThrow('不支持');
     expect(() => parseLocalBackup(' '.repeat(MAX_BACKUP_BYTES + 1))).toThrow('12 MiB');
   });

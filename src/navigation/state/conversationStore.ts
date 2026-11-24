@@ -11,6 +11,7 @@ import {
 } from '@/features/conversationPrompts/message';
 import { createNavigationSnapshotStore } from '@/navigation/jump/navigationSnapshotStore';
 import { extractActiveBranchMessages, type ConversationSnapshot } from './activeBranch';
+import { isPermanentConversationId } from '@/navigation/lifecycle/protocol';
 
 export interface ConversationStoreOptions {
   /**
@@ -54,6 +55,7 @@ export interface ConversationStore {
     routeKey?: string
   ): NewUserMessageResult;
   syncRouteState(nextRouteKey?: string): ConversationTransitionResult;
+  confirmNewChatRoute(sourceRouteKey: string, conversationId: string): boolean;
   flushPendingNewChatMessage(routeKey?: string): {
     didAppend: boolean;
     message: ChatMessage | null;
@@ -87,14 +89,16 @@ export function createConversationStore(
     createNavigationSnapshotStore<NavigatorMessage>();
 
   let conversationMessages: NavigatorMessage[] = [];
-  const accumulatedConversationMessages = new Map<
-    string,
-    Map<string, ChatMessage>
-  >();
+  interface CapturedConversation {
+    messages: Map<string, ChatMessage>;
+    verifiedAt?: number;
+    extensions: Set<string>;
+  }
+  const conversations = new Map<string, CapturedConversation>();
+  const newChatDestinations = new Map<string, string>();
   let currentConversationKey: string | null = null;
   let pendingNewChatRouteKey: string | null = null;
   let pendingNewChatMessage: ChatMessage | null = null;
-  const freshSnapshotAppliedAt = new Map<string, number>();
 
   function defaultRouteResolver(): string {
     return 'new-chat:/';
@@ -153,8 +157,7 @@ export function createConversationStore(
 
   /** Removes all cached state for a confirmed-deleted conversation. */
   function deleteConversation(routeKey: string): void {
-    accumulatedConversationMessages.delete(routeKey);
-    freshSnapshotAppliedAt.delete(routeKey);
+    conversations.delete(routeKey);
     navigationSnapshotStore.deleteConversation(routeKey);
     if (currentConversationKey === routeKey) {
       conversationMessages = [];
@@ -179,10 +182,9 @@ export function createConversationStore(
   ): boolean {
     const targetConversationKey = routeKey || getCurrentConversationKey();
     if (newMessage?.id) {
-      getAccumulatedMessageMap(targetConversationKey).set(
-        newMessage.id,
-        newMessage
-      );
+      getAccumulatedMessageMap(targetConversationKey).set(newMessage.id, {
+        ...newMessage, author: { ...newMessage.author, role: 'user' },
+      });
     }
 
     if (conversationMessages.some((message) => message.id === newMessage.id)) {
@@ -193,15 +195,20 @@ export function createConversationStore(
     return true;
   }
 
-  function getAccumulatedMessageMap(
-    conversationKey: string
-  ): Map<string, ChatMessage> {
-    let messageMap = accumulatedConversationMessages.get(conversationKey);
-    if (!messageMap) {
-      messageMap = new Map();
-      accumulatedConversationMessages.set(conversationKey, messageMap);
+  function getConversation(key: string): CapturedConversation {
+    const state = conversations.get(key) ?? { messages: new Map<string, ChatMessage>(), extensions: new Set<string>() };
+    conversations.delete(key);
+    conversations.set(key, state);
+    while (conversations.size > 8) {
+      const oldest = conversations.keys().next().value!;
+      conversations.delete(oldest);
+      navigationSnapshotStore.deleteConversation(oldest);
     }
-    return messageMap;
+    return state;
+  }
+
+  function getAccumulatedMessageMap(conversationKey: string): Map<string, ChatMessage> {
+    return getConversation(conversationKey).messages;
   }
 
   function getMessageCreateTime(message: ChatMessage): number {
@@ -212,7 +219,7 @@ export function createConversationStore(
     conversationKey: string,
     currentNode?: string | null
   ): ConversationData {
-    const messageMap = accumulatedConversationMessages.get(conversationKey);
+    const messageMap = conversations.get(conversationKey)?.messages;
     const messages = messageMap ? Array.from(messageMap.values()) : [];
     messages.sort((a, b) => getMessageCreateTime(a) - getMessageCreateTime(b));
     return { messages, current_node: currentNode };
@@ -227,7 +234,7 @@ export function createConversationStore(
     if (!Array.isArray(incomingMessages)) return conversationMessages;
 
     const conversationKey = routeKey || getCurrentConversationKey();
-    const verifiedAt = freshSnapshotAppliedAt.get(conversationKey);
+    const verifiedAt = conversations.get(conversationKey)?.verifiedAt;
     if (verifiedAt !== undefined) {
       // Normal paginated responses cannot prove the selected edit branch.
       // Never union abandoned message IDs into a branch already verified by
@@ -235,12 +242,24 @@ export function createConversationStore(
       if (typeof requestStartedAt !== 'number' || requestStartedAt <= verifiedAt) {
         return conversationMessages;
       }
-      const selected = getAccumulatedMessageMap(conversationKey);
+      const state = getConversation(conversationKey);
+      const selected = state.messages;
+      let previous: ChatMessage | undefined;
       for (const message of incomingMessages) {
+        const parent = message?.parent ?? message?.parent_id;
+        const hasParent = !!message && (Object.hasOwn(message, 'parent') || Object.hasOwn(message, 'parent_id'));
+        const connectedExtension = hasParent
+          ? typeof parent === 'string' && state.extensions.has(parent)
+          : !!previous && state.extensions.has(previous.id);
         if (message?.id && selected.has(message.id)) selected.set(message.id, message);
+        else if (message?.id && message.author?.role !== 'user' && connectedExtension) {
+          selected.set(message.id, message);
+          state.extensions.add(message.id);
+        }
+        previous = message;
       }
       // The selected map stays in verified branch order (not timestamp order).
-      conversationMessages = extractUserMessages({ messages: [...selected.values()] });
+      conversationMessages = extractUserMessages({ messages: [...selected.values()] }, true);
       cacheConversationMessages(conversationKey);
       return conversationMessages;
     }
@@ -266,13 +285,10 @@ export function createConversationStore(
     }
     // Requests begun before this authoritative snapshot must not reintroduce
     // superseded branches when their paginated responses arrive late.
-    freshSnapshotAppliedAt.delete(routeKey);
-    freshSnapshotAppliedAt.set(routeKey, Date.now());
-    if (freshSnapshotAppliedAt.size > 8) {
-      const oldest = freshSnapshotAppliedAt.keys().next().value;
-      if (oldest) freshSnapshotAppliedAt.delete(oldest);
-    }
-    const next = extractUserMessages({ messages: branch });
+    const state = getConversation(routeKey);
+    state.verifiedAt = Date.now();
+    state.extensions.clear();
+    const next = extractUserMessages({ messages: branch }, true);
     const previous = conversationMessages;
     const changed = previous.length !== next.length || previous.some((m, i) =>
       m.id !== next[i]?.id || m.text !== next[i]?.text ||
@@ -281,7 +297,7 @@ export function createConversationStore(
     );
     const map = new Map<string, ChatMessage>();
     for (const message of branch) if (message.id) map.set(message.id, message);
-    accumulatedConversationMessages.set(routeKey, map);
+    state.messages = map;
     conversationMessages = next;
     navigationSnapshotStore.replacePrompts(routeKey, next, true);
     return changed;
@@ -295,7 +311,7 @@ export function createConversationStore(
     const activeRouteKey = getCurrentConversationKey();
     const isCurrentRoute = !routeKey || targetRouteKey === activeRouteKey;
     const isMigratingNewChatMessage = Boolean(
-      routeKey && routeKey === pendingNewChatRouteKey
+      routeKey && newChatDestinations.get(routeKey) === activeRouteKey
     );
 
     if (!isCurrentRoute && !isMigratingNewChatMessage) {
@@ -303,6 +319,7 @@ export function createConversationStore(
     }
 
     const didAppend = appendNavigatorMessage(newMessage, activeRouteKey);
+    getConversation(activeRouteKey).extensions.add(newMessage.id);
 
     if (isMigratingNewChatMessage) {
       clearPendingNewChat();
@@ -365,18 +382,19 @@ export function createConversationStore(
     const previousConversationKey = currentConversationKey;
     const isNewChatRouteTransition = isNewChatRouteKey(previousConversationKey);
     const shouldPreserveMessages =
-      isNewChatRouteTransition && conversationMessages.length > 0;
+      isNewChatRouteTransition && newChatDestinations.get(previousConversationKey) === nextConversationKey &&
+      conversationMessages.length > 0;
 
     if (shouldPreserveMessages) {
       const previousAccumulated =
-        accumulatedConversationMessages.get(previousConversationKey);
+        conversations.get(previousConversationKey)?.messages;
       if (previousAccumulated && previousAccumulated.size > 0) {
         const nextAccumulated = getAccumulatedMessageMap(nextConversationKey);
         for (const [id, message] of previousAccumulated) {
           nextAccumulated.set(id, message);
         }
       }
-      accumulatedConversationMessages.delete(previousConversationKey);
+      conversations.delete(previousConversationKey);
 
       if (
         navigationSnapshotStore.copySnapshot(
@@ -387,12 +405,16 @@ export function createConversationStore(
         cacheConversationMessages(nextConversationKey);
       }
       navigationSnapshotStore.deleteConversation(previousConversationKey);
-      freshSnapshotAppliedAt.delete(previousConversationKey);
     }
 
-    if (!shouldPreserveMessages) accumulatedConversationMessages.delete(previousConversationKey);
+    // Entering a fresh composer begins a new lifetime for its temporary route.
+    if (isNewChatRouteKey(nextConversationKey) && !shouldPreserveMessages) {
+      conversations.delete(nextConversationKey);
+      navigationSnapshotStore.deleteConversation(nextConversationKey);
+      newChatDestinations.delete(nextConversationKey);
+    }
     const cachedMessages = getCachedConversationMessages(nextConversationKey);
-    if (isNewChatRouteTransition) {
+    if (shouldPreserveMessages) {
       pendingNewChatRouteKey = previousConversationKey;
     } else {
       clearPendingNewChat();
@@ -409,6 +431,27 @@ export function createConversationStore(
       cachedMessages,
       isComplete: navigationSnapshotStore.isComplete(nextConversationKey),
     };
+  }
+
+  /** Only a response from the matching send stream may bind a temporary route. */
+  function confirmNewChatRoute(sourceRouteKey: string, conversationId: string): boolean {
+    if (!isNewChatRouteKey(sourceRouteKey) || !isPermanentConversationId(conversationId)) return false;
+    newChatDestinations.set(sourceRouteKey, conversationId);
+    if (newChatDestinations.size > 8) newChatDestinations.delete(newChatDestinations.keys().next().value!);
+    const source = conversations.get(sourceRouteKey);
+    if (!source) return false;
+    const target = getConversation(conversationId);
+    for (const [id, message] of source.messages) if (!target.messages.has(id)) target.messages.set(id, message);
+    for (const id of source.extensions) target.extensions.add(id);
+    const next = extractUserMessages({ messages: [...target.messages.values()] }, true);
+    navigationSnapshotStore.replacePrompts(conversationId, next, navigationSnapshotStore.isComplete(sourceRouteKey));
+    if (getCurrentConversationKey() !== conversationId) return false;
+    conversationMessages = next;
+    conversations.delete(sourceRouteKey);
+    navigationSnapshotStore.deleteConversation(sourceRouteKey);
+    pendingNewChatRouteKey = sourceRouteKey;
+    pendingNewChatMessage = null;
+    return true;
   }
 
   function resetForCurrentRoute(
@@ -432,8 +475,8 @@ export function createConversationStore(
 
   function reset(): void {
     conversationMessages = [];
-    accumulatedConversationMessages.clear();
-    freshSnapshotAppliedAt.clear();
+    conversations.clear();
+    newChatDestinations.clear();
     navigationSnapshotStore.clear();
     currentConversationKey = null;
     clearPendingNewChat();
@@ -450,6 +493,7 @@ export function createConversationStore(
     handleConversationData,
     handleNewUserMessage,
     syncRouteState,
+    confirmNewChatRoute,
     flushPendingNewChatMessage,
     clearPendingNewChat,
     getCachedConversationMessages,

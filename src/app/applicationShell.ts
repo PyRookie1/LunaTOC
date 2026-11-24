@@ -7,11 +7,10 @@ import { myPrompts } from '@/features/myPrompts/myPrompts';
 import { initializeSidebarVisibility, setSidebarLayoutMode } from '@/features/sidebarVisibility';
 import { initializeChatGptSideBySide, setChatGptSideBySideEnabled, syncChatGptSideBySide } from '@/features/sidebar/chatGptSideBySide';
 import { initializeJumpControlsPosition } from '@/features/sidebar/jumpControlsPosition';
-import { DEFAULT_SIDEBAR_PREFERENCES, readSidebarPreferences, sidebarAppearance, subscribeSidebarPreferences, type SidebarPreferences } from '@/features/sidebar/sidebarPreferences';
+import { DEFAULT_SIDEBAR_PREFERENCES, sidebarAppearance, subscribeSidebarPreferences, type SidebarPreferences } from '@/features/sidebar/sidebarPreferences';
 import { createSidebarToggleButton } from '@/features/SidebarToggleButton';
 import { buttonTooltip, previewTooltip } from '@/features/tooltip';
 import {
-  readThemeSettings,
   subscribeThemeSettings,
   type ThemeSettings,
 } from '@/features/theme/themeSettings';
@@ -185,7 +184,6 @@ function initTheme(): void {
     setLunaTocTheme(settings.manualTheme);
     applySidebarAppearance();
   };
-  void readThemeSettings().then(applySettings).catch(() => undefined);
   subscribeThemeSettings(applySettings);
 }
 
@@ -248,9 +246,6 @@ export async function initializeApplication(): Promise<void> {
     applySidebarAppearance();
   };
   applySidebarAppearance();
-  void readSidebarPreferences().then(applyPreferences).catch(() => {
-    applyPreferences(DEFAULT_SIDEBAR_PREFERENCES);
-  });
   subscribeSidebarPreferences(applyPreferences);
   previewTooltip.init({ anchorSelector: '#navigator-list' });
   buttonTooltip.init();

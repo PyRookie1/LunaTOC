@@ -8,6 +8,7 @@ on:
       - 'rebuild/**'
       - 'phase/**'
       - 'feature/**'
+      - 'fix/**'
   pull_request:
     branches:
       - main
@@ -151,7 +152,7 @@ jobs:
         run: npm run test:browser
 
       - name: Check dependency advisories
-        run: npm audit --audit-level=high
+        run: npm audit --audit-level=moderate
 
       - name: Upload verified extension package
         uses: actions/upload-artifact@v7
@@ -188,7 +189,7 @@ jobs:
       - name: Install locked Firebase emulator test tooling
         run: npm --prefix test/firebase ci --no-audit --no-fund
       - name: Audit Firebase test dependency tree
-        run: npm --prefix test/firebase audit --audit-level=high
+        run: npm --prefix test/firebase audit --audit-level=moderate
       - name: Execute actual firestore.rules with two simulated Firebase UIDs
         run: test/firebase/node_modules/.bin/firebase emulators:exec --only auth,firestore --project demo-lunatoc-ci "node --test --test-concurrency=1 test/firebase/auth-emulator.test.mjs test/firebase/firestore.rules.test.mjs test/firebase/firestore-reset-emulator.test.mjs"
 

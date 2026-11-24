@@ -4,11 +4,15 @@
   "type": "module",
   "description": "Isolated CI-only Firebase Emulator and deployed-rule tests",
   "dependencies": {
-    "firebase": "12.19.0",
     "@firebase/rules-unit-testing": "5.0.2",
-    "firebase-tools": "15.34.2"
+    "firebase": "12.19.0",
+    "firebase-tools": "15.37.0"
   },
   "overrides": {
-    "@grpc/grpc-js": "1.13.7"
+    "@grpc/grpc-js": "1.13.7",
+    "@opentelemetry/core": "2.8.0",
+    "glob": "14.0.6",
+    "minimatch": "11.0.9",
+    "uuid": "11.1.1"
   }
 }

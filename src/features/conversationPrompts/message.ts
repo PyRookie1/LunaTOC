@@ -182,7 +182,8 @@ export function createNavigatorMessage(message: ChatMessage): NavigatorMessage {
  * @returns {Object[]}
  */
 export function extractUserMessages(
-  data: ConversationData | null | undefined
+  data: ConversationData | null | undefined,
+  branchVerified = false
 ): NavigatorMessage[] {
   const orderedMessages = data?.messages ?? [];
   const messages: NavigatorMessage[] = [];
@@ -207,7 +208,9 @@ export function extractUserMessages(
     if (!role) return;
 
     if (role === 'user') {
-      // Consecutive user versions represent one turn; keep the latest.
+      const parent = message.parent ?? message.parent_id;
+      if (branchVerified || (pendingUserMessage && parent === pendingUserMessage.id)) flushPendingUserMessage();
+      // Unverified legacy pages may still contain consecutive alternative versions.
       pendingUserMessage = message;
       return;
     }

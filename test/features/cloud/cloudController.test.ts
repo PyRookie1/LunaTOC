@@ -151,9 +151,9 @@ const initialLocal = () => ({ [PROMPT_STORAGE_KEY]: [item],
   'lunatoc:promptUsage:v1': { 'tip-a': { usageCount: 5, lastUsedAt: 10 } },
 });
 async function ready(local: ReturnType<typeof storage>, cloud: ReturnType<typeof firebaseHarness>,
-  verified = async () => true) {
+  verified = async () => true, queue = createSerialWriteQueue()) {
   const sessions = storage();
-  const service = createCloudController(local.api, sessions.api, createSerialWriteQueue(),
+  const service = createCloudController(local.api, sessions.api, queue,
     verified, cloud.fetcher as unknown as typeof fetch,
     { apiKey: 'AIzaSy-Test-api-key-public', projectId: 'lunatoc-demo', authDomain: 'lunatoc-demo.firebaseapp.com' });
   expect(await service.execute(request('status'))).toMatchObject({ ok: true, configured: true });
@@ -166,6 +166,34 @@ async function ready(local: ReturnType<typeof storage>, cloud: ReturnType<typeof
   return { service, sessions };
 }
 describe('Firebase REST account sync', () => {
+  it('allows local prompt writes during network waits and rebases them before acknowledging sync', async () => {
+    const local = storage(initialLocal()), remote = firebaseHarness(), queue = createSerialWriteQueue();
+    const { service } = await ready(local, remote, async () => true, queue);
+    const previous = remote.fetcher.getMockImplementation()!;
+    let release!: () => void, entered!: () => void;
+    const networkEntered = new Promise<void>(resolve => { entered = resolve; });
+    let block = true;
+    remote.fetcher.mockImplementation(async (url, options) => {
+      if (block && String(url).includes('/accounts/') && !options?.method) {
+        block = false;
+        entered();
+        await new Promise<void>(resolve => { release = resolve; });
+      }
+      return previous(url, options);
+    });
+    const pending = service.execute(request('sync', { ownerId: owner }));
+    await networkEntered;
+    const added = { ...item, id: 'during-network', title: 'Local edit' };
+    const writer = createPromptWriteCoordinator(local.api, queue);
+    try {
+      await expect(writer.commit({ type: PROMPT_COMMIT_TYPE, action: 'replace-account', ownerId: owner,
+        expected: [item], next: [item, added] })).resolves.toEqual({ ok: true });
+    } finally { release(); }
+    expect(await pending).toMatchObject({ ok: true });
+    expect((local.state[PROMPT_STORAGE_KEY] as typeof item[]).map(p => p.id).sort()).toEqual(['during-network', 'tip-a']);
+    const snapshot = [...remote.documents.values()].find(value => value.snapshot)?.snapshot as { prompts: typeof item[] };
+    expect(snapshot.prompts.map(p => p.id).sort()).toEqual(['during-network', 'tip-a']);
+  });
   it('fails a hung fetch after the deadline, aborts it and allows another attempt', async () => {
     const local = storage(initialLocal()), sessions = storage(), cloud = firebaseHarness();
     let signal: AbortSignal | undefined;

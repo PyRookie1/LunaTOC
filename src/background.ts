@@ -325,7 +325,7 @@ async function runAutomaticSync(force = false): Promise<void> {
         });
         if (!result.ok) {
           errors.push(result.error);
-          transientFailure ||= isTransientCloudError(result.error);
+          transientFailure ||= isTransientCloudError(result.error, result.code);
           console.warn('LunaTOC automatic cloud sync skipped:', result.error);
         }
       }

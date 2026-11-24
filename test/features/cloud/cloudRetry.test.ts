@@ -4,6 +4,12 @@ import {
 } from '@/features/cloud/cloudRetry';
 
 describe('MV3 automatic cloud-sync recovery policy', () => {
+  it('uses structured failure codes independently of display text', () => {
+    expect(isTransientCloudError('显示文案已修改', 'network')).toBe(true);
+    expect(isTransientCloudError('显示文案已修改', 'precondition')).toBe(true);
+    expect(isTransientCloudError('network', 'auth')).toBe(false);
+    expect(isTransientCloudError('timeout', 'quota')).toBe(false);
+  });
   it('uses bounded exponential backoff after network failures', () => {
     expect([0, 1, 2, 3, 4, 5, 6, 12].map(cloudRetryDelayMs))
       .toEqual([60_000, 120_000, 240_000, 480_000, 960_000, 1_920_000, 3_600_000, 3_600_000]);

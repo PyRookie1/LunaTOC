@@ -3,6 +3,7 @@
  * sent by the extension background after Chrome observes a successful mutation.
  */
 import { CHATGPT_MESSAGE_TYPES } from '@/platforms/chatgpt/messages';
+import { subscribeTrustedPageHookMessage } from '@/navigation/pageHookMessageTransport';
 import { TOC_TRUSTED_CONVERSATION_DELETED, isPermanentConversationId } from './protocol';
 import { getActiveConversationOwner, setActiveConversationOwner } from './conversationOwner';
 import { SETTINGS_COMMIT_TYPE } from '@/features/storage/settingsWriteCoordinator';
@@ -212,7 +213,7 @@ export function initializeConversationLifecycle(): void {
   check(true);
   window.addEventListener('focus', () => check());
   window.addEventListener('popstate', () => check());
-  window.addEventListener('message', (event: MessageEvent) => {
+  subscribeTrustedPageHookMessage((event: MessageEvent) => {
     if (event.source !== window || event.origin !== location.origin) return;
     const data = event.data as { type?: unknown } | null;
     if (data?.type === CHATGPT_MESSAGE_TYPES.routeChanged) check();

@@ -60,11 +60,13 @@ import { installChatGptNativeScrollBridge } from './nativeScrollBridge';
   installContractAlerts({ originalFetch });
   const observeRefreshHeaders = installConversationRefresh(originalFetch, platform);
   installConversationLifecycle(originalFetch);
-  installHistoryHook(platform.pageHook.messages.routeChanged);
-  // Back/forward navigation bypasses history.pushState/replaceState wrappers.
-  window.addEventListener('popstate', () => {
+  const onRouteChanged = (): void => {
     cancelBackfillsExcept(platform.routing.getCurrentRouteKey());
-  });
+    resetContractMismatchCounters();
+  };
+  installHistoryHook(platform.pageHook.messages.routeChanged, onRouteChanged);
+  // Back/forward navigation bypasses history.pushState/replaceState wrappers.
+  window.addEventListener('popstate', onRouteChanged);
   installTitleObserver(platform.pageHook.messages.titleChanged);
 
   window.addEventListener('message', (event: MessageEvent): void => {
@@ -74,11 +76,6 @@ import { installChatGptNativeScrollBridge } from './nativeScrollBridge';
       showCompatibilityAlert?: unknown;
       contractValues?: Record<string, unknown>;
     } | null;
-    if (data?.type === platform.pageHook.messages.routeChanged) {
-      cancelBackfillsExcept(platform.routing.getCurrentRouteKey());
-      resetContractMismatchCounters();
-      return;
-    }
     if (data?.type === PAGE_HOOK_HEALTH_PING) {
       window.postMessage({ type: PAGE_HOOK_HEALTH_PONG }, location.origin);
       return;

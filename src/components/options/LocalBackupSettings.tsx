@@ -113,6 +113,7 @@ export function LocalBackupSettings(): React.JSX.Element {
               <p><strong>导出时间：</strong>{preview.exportedAt}</p>
               <p>提示词 {summary.prompts} 条，使用统计 {summary.usage} 条，目录别名 {summary.aliases} 条（{summary.conversations} 个会话）。</p>
               <p>包含 {summary.settingsAccounts} 个账号的主题与侧边栏偏好。</p>
+              <p>删除标记：提示词 {summary.deletedPrompts} 条，会话 {summary.deletedConversations} 条，目录别名 {summary.deletedAliases} 条。恢复时会保留这些删除状态。</p>
               {Object.values(preview.data.settings)[0] && (
                 <p>示例偏好：主题 {Object.values(preview.data.settings)[0].theme.followChatGPT ? '跟随 ChatGPT' : Object.values(preview.data.settings)[0].theme.manualTheme === 'dark' ? '深色' : '浅色'}；布局 {Object.values(preview.data.settings)[0].sidebar.layoutMode === 'overlay' ? '浮层' : '并排'}。</p>
               )}

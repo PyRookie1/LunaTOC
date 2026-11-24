@@ -14,7 +14,7 @@ import {
   ACCOUNT_SETTINGS_KEY, readStoredAccountSettings, resolveAccountSettingsOwner,
   isValidAccountOwnerId,
 } from '@/features/storage/accountSettings';
-import { getActiveConversationOwner, subscribeActiveConversationOwner } from '@/navigation/lifecycle/conversationOwner';
+import { subscribeAccountPreference } from '@/features/storage/accountPreferenceSubscription';
 
 /** Shared storage key for account-scoped sidebar preferences. */
 export const SIDEBAR_SETTINGS_KEY = ACCOUNT_SETTINGS_KEY;
@@ -91,48 +91,11 @@ export function subscribeSidebarPreferences(
   listener: (settings: SidebarPreferences) => void,
   ownerId?: string
 ): () => void {
-  let resolvedOwner = ownerId ?? getActiveConversationOwner();
-  let active = true;
-  const publish = (mapValue: unknown, requestedOwner: string | null | undefined): void => {
-    if (!active) return;
-    const owner = ownerId ?? requestedOwner ?? resolvedOwner;
-    if (!owner || !mapValue || typeof mapValue !== 'object' || Array.isArray(mapValue)) return;
-    const map = mapValue as Record<string, unknown>;
-    const record = Object.hasOwn(map, owner) ? map[owner] : null;
+  return subscribeAccountPreference(listener, readSidebarPreferences, (record) => {
     const raw = record && typeof record === 'object' && !Array.isArray(record)
       ? (record as Record<string, unknown>).sidebar : undefined;
-    listener(normalizeSidebarPreferences(raw));
-  };
-  const onChange = (
-    changes: Record<string, chrome.storage.StorageChange>,
-    areaName: string
-  ): void => {
-    if (areaName === 'local' && changes[ACCOUNT_SETTINGS_KEY]) {
-      publish(changes[ACCOUNT_SETTINGS_KEY].newValue, getActiveConversationOwner());
-    }
-  };
-  chrome.storage.onChanged.addListener(onChange);
-  const unsubscribeOwner = ownerId ? () => {} : subscribeActiveConversationOwner(() => {
-    const nextOwner = getActiveConversationOwner();
-    resolvedOwner = nextOwner;
-    if (nextOwner) void readSidebarPreferences(nextOwner).then((settings) => {
-      if (active) listener(settings);
-    }).catch(() => undefined);
-    else if (active) listener({ ...DEFAULT_SIDEBAR_PREFERENCES });
-  });
-  if (!resolvedOwner && !ownerId) {
-    void resolveAccountSettingsOwner().then((owner) => {
-      resolvedOwner = owner;
-      if (owner) void readSidebarPreferences(owner).then((settings) => {
-        if (active) listener(settings);
-      }).catch(() => undefined);
-    });
-  }
-  return () => {
-    active = false;
-    chrome.storage.onChanged.removeListener(onChange);
-    unsubscribeOwner();
-  };
+    return normalizeSidebarPreferences(raw);
+  }, () => ({ ...DEFAULT_SIDEBAR_PREFERENCES }), ownerId);
 }
 
 function hexRgb(hex: string): [number, number, number] {

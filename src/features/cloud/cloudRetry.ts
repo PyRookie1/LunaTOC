@@ -27,6 +27,8 @@ export function parseCloudRetryState(value: unknown): CloudRetryState | null {
 }
 
 /** Authentication, validation and data conflicts require intervention, not infinite retry. */
-export function isTransientCloudError(message: string): boolean {
-  return /network|failed to fetch|fetch failed|offline|超时|timed? ?out|timeout|云端数据在同步期间被其他设备更新|ECONN|ENOTFOUND|EAI_AGAIN|UNAVAILABLE|DEADLINE_EXCEEDED|RESOURCE_EXHAUSTED|TOO_MANY_REQUESTS|HTTP\s*(?:408|429|5\d\d)\b/i.test(message);
+export function isTransientCloudError(message: string, code?: import('./cloudErrors').CloudErrorCode): boolean {
+  if (code) return ['network', 'timeout', 'precondition', 'rate-limit'].includes(code);
+  // Retain compatibility with persisted errors and older worker responses.
+  return /network|网络请求失败|failed to fetch|fetch failed|offline|超时|timed? ?out|timeout|云端数据(?:或写入配额)?在同步期间被其他设备更新|ECONN|ENOTFOUND|EAI_AGAIN|UNAVAILABLE|DEADLINE_EXCEEDED|RESOURCE_EXHAUSTED|TOO_MANY_REQUESTS|HTTP\s*(?:408|429|5\d\d)\b/i.test(message);
 }
