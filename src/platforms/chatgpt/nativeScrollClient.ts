@@ -41,7 +41,7 @@ export function scrollChatGptNatively(container: HTMLElement, top: number): bool
 }
 
 /** Resolve native readiness immediately; page-owned compensation may retain an anchor afterwards. */
-export const navigateChatGptMessageNatively: NonNullable<PlatformNavigationAdapter['navigateToMessage']> = (container, messageId) => {
+export const navigateChatGptMessageNatively: NonNullable<PlatformNavigationAdapter['navigateToMessage']> = (container, messageId, edge = 'top') => {
   if (!container.isConnected) return null;
   const requestId = `luna-scroll-${++requestSequence}`;
   let accepted = false;
@@ -103,9 +103,13 @@ export const navigateChatGptMessageNatively: NonNullable<PlatformNavigationAdapt
       verification = window.setTimeout(() => {
         const target = Array.from(container.querySelectorAll<HTMLElement>('[data-chatgpt-search-unit-key$=":user"]'))
           .find(element => element.getAttribute('data-chatgpt-search-message-ids')?.split(/\s+/).includes(messageId));
-        const landing = measureNativeMessageLanding(container, target ?? null);
+        const range = Math.max(0, container.scrollHeight - container.clientHeight);
+        const bottomTop = getComputedStyle(container).flexDirection === 'column-reverse' ? 0 : range;
+        const landed = edge === 'bottom'
+          ? Boolean(target && Math.abs(container.scrollTop - bottomTop) <= 2)
+          : measureNativeMessageLanding(container, target ?? null).aligned;
 
-        finish(landing.aligned ? 'found' : 'failed');
+        finish(landed ? 'found' : 'failed');
       }, 0);
     } catch { /* Ignore malformed page events. */ }
   };
@@ -125,7 +129,7 @@ export const navigateChatGptMessageNatively: NonNullable<PlatformNavigationAdapt
   container.addEventListener(NATIVE_NAVIGATION_PROGRESS, progress);
   container.dispatchEvent(new CustomEvent(NATIVE_SCROLL_REQUEST, {
     bubbles: true, composed: true,
-    detail: JSON.stringify({ requestId, operation: 'navigate', messageId, edge: 'top' }),
+    detail: JSON.stringify({ requestId, operation: 'navigate', messageId, edge }),
   }));
   container.removeEventListener(NATIVE_SCROLL_RESPONSE, acknowledge);
 

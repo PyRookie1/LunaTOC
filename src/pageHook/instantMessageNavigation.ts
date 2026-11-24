@@ -31,12 +31,12 @@ export function createInstantMessageNavigation(options: {
   const controller = options.controller as CompensatingController;
   const compensation = Object.getOwnPropertyDescriptor(controller, 'compensateScrollToDistanceFromBottomPx');
   const scroll = Object.getOwnPropertyDescriptor(controller, 'scrollToDistanceFromBottomPx');
-  if (edge !== 'top' || !container.isConnected || controller.getScrollElement() !== container ||
+  if (!container.isConnected || controller.getScrollElement() !== container ||
       getComputedStyle(container).flexDirection === 'column-reverse' ||
       typeof compensation?.value !== 'function' || !compensation.configurable ||
       typeof scroll?.value !== 'function' || !scroll.configurable) return null;
   const root = findLayoutRoot(container, api);
-  if (!root) return null;
+  if (edge === 'top' && !root) return null;
 
   let task: Promise<boolean> | null = null;
   let release = (): void => {};
@@ -94,7 +94,11 @@ export function createInstantMessageNavigation(options: {
         return row && target?.isConnected ? { row, target } : null;
       };
       const destination = (): number | null => {
-        if (!container.isConnected || !root.isConnected || controller.getScrollElement() !== container) return null;
+        if (!container.isConnected || controller.getScrollElement() !== container) return null;
+        // The final turn is mounted before arming the lease. Preserve the
+        // host's bottom distance through delayed virtual-list measurements.
+        if (edge === 'bottom') return 0;
+        if (!root?.isConnected) return null;
         const feed = container.getBoundingClientRect();
         const scale = container.offsetHeight > 0 ? feed.height / container.offsetHeight : 1;
         if (!Number.isFinite(scale) || scale <= 0 || container.clientHeight <= 0) return null;
@@ -140,6 +144,13 @@ export function createInstantMessageNavigation(options: {
       }
       function scrollTo(this: CompensatingController, ...args: Parameters<ThreadScrollController['scrollToDistanceFromBottomPx']>): void {
         const mounting = nativePending && !released;
+        if (edge === 'bottom' && !writing && !nativePending && !released) {
+          // A late host follow/measurement write may still carry the previous
+          // reading distance. Keep the bottom lease until explicit user input.
+          try {
+            if (destination() === 0) { write(0); return; }
+          } catch { /* The original host method takes over below. */ }
+        }
         if (!writing && !nativePending) releaseLease();
         nativeScroll.apply(this, args);
         if (mounting) {
@@ -158,7 +169,11 @@ export function createInstantMessageNavigation(options: {
             write(distance);
           }
           const current = live();
-          if (!finished && !nativePending && measureNativeMessageLanding(container, current?.target ?? null).aligned) {
+          const aligned = edge === 'bottom'
+            ? Boolean(current && Math.abs(container.scrollTop -
+                Math.max(0, container.scrollHeight - container.clientHeight)) <= 2)
+            : measureNativeMessageLanding(container, current?.target ?? null).aligned;
+          if (!finished && !nativePending && aligned) {
             options.onReady();
             finish(true);
           }
@@ -180,10 +195,20 @@ export function createInstantMessageNavigation(options: {
         mutations = new MutationObserver(refresh);
         mutations.observe(container, { childList: true, subtree: true, attributes: true, attributeFilter: ['style'] });
         if (typeof ResizeObserver !== 'undefined') {
-          resize = new ResizeObserver(refresh); resize.observe(container); resize.observe(root);
+          resize = new ResizeObserver(refresh); resize.observe(container);
+          if (root) resize.observe(root);
         }
-        controller.holdViewport();
-        if (live()) {
+        const mounted = live();
+        // Holding an already aligned viewport can ask the host to rebuild the
+        // turn window, briefly removing an answer that is already on screen.
+        const alreadyAligned = edge === 'bottom'
+          ? Boolean(mounted && Math.abs(container.scrollTop -
+              Math.max(0, container.scrollHeight - container.clientHeight)) <= 2)
+          : Boolean(mounted && measureNativeMessageLanding(container, mounted.target).aligned);
+        if (!alreadyAligned) {
+          controller.holdViewport();
+        }
+        if (mounted) {
           armed = true; refresh();
           if (!finished && !released) raf = requestAnimationFrame(awaitMounted);
         } else {

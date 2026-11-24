@@ -3,7 +3,8 @@
  * Tests edgeNavigation functionality including column-reverse edge math, top-band detection, and retry settle loops.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { executeAbsoluteEdgeJump } from '@/navigation/jump/edgeNavigation';
+import { cancelAbsoluteEdgeJump, executeAbsoluteEdgeJump } from '@/navigation/jump/edgeNavigation';
+import { getActivePlatform } from '@/platforms';
 
 describe('edgeNavigation', () => {
   let container: HTMLElement;
@@ -30,6 +31,8 @@ describe('edgeNavigation', () => {
   });
 
   afterEach(() => {
+    cancelAbsoluteEdgeJump();
+    vi.restoreAllMocks();
     vi.useRealTimers();
   });
 
@@ -46,6 +49,64 @@ describe('edgeNavigation', () => {
 
       executeAbsoluteEdgeJump('bottom', { container });
       expect(container.scrollTop).toBe(1200); // 2000 - 800
+    });
+
+    it('uses the host scroll controller so a delayed compensation sees the new bottom', async () => {
+      container.style.flexDirection = 'column';
+      let hostDistance = 700;
+      const native = vi.spyOn(getActivePlatform().navigation, 'scrollToPosition').mockImplementation((element, top) => {
+        element.scrollTop = top;
+        hostDistance = element.scrollHeight - element.clientHeight - top;
+        return true;
+      });
+
+      executeAbsoluteEdgeJump('bottom', { container });
+      expect(native).toHaveBeenCalledWith(container, 1200);
+      expect(hostDistance).toBe(0);
+      container.scrollTop = container.scrollHeight - container.clientHeight - hostDistance;
+      await vi.advanceTimersByTimeAsync(1600);
+      expect(container.scrollTop).toBe(1200);
+      expect(native).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not fight a host that displaces the physical fallback', async () => {
+      container.style.flexDirection = 'column';
+      const native = vi.spyOn(getActivePlatform().navigation, 'scrollToPosition').mockImplementation((element, top) => {
+        element.scrollTop = top;
+        return true;
+      });
+      executeAbsoluteEdgeJump('bottom', { container });
+      for (let i = 0; i < 3; i++) {
+        container.scrollTop = 900;
+        await vi.advanceTimersByTimeAsync(1500);
+      }
+      await vi.advanceTimersByTimeAsync(10000);
+      expect(native).toHaveBeenCalledTimes(1);
+      expect(container.scrollTop).toBe(900);
+    });
+
+    it('navigates to the final turn before scrolling to the actual bottom', async () => {
+      const cancel = vi.fn();
+      let finish!: (value: 'found') => void;
+      const native = vi.spyOn(getActivePlatform().navigation, 'navigateToMessage').mockReturnValue({
+        cancel, finished: new Promise(resolve => { finish = resolve; }),
+      });
+      const physical = vi.spyOn(getActivePlatform().navigation, 'scrollToPosition');
+      executeAbsoluteEdgeJump('bottom', { container, lastPromptId: 'last-user-message' });
+      expect(native).toHaveBeenCalledExactlyOnceWith(container, 'last-user-message', 'bottom');
+      expect(container.scrollTop).toBe(500);
+      expect(physical).not.toHaveBeenCalled();
+      finish('found'); await Promise.resolve();
+    });
+
+    it('cancels the final-turn request when another navigation begins', () => {
+      const cancel = vi.fn();
+      vi.spyOn(getActivePlatform().navigation, 'navigateToMessage').mockReturnValue({
+        cancel, finished: new Promise(() => {}),
+      });
+      executeAbsoluteEdgeJump('bottom', { container, lastPromptId: 'last-user-message' });
+      cancelAbsoluteEdgeJump();
+      expect(cancel).toHaveBeenCalledOnce();
     });
 
     it('scrolls to -maxScrollTop on column-reverse layout top jump', () => {
@@ -157,7 +218,7 @@ describe('edgeNavigation', () => {
       expect(container.scrollTop).toBe(0);
     });
 
-    it('re-asserts bottom target on subsequent attempt when displaced during settle delay in column-reverse layout', async () => {
+    it('does not repeatedly pull back a displaced bottom in column-reverse layout', async () => {
       container.style.flexDirection = 'column-reverse';
 
       executeAbsoluteEdgeJump('bottom', { container });
@@ -166,13 +227,10 @@ describe('edgeNavigation', () => {
       // Virtualizer or scroll-anchoring shifts scrollTop away from 0 during settle
       container.scrollTop = -300;
 
-      // First settle delay completes (attempt 0). Loop notices displacement and re-asserts 0 on attempt 1.
       await vi.advanceTimersByTimeAsync(1600);
-      expect(container.scrollTop).toBe(0);
-
-      // Second settle completes while container remains at 0
+      expect(container.scrollTop).toBe(-300);
       await vi.advanceTimersByTimeAsync(1600);
-      expect(container.scrollTop).toBe(0);
+      expect(container.scrollTop).toBe(-300);
     });
 
 
@@ -224,14 +282,14 @@ describe('edgeNavigation', () => {
       expect(container.scrollTop).toBe(750);
     });
 
-    it('keeps automatic correction for host scroll changes and unrelated input', async () => {
+    it('does not repeat a fallback physical write after host scroll changes', async () => {
       container.style.flexDirection = 'column';
       executeAbsoluteEdgeJump('bottom', { container });
       container.scrollTop = 900;
       container.dispatchEvent(new Event('scroll'));
       document.body.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: -100 }));
       await vi.advanceTimersByTimeAsync(1600);
-      expect(container.scrollTop).toBe(1200);
+      expect(container.scrollTop).toBe(900);
     });
 
     it('removes interruption listeners when the jump settles', async () => {
@@ -244,7 +302,7 @@ describe('edgeNavigation', () => {
       removeSpy.mockRestore();
     });
 
-    it('settles cleanly on standard layout bottom jump and re-asserts if displaced', async () => {
+    it('does not oscillate after a host displacement in standard layout', async () => {
       container.style.flexDirection = 'column';
 
       executeAbsoluteEdgeJump('bottom', { container });
@@ -253,13 +311,10 @@ describe('edgeNavigation', () => {
       // Displaced during settle delay
       container.scrollTop = 900;
 
-      // Attempt 1 re-asserts 1200
       await vi.advanceTimersByTimeAsync(1600);
-      expect(container.scrollTop).toBe(1200);
-
-      // Attempt 1 settle verified
+      expect(container.scrollTop).toBe(900);
       await vi.advanceTimersByTimeAsync(1600);
-      expect(container.scrollTop).toBe(1200);
+      expect(container.scrollTop).toBe(900);
     });
   });
 });

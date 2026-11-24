@@ -1,5 +1,5 @@
 /**
- * Handles page-edge navigation (To Top / To Bottom) with column-reverse scroll mathematics and settle verification.
+ * Handles semantic final-turn navigation and physical edge fallback.
  */
 import { getActivePlatform } from '@/platforms';
 
@@ -15,6 +15,9 @@ let activeEdgeJumpVersion = 0;
 let stopActiveScrollIntentTracking: (() => void) | null = null;
 const SCROLL_KEYS = new Set(['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' ']);
 const EDGE_JUMP_HARD_CAP = 30;
+// The fallback cannot identify a virtualized final turn; never fight its host
+// with repeated physical-bottom writes when semantic navigation is unavailable.
+const EDGE_JUMP_BOTTOM_ATTEMPTS = 1;
 const EDGE_JUMP_SETTLE_MS = 1500;
 const EDGE_JUMP_HEIGHT_GROWTH_EPSILON = 50;
 const EDGE_JUMP_BOTTOM_TOLERANCE_PX = 2;
@@ -76,8 +79,16 @@ function trackManualScrollIntent(
 interface ExecuteAbsoluteEdgeJumpOptions {
   container?: HTMLElement | null;
   firstPromptId?: string | null;
+  lastPromptId?: string | null;
   isCancelled?: () => boolean;
   onFirstPromptVisible?: (element: HTMLElement) => void;
+}
+
+/** Cancels both the semantic edge request and any physical fallback loop. */
+export function cancelAbsoluteEdgeJump(): void {
+  activeEdgeJumpVersion += 1;
+  stopActiveScrollIntentTracking?.();
+  stopActiveScrollIntentTracking = null;
 }
 
 /**
@@ -108,9 +119,8 @@ function findFirstPromptInTopBand(
 }
 
 /**
- * Iteratively re-asserts the edge scroll position while ChatGPT's mount
- * window keeps growing. Exits when the first prompt reaches the visible
- * top band, when cancelled, or once `EDGE_JUMP_HARD_CAP` retries have been exhausted.
+ * Iteratively exposes the first prompt at the top. The bottom fallback makes
+ * only one physical write because it cannot identify a virtualized final turn.
  */
 async function retryEdgeUntilSettled(
   container: HTMLElement,
@@ -127,7 +137,8 @@ async function retryEdgeUntilSettled(
     }
   };
 
-  for (let attempt = 0; attempt < EDGE_JUMP_HARD_CAP; attempt++) {
+  const maxAttempts = edge === 'bottom' ? EDGE_JUMP_BOTTOM_ATTEMPTS : EDGE_JUMP_HARD_CAP;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
     if (
       jumpVersion !== activeEdgeJumpVersion ||
       isCancelled?.()
@@ -143,7 +154,12 @@ async function retryEdgeUntilSettled(
       ? (isReverse ? -maxScrollTop : 0)
       : (isReverse ? 0 : maxScrollTop);
 
-    container.scrollTop = targetTop;
+    // The host virtualizer keeps its own distance-from-bottom cache. Update it
+    // through the native controller when available, so a later measurement
+    // cannot restore the old position after our DOM write.
+    if (!platform().navigation.scrollToPosition?.(container, targetTop)) {
+      container.scrollTop = targetTop;
+    }
 
     logEdgeSettle({
       attempt,
@@ -240,11 +256,23 @@ export function executeAbsoluteEdgeJump(
   const isReverse =
     window.getComputedStyle(container).flexDirection === 'column-reverse';
   // Replace any previous jump's event listeners before tracking this attempt.
-  stopActiveScrollIntentTracking?.();
+  cancelAbsoluteEdgeJump();
   if (edge === 'top') {
     platform().navigation.prepareForNavigation?.(container);
   }
   const jumpVersion = ++activeEdgeJumpVersion;
+  if (edge === 'bottom' && options.lastPromptId) {
+    const native = platform().navigation.navigateToMessage?.(container, options.lastPromptId, 'bottom');
+    if (native) {
+      stopActiveScrollIntentTracking = native.cancel;
+      void native.finished.finally(() => {
+        if (jumpVersion === activeEdgeJumpVersion && stopActiveScrollIntentTracking === native.cancel) {
+          stopActiveScrollIntentTracking = null;
+        }
+      });
+      return;
+    }
+  }
   const stopListening = trackManualScrollIntent(container, () => {
     if (jumpVersion !== activeEdgeJumpVersion) return;
     // Invalidate the retry loop immediately, even while it is sleeping.
