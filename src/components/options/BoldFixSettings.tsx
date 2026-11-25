@@ -14,8 +14,7 @@ import {
   writeAnalysisHideEnabled,
 } from '@/features/analysisVisibility/analysisVisibilitySettings';
 
-const HELP_TEXT =
-  '粗体异常修复会修复 ChatGPT 回复中的 Markdown 粗体标记。隐藏分析区块会隐藏 Analyzed / Analysis 区块；关闭后复原 LunaTOC 隐藏的内容。同时使用 Black Box 时，请关闭其中的同类选项。';
+const HELP_TEXT = '额外功能，可主动开启或关闭';
 
 export function BoldFixSettings(): React.JSX.Element {
   const [enabled, setEnabled] = useState(DEFAULT_BOLD_FIX_ENABLED);
@@ -76,7 +75,10 @@ export function BoldFixSettings(): React.JSX.Element {
       setAnalysisLoaded(true);
     }).catch(() => {
       if (!active) return;
-      setAnalysisError('无法读取隐藏分析区块设置，当前按默认关闭状态显示。');
+      if (!receivedChange) {
+        setAnalysisHidden(DEFAULT_ANALYSIS_HIDE_ENABLED);
+        setAnalysisError('无法读取隐藏分析区块设置，当前按默认开启状态显示。');
+      }
       setAnalysisLoaded(true);
     });
     return () => {

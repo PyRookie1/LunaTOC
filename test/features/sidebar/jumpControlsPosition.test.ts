@@ -15,6 +15,7 @@ function setup(): { sidebar: HTMLElement; rail: HTMLElement } {
       <div class="navigator-jump-controls">
         <button id="jump-chat-top-btn"></button>
         <button id="toggle-view-mode-btn"></button>
+        <button id="luna-toc-edge-settings-btn"></button>
         <button id="jump-chat-bottom-btn"></button>
       </div>
     </aside>
@@ -22,7 +23,7 @@ function setup(): { sidebar: HTMLElement; rail: HTMLElement } {
   const sidebar = document.getElementById('luna-toc-sidebar')!;
   const rail = document.querySelector<HTMLElement>('.navigator-jump-controls')!;
   Object.defineProperty(sidebar, 'clientHeight', { configurable: true, value: 800 });
-  Object.defineProperty(rail, 'offsetHeight', { configurable: true, value: 132 });
+  Object.defineProperty(rail, 'offsetHeight', { configurable: true, value: 164 });
   return { sidebar, rail };
 }
 
@@ -35,15 +36,15 @@ describe('jump control pointer positioning', () => {
   it('updates top position and adapts to viewport resize', () => {
     const { sidebar, rail } = setup();
     const dispose = initializeJumpControlsPosition(sidebar);
-    expect(rail.style.top).toBe('334px');
+    expect(rail.style.top).toBe('318px');
     placeJumpControlsAtPointer(sidebar, 100);
-    expect(rail.style.top).toBe('34px');
+    expect(rail.style.top).toBe('18px');
     expect(rail.style.bottom).toBe('auto');
     placeJumpControlsAtPointer(sidebar, 740);
-    expect(rail.style.top).toBe('656px');
+    expect(rail.style.top).toBe('624px');
     Object.defineProperty(sidebar, 'clientHeight', { configurable: true, value: 200 });
     window.dispatchEvent(new Event('resize'));
-    expect(rail.style.top).toBe('56px');
+    expect(rail.style.top).toBe('24px');
     dispose();
   });
 });

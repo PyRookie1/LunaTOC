@@ -1,9 +1,9 @@
 /**
- * Positions the three navigation buttons at the pointer's height when the
+ * Positions the four edge toolbar buttons at the pointer's height when the
  * user reaches the right edge; there is no dragged or persisted placement.
  */
 const EDGE_PADDING_PX = 12;
-const FALLBACK_CLUSTER_HEIGHT_PX = 132;
+const FALLBACK_CLUSTER_HEIGHT_PX = 164;
 const lastPointerBySidebar = new WeakMap<HTMLElement, number>();
 
 /** Centers the cluster vertically at a pointer coordinate and clamps to viewport. */

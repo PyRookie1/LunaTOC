@@ -36,6 +36,7 @@ function setup(): {
       <div class="navigator-jump-controls">
         <button id="jump-chat-top-btn"></button>
         <button id="toggle-view-mode-btn"></button>
+        <button id="luna-toc-edge-settings-btn"></button>
         <button id="jump-chat-bottom-btn"></button>
       </div>
     </div>
@@ -69,7 +70,7 @@ describe('sidebar reveal handle and right-side tools', () => {
     // The tools stay inside the sidebar, visible and interactive with it.
     expect(panel.parentElement).toBe(sidebar);
     expect(Array.from(panel.querySelectorAll('button')).map(x => x.id))
-      .toEqual(['jump-chat-top-btn', 'toggle-view-mode-btn', 'jump-chat-bottom-btn']);
+      .toEqual(['jump-chat-top-btn', 'toggle-view-mode-btn', 'luna-toc-edge-settings-btn', 'jump-chat-bottom-btn']);
     // Opening the sidebar must never force the toolbar buttons to pop open.
     expect(panel.classList.contains('navigator-jump-controls-visible')).toBe(false);
     expect(panel.getAttribute('aria-hidden')).toBe('true');

@@ -2,7 +2,7 @@
 import { CHATGPT_MESSAGE_TYPES } from '@/platforms/chatgpt/messages';
 import { subscribeTrustedPageHookMessage } from '@/navigation/pageHookMessageTransport';
 import { createAnalysisVisibilityController } from './analysisVisibilityController';
-import { readAnalysisHideEnabled, subscribeAnalysisHideEnabled } from './analysisVisibilitySettings';
+import { DEFAULT_ANALYSIS_HIDE_ENABLED, readAnalysisHideEnabled, subscribeAnalysisHideEnabled } from './analysisVisibilitySettings';
 
 type SubscribeRoute = (listener: (event: MessageEvent) => void) => () => void;
 export interface AnalysisVisibilitySettings {
@@ -54,7 +54,7 @@ export function createAnalysisVisibilityLifecycle(
   view.addEventListener('popstate', onRoute);
   void settings.readEnabled().then(enabled => {
     if (!storageChanged) apply(enabled);
-  }).catch(() => { /* Stay visible if storage is unavailable. */ });
+  }).catch(() => { if (!storageChanged) apply(DEFAULT_ANALYSIS_HIDE_ENABLED); });
 
   return {
     controller,
