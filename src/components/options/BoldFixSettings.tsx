@@ -7,15 +7,24 @@ import {
   subscribeBoldFixEnabled,
   writeBoldFixEnabled,
 } from '@/features/boldFix/boldFixSettings';
+import {
+  DEFAULT_ANALYSIS_HIDE_ENABLED,
+  readAnalysisHideEnabled,
+  subscribeAnalysisHideEnabled,
+  writeAnalysisHideEnabled,
+} from '@/features/analysisVisibility/analysisVisibilitySettings';
 
-const HELP_TEXT =
-  '自动修复 ChatGPT 回复中的 Markdown 粗体标记异常。开启后会扫描当前对话，并在切换对话或新消息生成时继续修复；关闭后恢复修复前的页面内容。';
+const HELP_TEXT = '额外功能，可主动开启或关闭';
 
 export function BoldFixSettings(): React.JSX.Element {
   const [enabled, setEnabled] = useState(DEFAULT_BOLD_FIX_ENABLED);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [analysisHidden, setAnalysisHidden] = useState(DEFAULT_ANALYSIS_HIDE_ENABLED);
+  const [analysisLoaded, setAnalysisLoaded] = useState(false);
+  const [analysisSaving, setAnalysisSaving] = useState(false);
+  const [analysisError, setAnalysisError] = useState('');
   const mounted = useRef(false);
 
   useEffect(() => {
@@ -50,6 +59,34 @@ export function BoldFixSettings(): React.JSX.Element {
     };
   }, []);
 
+  useEffect(() => {
+    let active = true;
+    let receivedChange = false;
+    const unsubscribe = subscribeAnalysisHideEnabled(next => {
+      receivedChange = true;
+      if (active) {
+        setAnalysisHidden(next);
+        setAnalysisLoaded(true);
+      }
+    });
+    void readAnalysisHideEnabled().then(saved => {
+      if (!active) return;
+      if (!receivedChange) setAnalysisHidden(saved);
+      setAnalysisLoaded(true);
+    }).catch(() => {
+      if (!active) return;
+      if (!receivedChange) {
+        setAnalysisHidden(DEFAULT_ANALYSIS_HIDE_ENABLED);
+        setAnalysisError('无法读取隐藏分析区块设置，当前按默认开启状态显示。');
+      }
+      setAnalysisLoaded(true);
+    });
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, []);
+
   const handleToggle = (next: boolean): void => {
     if (!settingsLoaded || saving) return;
     const previous = enabled;
@@ -68,6 +105,23 @@ export function BoldFixSettings(): React.JSX.Element {
     });
   };
 
+  const handleAnalysisToggle = (next: boolean): void => {
+    if (!analysisLoaded || analysisSaving) return;
+    const previous = analysisHidden;
+    setAnalysisHidden(next);
+    setAnalysisSaving(true);
+    setAnalysisError('');
+    void writeAnalysisHideEnabled(next).catch(async () => {
+      const saved = await readAnalysisHideEnabled().catch(() => previous);
+      if (mounted.current) {
+        setAnalysisHidden(saved);
+        setAnalysisError('隐藏分析区块设置保存失败，当前状态已恢复。');
+      }
+    }).finally(() => {
+      if (mounted.current) setAnalysisSaving(false);
+    });
+  };
+
   return (
     <section className="settings-section" aria-labelledby="extra-features-heading">
       <div className="settings-section-heading">
@@ -77,7 +131,7 @@ export function BoldFixSettings(): React.JSX.Element {
         </div>
       </div>
       <div className="settings-card">
-        <label className="settings-choice settings-no-border">
+        <label className="settings-choice">
           <span className="settings-choice-info">
             <strong>粗体异常修复</strong>
           </span>
@@ -89,9 +143,20 @@ export function BoldFixSettings(): React.JSX.Element {
             <span className="settings-switch-track" aria-hidden="true" />
           </span>
         </label>
+        <label className="settings-choice settings-no-border">
+          <span className="settings-choice-info"><strong>隐藏分析区块</strong></span>
+          <span className="settings-switch-control">
+            <input id="analysis-hide-toggle" className="settings-switch-input" type="checkbox"
+              checked={analysisHidden} disabled={!analysisLoaded || analysisSaving}
+              onChange={(event) => handleAnalysisToggle(event.currentTarget.checked)} />
+            <span className="settings-switch-track" aria-hidden="true" />
+          </span>
+        </label>
       </div>
       {saving && <p className="settings-backup-status" role="status">正在保存粗体异常修复设置…</p>}
+      {analysisSaving && <p className="settings-backup-status" role="status">正在保存隐藏分析区块设置…</p>}
       {error && <p className="settings-error" role="alert">{error}</p>}
+      {analysisError && <p className="settings-error" role="alert">{analysisError}</p>}
     </section>
   );
 }

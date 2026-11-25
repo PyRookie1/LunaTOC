@@ -24,15 +24,16 @@ beforeEach(() => {
   `;
 });
 
-afterEach(() => { vi.clearAllTimers(); vi.useRealTimers(); });
+afterEach(() => { vi.clearAllTimers(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 describe('jump-to-edge controls', () => {
-  it('creates the two controls around the view-mode button', () => {
+  it('places the settings button third and retains the other controls', () => {
     const cluster = createJumpToEdgeControls(() => false);
 
     expect(Array.from(cluster.children).map((element) => element.id)).toEqual([
       'jump-chat-top-btn',
       'toggle-view-mode-btn',
+      'luna-toc-edge-settings-btn',
       'jump-chat-bottom-btn',
     ]);
     expect(
@@ -41,6 +42,18 @@ describe('jump-to-edge controls', () => {
     expect(
       document.getElementById('jump-chat-bottom-btn')?.getAttribute('aria-label')
     ).toBe('跳转到底部');
+    expect(document.getElementById('luna-toc-edge-settings-btn')?.getAttribute('aria-label'))
+      .toBe('打开 LunaTOC 设置');
+    expect(document.querySelector('#luna-toc-edge-settings-btn svg')).not.toBeNull();
+  });
+
+  it('requests the options page from the gear without changing navigation', async () => {
+    const sendMessage = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal('chrome', { runtime: { sendMessage } });
+    createJumpToEdgeControls(() => false);
+    document.getElementById('luna-toc-edge-settings-btn')?.click();
+    expect(sendMessage).toHaveBeenCalledExactlyOnceWith({ type: 'LUNA_TOC_OPEN_SETTINGS_V1' });
+    expect(navigatorMocks.jumpToEdge).not.toHaveBeenCalled();
   });
 
   it('delegates single clicks immediately to jumpToEdge without timer delay', () => {

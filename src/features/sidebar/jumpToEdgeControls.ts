@@ -1,13 +1,11 @@
 /**
  * Builds and wires the sidebar's "jump to top / bottom" controls.
  *
- * The two buttons live inside the `.navigator-jump-controls` cluster that
- * `FloatingPanel` drags; the view-mode toggle in between is owned by
- * `sidebarController`. This module owns the top/bottom buttons' DOM, their
- * click/double-click handlers, and the view-mode branch that decides whether
- * they scroll the chat feed or the sidebar's own prompt list.
+ * The top, settings and bottom buttons share the edge toolbar with the view-mode
+ * toggle owned by `sidebarController`.
  */
 import { navigatorController } from '@/navigation/navigatorController';
+import { openSettingsFromConversation } from './openSettings';
 
 type ConversationEdge = 'top' | 'bottom';
 
@@ -30,11 +28,12 @@ export function createJumpToEdgeControls(
   }
 
   const topButton = createJumpButton('top');
+  const settingsButton = createSettingsButton();
   const bottomButton = createJumpButton('bottom');
 
-  // Keep the original visual order: top → view-mode toggle → bottom.
+  // Top → view mode → settings → bottom. Existing jump controls keep their behavior.
   cluster.prepend(topButton);
-  cluster.append(bottomButton);
+  cluster.append(settingsButton, bottomButton);
 
   let pendingBottomClick: number | null = null;
   const cancelPendingBottomClick = (): void => {
@@ -75,6 +74,23 @@ export function createJumpToEdgeControls(
   });
 
   return cluster;
+}
+
+function createSettingsButton(): HTMLButtonElement {
+  const button = document.createElement('button');
+  button.className = 'navigator-icon-btn';
+  button.id = 'luna-toc-edge-settings-btn';
+  button.type = 'button';
+  button.setAttribute('aria-label', '打开 LunaTOC 设置');
+  button.title = '打开 LunaTOC 设置';
+  button.innerHTML = `
+    <svg aria-hidden="true" viewBox="0 0 24 24">
+      <path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z" />
+      <path d="M10.5 2h3l.6 2.2 1.6.7 2-.9 2.1 2.1-.9 2 .7 1.6 2.2.6v3l-2.2.6-.7 1.6.9 2-2.1 2.1-2-.9-1.6.7-.6 2.2h-3l-.6-2.2-1.6-.7-2 .9-2.1-2.1.9-2-.7-1.6-2.2-.6v-3l2.2-.6.7-1.6-.9-2L6.2 4l2 .9 1.6-.7L10.5 2Z" />
+    </svg>
+  `;
+  button.addEventListener('click', openSettingsFromConversation);
+  return button;
 }
 
 /**

@@ -4,6 +4,7 @@
  */
 import { initializeApplication } from '@/app/applicationShell';
 import { initializeBoldFixLifecycle } from '@/features/boldFix/boldFixLifecycle';
+import { initializeAnalysisVisibilityLifecycle } from '@/features/analysisVisibility/analysisVisibilityLifecycle';
 import { initializeConversationLifecycle } from '@/navigation/lifecycle/conversationLifecycle';
 import { observeExternalOverlays } from '@/features/externalOverlay';
 import { startPageHookMismatchBridge, startChatGptConfigSync } from '@/features/contractAlert/pageHookBridge';
@@ -16,6 +17,7 @@ connectPageHookMessageTransport();
 
 // Repair the current conversation and keep the controller synchronized with SPA navigation.
 initializeBoldFixLifecycle();
+initializeAnalysisVisibilityLifecycle();
 
 // Start the one-time reconciliation listener before sidebar setup.
 initializeConversationLifecycle();

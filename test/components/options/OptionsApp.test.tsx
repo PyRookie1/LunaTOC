@@ -103,7 +103,7 @@ describe('Options sidebar save handling', () => {
     const help: Array<[string, string]> = [
       ['layout-help', '选择对话和目录的排列方式。'],
       ['appearance-help', '选择 LunaTOC 的背景颜色。'],
-      ['extra-features-help', '自动修复 ChatGPT 回复中的 Markdown 粗体标记异常。开启后会扫描当前对话，并在切换对话或新消息生成时继续修复；关闭后恢复修复前的页面内容。'],
+      ['extra-features-help', '额外功能，可主动开启或关闭'],
       ['compat-help', '检查会话 API 和关键页面标记；开启后可能发送额外的同源诊断请求。'],
     ];
     for (const [id, expected] of help) {
@@ -116,6 +116,8 @@ describe('Options sidebar save handling', () => {
     expect(extraFeaturesSection?.previousElementSibling).toBe(appearanceSection);
     expect(extraFeaturesSection?.querySelector('h2')?.textContent).toBe('额外功能');
     expect((extraFeaturesSection?.querySelector('#bold-fix-toggle') as HTMLInputElement | null)?.checked)
+      .toBe(true);
+    expect((extraFeaturesSection?.querySelector('#analysis-hide-toggle') as HTMLInputElement | null)?.checked)
       .toBe(true);
     expect(host.querySelectorAll('.settings-swatch-text')).toHaveLength(0);
     expect(host.querySelectorAll('.settings-swatch-label').length).toBeGreaterThan(0);

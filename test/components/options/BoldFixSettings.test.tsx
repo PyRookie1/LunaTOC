@@ -9,6 +9,15 @@ const mocks = vi.hoisted(() => ({
   write: vi.fn(),
   subscribe: vi.fn(),
 }));
+const analysisMocks = vi.hoisted(() => ({
+  read: vi.fn(), write: vi.fn(), subscribe: vi.fn(),
+}));
+vi.mock('@/features/analysisVisibility/analysisVisibilitySettings', () => ({
+  DEFAULT_ANALYSIS_HIDE_ENABLED: true,
+  readAnalysisHideEnabled: analysisMocks.read,
+  writeAnalysisHideEnabled: analysisMocks.write,
+  subscribeAnalysisHideEnabled: analysisMocks.subscribe,
+}));
 vi.mock('@/features/boldFix/boldFixSettings', () => ({
   DEFAULT_BOLD_FIX_ENABLED: true,
   readBoldFixEnabled: mocks.read,
@@ -32,6 +41,9 @@ beforeEach(() => {
     externalEvents.listener = listener;
     return () => { delete externalEvents.listener; };
   });
+  analysisMocks.read.mockReset().mockResolvedValue(true);
+  analysisMocks.write.mockReset().mockResolvedValue(undefined);
+  analysisMocks.subscribe.mockReset().mockReturnValue(() => {});
 });
 
 afterEach(async () => {
@@ -61,6 +73,19 @@ describe('BoldFixSettings', () => {
     expect(host.textContent).toContain('粗体异常修复');
     expect(toggle().checked).toBe(true);
     expect(toggle().disabled).toBe(false);
+    expect((host.querySelector('#analysis-hide-toggle') as HTMLInputElement).checked).toBe(true);
+  });
+
+  it('saves the analysis visibility choice and reports a failed write', async () => {
+    await render();
+    const input = host.querySelector('#analysis-hide-toggle') as HTMLInputElement;
+    await act(async () => { input.click(); await Promise.resolve(); });
+    expect(analysisMocks.write).toHaveBeenCalledWith(false);
+    expect(input.checked).toBe(false);
+    analysisMocks.write.mockRejectedValueOnce(new Error('storage unavailable'));
+    await act(async () => { input.click(); await Promise.resolve(); await Promise.resolve(); });
+    expect(input.checked).toBe(true);
+    expect(host.textContent).toContain('隐藏分析区块设置保存失败');
   });
 
   it('loads a previously saved disabled state', async () => {
