@@ -5,6 +5,7 @@
  * toggle owned by `sidebarController`.
  */
 import { navigatorController } from '@/navigation/navigatorController';
+import { openSettingsFromConversation } from './openSettings';
 
 type ConversationEdge = 'top' | 'bottom';
 
@@ -88,7 +89,7 @@ function createSettingsButton(): HTMLButtonElement {
       <path d="M10.5 2h3l.6 2.2 1.6.7 2-.9 2.1 2.1-.9 2 .7 1.6 2.2.6v3l-2.2.6-.7 1.6.9 2-2.1 2.1-2-.9-1.6.7-.6 2.2h-3l-.6-2.2-1.6-.7-2 .9-2.1-2.1.9-2-.7-1.6-2.2-.6v-3l2.2-.6.7-1.6-.9-2L6.2 4l2 .9 1.6-.7L10.5 2Z" />
     </svg>
   `;
-  button.addEventListener('click', () => { void chrome.runtime.openOptionsPage(); });
+  button.addEventListener('click', openSettingsFromConversation);
   return button;
 }
 

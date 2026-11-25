@@ -24,6 +24,7 @@ import { installRemoteDeletionObserver } from '@/background/remoteDeletionObserv
 import { createCloudController, CLOUD_MESSAGE_TYPE, CLOUD_AUTO_SYNC_KEY, CLOUD_AUTO_SYNC_STATUS_KEY } from '@/features/cloud/cloudController';
 import { ACCOUNT_SETTINGS_KEY, GET_ACTIVE_ACCOUNT_OWNER_MESSAGE, isValidAccountOwnerId } from '@/features/storage/accountSettings';
 import { completedCloudSyncStatus, pendingCloudSyncStatus } from '@/features/cloud/cloudSyncStatus';
+import { OPEN_SETTINGS_MESSAGE } from '@/features/sidebar/openSettings';
 import {
   CLOUD_RETRY_ALARM, CLOUD_RETRY_STATE_KEY, CLOUD_POLL_ALARM, CLOUD_POLL_MINUTES,
   cloudRetryDelayMs, isTransientCloudError, parseCloudRetryState,
@@ -31,6 +32,22 @@ import {
 
 const toolbar = createToolbarWarningController(chrome.storage.session, chrome.action);
 const storageWriteQueue = createSerialWriteQueue();
+chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
+  if (!message || typeof message !== 'object' ||
+      (message as { type?: unknown }).type !== OPEN_SETTINGS_MESSAGE) return;
+  if (sender.id !== chrome.runtime.id || sender.tab?.id === undefined || sender.frameId !== 0 ||
+      (sender.documentLifecycle && sender.documentLifecycle !== 'active') ||
+      !/^https:\/\/(?:chatgpt\.com|chat\.openai\.com)(?:\/|$)/.test(sender.url ?? '')) {
+    sendResponse({ ok: false });
+    return false;
+  }
+  void chrome.runtime.openOptionsPage().then(
+    () => sendResponse({ ok: true }),
+    () => sendResponse({ ok: false })
+  );
+  return true;
+});
+
 chrome.runtime.onMessage.addListener((message: unknown, sender) => {
   if (!message || typeof message !== 'object') return;
   const payload = message as { type?: unknown; detail?: unknown; revision?: unknown };

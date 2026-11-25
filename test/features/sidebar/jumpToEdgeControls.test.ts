@@ -47,12 +47,12 @@ describe('jump-to-edge controls', () => {
     expect(document.querySelector('#luna-toc-edge-settings-btn svg')).not.toBeNull();
   });
 
-  it('opens the extension settings from the gear without changing navigation', () => {
-    const openOptionsPage = vi.fn();
-    vi.stubGlobal('chrome', { runtime: { openOptionsPage } });
+  it('requests the options page from the gear without changing navigation', async () => {
+    const sendMessage = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal('chrome', { runtime: { sendMessage } });
     createJumpToEdgeControls(() => false);
     document.getElementById('luna-toc-edge-settings-btn')?.click();
-    expect(openOptionsPage).toHaveBeenCalledOnce();
+    expect(sendMessage).toHaveBeenCalledExactlyOnceWith({ type: 'LUNA_TOC_OPEN_SETTINGS_V1' });
     expect(navigatorMocks.jumpToEdge).not.toHaveBeenCalled();
   });
 
