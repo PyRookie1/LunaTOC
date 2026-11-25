@@ -105,10 +105,11 @@ test('analysis switch hides and immediately restores a mounted disclosure',{time
     try{
       await settings.goto('chrome-extension://'+new URL(worker.url()).host+'/'+optionsPage);
       await settings.locator('#analysis-hide-toggle').waitFor({state:'attached'});
-      await settings.locator('#analysis-hide-toggle').check();
+      const analysisSwitch=settings.locator('label:has(#analysis-hide-toggle) .settings-switch-track');
+      await analysisSwitch.click();
       await page.waitForFunction(()=>getComputedStyle(document.querySelector('#test-analysis')).display==='none');
       assert.notEqual(await page.locator('#test-answer').evaluate(el=>getComputedStyle(el).display),'none');
-      await settings.locator('#analysis-hide-toggle').uncheck();
+      await analysisSwitch.click();
       await page.waitForFunction(()=>getComputedStyle(document.querySelector('#test-analysis')).display!=='none');
       assert.equal(await page.locator('#test-analysis').evaluate(el=>el.classList.contains('luna-toc-analysis-hidden')),false);
     }finally{await settings.close();}
