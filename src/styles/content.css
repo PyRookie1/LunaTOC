@@ -1083,3 +1083,8 @@ strong[data-luna-toc-markdown-bold='true'] {
   font-weight: 700 !important;
 }
 
+/* Hide only disclosures marked by LunaTOC; removing the class restores host styling. */
+.luna-toc-analysis-hidden {
+  display: none !important;
+}
+

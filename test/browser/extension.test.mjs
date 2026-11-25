@@ -83,6 +83,42 @@ async function extensionWorker(context){
   return context.serviceWorkers()[0]??context.waitForEvent('serviceworker',{timeout:20000});
 }
 
+test('analysis switch hides and immediately restores a mounted disclosure',{timeout:45000},async()=>{
+  const profile=mkdtempSync(join(tmpdir(),'luna-analysis-'));
+  const context=await chromium.launchPersistentContext(profile,{
+    channel:'chromium',headless:true,viewport:{width:1280,height:800},
+    args:['--disable-extensions-except='+dist,'--load-extension='+dist],
+  });
+  try{
+    await installFixture(context);
+    const worker=await extensionWorker(context);
+    const page=await context.newPage();
+    await page.goto(url,{waitUntil:'domcontentloaded'});
+    await page.locator('#luna-toc-sidebar.luna-toc-navigator-ready').waitFor({state:'attached'});
+    await page.evaluate(()=>{
+      document.querySelector('#thread').insertAdjacentHTML('beforeend',
+        '<article data-testid="conversation-turn-analysis"><div id="test-analysis"><button>Analyzed</button><pre>tool result</pre></div><div class="markdown" id="test-answer">Analyzed is also an ordinary word.</div></article>');
+    });
+    assert.equal(await page.locator('#test-analysis').evaluate(el=>getComputedStyle(el).display==='none'),false);
+    const optionsPage=await worker.evaluate(()=>chrome.runtime.getManifest().options_ui.page);
+    const settings=await context.newPage();
+    try{
+      await settings.goto('chrome-extension://'+new URL(worker.url()).host+'/'+optionsPage);
+      await settings.locator('#analysis-hide-toggle').waitFor({state:'attached'});
+      await settings.locator('#analysis-hide-toggle').check();
+      await page.waitForFunction(()=>getComputedStyle(document.querySelector('#test-analysis')).display==='none');
+      assert.notEqual(await page.locator('#test-answer').evaluate(el=>getComputedStyle(el).display),'none');
+      await settings.locator('#analysis-hide-toggle').uncheck();
+      await page.waitForFunction(()=>getComputedStyle(document.querySelector('#test-analysis')).display!=='none');
+      assert.equal(await page.locator('#test-analysis').evaluate(el=>el.classList.contains('luna-toc-analysis-hidden')),false);
+    }finally{await settings.close();}
+    await page.close();
+  }finally{
+    await context.close();
+    rmSync(profile,{recursive:true,force:true});
+  }
+});
+
 test('bottom and consecutive navigation release follow and stale reading anchors',{timeout:90000},async t=>{
   const profile=mkdtempSync(join(tmpdir(),'luna-bottom-'));
   const context=await chromium.launchPersistentContext(profile,{
