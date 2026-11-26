@@ -11,3 +11,7 @@ export const TOC_REFRESH_CANCEL = 'LUNA_TOC_REFRESH_CANCEL';
 
 /** Bound request lifetime in both execution worlds. */
 export const TOC_REFRESH_TIMEOUT_MS = 15_000;
+
+/** Observed host request lifecycle; completion alone is not media stability. */
+export const CAPTURE_GENERATION_EVENT = 'LUNA_TOC_CAPTURE_GENERATION_EVENT';
+export const OPEN_CAPTURE_CHECK = 'LUNA_TOC_OPEN_CAPTURE_CHECK';

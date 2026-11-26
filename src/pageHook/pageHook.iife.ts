@@ -32,7 +32,7 @@ import {
 } from './conversationCapture';
 import { cancelBackfillsExcept, installConversationBackfill } from './conversationBackfill';
 import { installConversationRefresh } from './conversationRefresh';
-import { TOC_EDIT_SUBMISSION } from '@/navigation/refresh/refreshProtocol';
+import { TOC_EDIT_SUBMISSION, CAPTURE_GENERATION_EVENT } from '@/navigation/refresh/refreshProtocol';
 import { installConversationLifecycle } from './conversationLifecycle';
 import { installHistoryHook } from './historyHook';
 import { installPageHookMessageTransport, postPageHookMessage } from './messageTransport';
@@ -122,7 +122,18 @@ import { installChatGptNativeScrollBridge } from './nativeScrollBridge';
         platform.config.interceptFetchNumTurns.initialLoad,
     });
     const requestStartedAt = Date.now();
-    const response = await originalFetch(...fetchArgs);
+    const generationId = requestMeta?.isSendMessage ? crypto.randomUUID() : null;
+    const notifyGeneration = (phase: 'started' | 'ended' | 'failed'): void => {
+      try {
+        if (generationId && requestMeta) postPageHookMessage({
+          type: CAPTURE_GENERATION_EVENT, routeKey: requestMeta.routeKey, requestId: generationId, phase,
+        });
+      } catch { /* Diagnostics must never interrupt the host's request. */ }
+    };
+    if (generationId) notifyGeneration('started');
+    let response: Response;
+    try { response = await originalFetch(...fetchArgs); }
+    catch (error) { notifyGeneration('failed'); throw error; }
     try {
       if (requestMeta?.isConversationGet) {
         // Both full and paginated conversation requests can carry auth headers.
@@ -155,6 +166,10 @@ import { installChatGptNativeScrollBridge } from './nativeScrollBridge';
           response,
           requestMeta.routeKey,
           platform.pageHook.messages.newUserMessage
+        );
+        void streamInspection.then(
+          () => notifyGeneration(response.ok ? 'ended' : 'failed'),
+          () => notifyGeneration('failed')
         );
         if (outgoingMessageMeta?.parentMessageId) {
           const notifyStreamFinished = () => {

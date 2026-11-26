@@ -177,6 +177,39 @@ describe('conversation refresh on sidebar opening', () => {
     }
   });
 
+  it('isolates capture requests from an earlier navigator refresh and cancels only their own waiter', async () => {
+    const routeKey = 'isolated-capture-conversation';
+    history.replaceState(null, '', `/c/${routeKey}`);
+    const pending: Array<{ resolve: (value: unknown) => void; signal: AbortSignal }> = [];
+    const mockFetch = vi.fn((_url: string, options: RequestInit) => new Promise(resolve => {
+      pending.push({ resolve, signal: options.signal as AbortSignal });
+    }));
+    installHook(mockFetch as unknown as typeof fetch);
+    const received: Array<{ requestId?: number }> = [];
+    const onResult = (event: MessageEvent) => {
+      if (event.data?.type === TOC_REFRESH_RESULT) received.push(event.data);
+    };
+    window.addEventListener('message', onResult);
+    try {
+      for (const data of [
+        { type: TOC_REFRESH_REQUEST, routeKey, requestId: 200 },
+        { type: TOC_REFRESH_REQUEST, routeKey, requestId: 201, purpose: 'capture' },
+      ]) window.dispatchEvent(new MessageEvent('message', { source: window, origin: location.origin, data }));
+      await vi.waitFor(() => expect(pending).toHaveLength(2));
+      window.dispatchEvent(new MessageEvent('message', { source: window, origin: location.origin,
+        data: { type: 'LUNA_TOC_REFRESH_CANCEL', routeKey, requestId: 201, purpose: 'capture' } }));
+      expect(pending[1].signal.aborted).toBe(true);
+      expect(pending[0].signal.aborted).toBe(false);
+      const tree = { current_node: 'root', mapping: { root: { parent: null,
+        message: { id: 'root', author: { role: 'user' }, content: { parts: ['hello'] } } } } };
+      pending[0].resolve({ ok: true, json: async () => tree });
+      pending[1].resolve({ ok: true, json: async () => tree });
+      await vi.waitFor(() => expect(received).toHaveLength(1));
+      expect(received[0].requestId).toBe(200);
+      expect(mockFetch).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ cache: 'no-store' }));
+    } finally { window.removeEventListener('message', onResult); }
+  });
+
   it('phase 0: exposes the mixed-revision risk when an older page changes during pagination', async () => {
     const routeKey = 'mixed-revision-conversation';
     history.replaceState(null, '', `/c/${routeKey}`);

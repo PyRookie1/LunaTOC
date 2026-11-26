@@ -11,9 +11,11 @@ import { startPageHookMismatchBridge, startChatGptConfigSync } from '@/features/
 import { initializeReactHost } from '@/reactHost/reactHost';
 import { connectPageHookMessageTransport } from '@/navigation/pageHookMessageTransport';
 import { startToolbarCompatibilityMonitor } from '@/features/contractAlert/toolbarMonitor';
+import { installCaptureRuntime } from '@/features/conversationExport/runtime';
 
 // Bind the isolated conversation receiver before the application starts.
 connectPageHookMessageTransport();
+installCaptureRuntime();
 
 // Repair the current conversation and keep the controller synchronized with SPA navigation.
 initializeBoldFixLifecycle();

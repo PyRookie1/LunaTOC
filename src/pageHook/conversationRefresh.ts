@@ -17,6 +17,7 @@ import {
 type HeaderMap = Record<string, string>;
 
 interface PendingRefresh {
+  key: string;
   controller: AbortController;
   requestIds: Set<number>;
   timeoutId: number;
@@ -35,15 +36,15 @@ export function installConversationRefresh(
 
   function finishRefresh(routeKey: string, pending: PendingRefresh, payload: ConversationSnapshot | null): void {
     // A cancelled/timed-out fetch must not publish late data or retire its replacement.
-    if (inFlight.get(routeKey) !== pending) return;
-    inFlight.delete(routeKey);
+    if (inFlight.get(pending.key) !== pending) return;
+    inFlight.delete(pending.key);
     window.clearTimeout(pending.timeoutId);
     for (const requestId of pending.requestIds) postResult(routeKey, requestId, payload);
   }
 
   function abortRefresh(routeKey: string, pending: PendingRefresh, notify: boolean): void {
-    if (inFlight.get(routeKey) !== pending) return;
-    inFlight.delete(routeKey);
+    if (inFlight.get(pending.key) !== pending) return;
+    inFlight.delete(pending.key);
     window.clearTimeout(pending.timeoutId);
     pending.controller.abort();
     if (notify) {
@@ -65,6 +66,7 @@ export function installConversationRefresh(
     const response = await originalFetch(url, {
       method: 'GET',
       credentials: 'include',
+      cache: 'no-store',
       headers: headersByRoute.get(routeKey),
       signal,
     });
@@ -91,6 +93,7 @@ export function installConversationRefresh(
             messages,
             current_node: tree.current_node,
             activeBranchVerified: true,
+            readEvidence: { source: 'tree', pages: 1 },
             page_info: { has_previous_page: false },
           };
         }
@@ -143,6 +146,7 @@ export function installConversationRefresh(
             messages: branch,
             current_node: currentNode,
             activeBranchVerified: true,
+            readEvidence: { source: 'pages', pages: page + 1 },
             page_info: { has_previous_page: false },
           };
         }
@@ -165,6 +169,7 @@ export function installConversationRefresh(
       type?: string;
       routeKey?: unknown;
       requestId?: unknown;
+      purpose?: unknown;
     } | null;
     if (data?.type !== TOC_REFRESH_REQUEST && data?.type !== TOC_REFRESH_CANCEL) return;
     if (platform.id !== 'chatgpt' || typeof data.routeKey !== 'string') return;
@@ -172,7 +177,9 @@ export function installConversationRefresh(
 
     const { routeKey } = data;
     const requestId = data.requestId as number;
-    const existing = inFlight.get(routeKey);
+    // Capture reads must not join a navigator refresh that began before the click.
+    const key = data.purpose === 'capture' ? `${routeKey}:capture:${requestId}` : routeKey;
+    const existing = inFlight.get(key);
 
     if (data.type === TOC_REFRESH_CANCEL) {
       if (!existing) return;
@@ -187,14 +194,20 @@ export function installConversationRefresh(
       existing.requestIds.add(requestId);
       return;
     }
+    if (data.purpose === 'capture' && Array.from(inFlight.values())
+      .filter(item => item.key.includes(':capture:')).length >= 2) {
+      postResult(routeKey, requestId, null);
+      return;
+    }
 
     const controller = new AbortController();
     const pending: PendingRefresh = {
+      key,
       controller,
       requestIds: new Set([requestId]),
       timeoutId: 0,
     };
-    inFlight.set(routeKey, pending);
+    inFlight.set(key, pending);
     // The page hook independently releases hung requests even when the caller
     // disappears before its cancellation message can be delivered.
     pending.timeoutId = window.setTimeout(

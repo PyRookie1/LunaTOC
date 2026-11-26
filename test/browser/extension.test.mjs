@@ -86,7 +86,7 @@ async function extensionWorker(context){
   return context.serviceWorkers()[0]??context.waitForEvent('serviceworker',{timeout:20000});
 }
 
-test('phase 0 probe reads a complete branch and saves only aggregate evidence',{timeout:45000},async()=>{
+test('phase 1 checker reads twice, saves aggregate evidence and never claims an atomic snapshot',{timeout:45000},async()=>{
   const profile=mkdtempSync(join(tmpdir(),'luna-phase0-'));
   const context=await chromium.launchPersistentContext(profile,{
     ...browserChoice,headless:true,acceptDownloads:true,viewport:{width:1280,height:800},
@@ -100,19 +100,91 @@ test('phase 0 probe reads a complete branch and saves only aggregate evidence',{
     await page.locator('#luna-toc-phase0-probe').waitFor({state:'attached'});
     await page.locator('#luna-toc-toggle-btn').click({force:true});
     await page.locator('#luna-toc-sidebar[aria-hidden="false"]').waitFor();
+    await page.locator('#luna-toc-phase0-probe').click();
+    await page.locator('#luna-capture-quick').click();
+    await page.locator('#luna-capture-download:not([disabled])').waitFor();
     const [download]=await Promise.all([
       page.waitForEvent('download'),
-      page.locator('#luna-toc-phase0-probe').click(),
+      page.locator('#luna-capture-download').click(),
     ]);
     const report=readFileSync(await download.path(),'utf8');
-    assert.match(report,/当前对话完整读取：通过/);
-    assert.match(report,/已核对的有效分支消息：4 条/);
+    assert.match(report,/范围内节点：4 个/);
+    assert.match(report,/正式导出许可：未通过/);
     assert.doesNotMatch(report,/第一条测试问题|第二条测试问题|fixture-account-a|lunatoc-e2e/);
     assert.match(report,/点击瞬间内容冻结：尚未验证/);
+    await page.locator('#luna-capture-close').click();
+    await page.locator('#luna-capture-check-panel').waitFor({state:'hidden'});
   }finally{
     await context.close();
     rmSync(profile,{recursive:true,force:true});
   }
+});
+
+test('phase 1 interactive checker excludes appended messages and stops on history, branch and route changes',{timeout:90000},async t=>{
+  const profile=mkdtempSync(join(tmpdir(),'luna-capture-'));
+  const context=await chromium.launchPersistentContext(profile,{
+    ...browserChoice,headless:true,acceptDownloads:true,viewport:{width:1280,height:800},
+    args:['--disable-extensions-except='+dist,'--load-extension='+dist],
+  });
+  try{
+    await installFixture(context);
+    const worker=await extensionWorker(context);
+    let current=createPayload(2);
+    await context.route('https://chatgpt.com/backend-api/conversations/'+conversationId+'?**',route=>
+      route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(current)}));
+    const page=await context.newPage();
+    const open=async scenario=>{
+      current=createPayload(2);
+      await page.goto(url,{waitUntil:'domcontentloaded'});
+      await page.locator('#luna-toc-sidebar.luna-toc-navigator-ready').waitFor({state:'attached'});
+      await page.waitForFunction(()=>document.querySelectorAll('.navigator-item').length===2);
+      await page.locator('#luna-toc-toggle-btn').click({force:true});
+      await page.locator('#luna-toc-phase0-probe').click();
+      await page.locator('#luna-capture-scenario').selectOption(scenario);
+      await page.locator('#luna-capture-start').click();
+      await page.locator('#luna-capture-finish:not([disabled])').waitFor();
+    };
+    const report=async()=>{
+      await page.locator('#luna-capture-download:not([disabled])').waitFor();
+      const [download]=await Promise.all([page.waitForEvent('download'),page.locator('#luna-capture-download').click()]);
+      const text=readFileSync(await download.path(),'utf8');
+      assert.doesNotMatch(text,/第一条测试问题|第二条测试问题|fixture-account-a|lunatoc-e2e|user-1|answer-2/);
+      assert.match(text,/点击瞬间内容冻结：尚未验证/);
+      return text;
+    };
+    await t.test('appendix keeps the four original nodes',async()=>{
+      await open('append'); current=createPayload(3);
+      await page.evaluate(()=>fetch('/backend-api/conversations/lunatoc-e2e?num_turns=4'));
+      await page.locator('#luna-capture-finish').click();
+      const text=await report();
+      assert.match(text,/范围内节点：4 个/);
+      assert.match(text,/已通过：检测到新增消息且固定范围未改变/);
+    });
+    await t.test('old content edit stops the task',async()=>{
+      await open('edit'); current.messages[0].content.parts=['edited PRIVATE question'];
+      await page.evaluate(()=>fetch('/backend-api/conversations/lunatoc-e2e?num_turns=4'));
+      assert.match(await report(),/已检测到历史内容或回答路径变化/);
+    });
+    await t.test('answer version switch stops the task',async()=>{
+      await open('branch'); current.messages[3].id='another-answer-version'; current.current_node='another-answer-version';
+      await page.evaluate(()=>fetch('/backend-api/conversations/lunatoc-e2e?num_turns=4'));
+      assert.match(await report(),/已检测到历史内容或回答路径变化/);
+    });
+    await t.test('SPA navigation stops without losing the sanitized report',async()=>{
+      await open('route');
+      await page.evaluate(()=>history.pushState({},'', '/c/another-test-conversation'));
+      assert.match(await report(),/已检测到对话切换/);
+    });
+    await t.test('cancellation leaves no conversation content in extension storage',async()=>{
+      await open('stable');
+      await page.locator('#luna-capture-cancel').click();
+      assert.match(await report(),/用户已停止检查/);
+      const stored=await worker.evaluate(async()=>JSON.stringify(await chrome.storage.local.get(null)));
+      assert.doesNotMatch(stored,/第一条测试问题|第二条测试问题|edited PRIVATE/);
+      await page.locator('#luna-capture-close').click();
+      await page.locator('#luna-capture-check-panel').waitFor({state:'hidden'});
+    });
+  }finally{await context.close();rmSync(profile,{recursive:true,force:true});}
 });
 
 test('analysis switch hides and immediately restores a mounted disclosure',{timeout:45000},async()=>{

@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
+  define: { __LUNATOC_BUILD_ID__: JSON.stringify('phase1-test-build') },
   resolve: {
     alias: {
       '@': path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'src'),

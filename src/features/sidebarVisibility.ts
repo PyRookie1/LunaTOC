@@ -30,6 +30,16 @@ let edgePointerY = 0;
 let mustLeaveEdgeBeforeTools = false;
 let onOpened: (() => void) | null = null;
 let onClosed: (() => void) | null = null;
+const visibilityHolds = new Set<symbol>();
+
+/** Task visibility never changes the user's stored pin preference. */
+export function holdSidebarOpen(): () => void {
+  const token = Symbol();
+  visibilityHolds.add(token);
+  clearHideTimer();
+  setSidebarHidden(false);
+  return () => { visibilityHolds.delete(token); };
+}
 /**
  * @param {HTMLElement} sidebarElement
  * @param {HTMLButtonElement} toggleButton
@@ -181,7 +191,7 @@ function handleAutoHideEnter(): void {
 }
 
 function scheduleAutoHide(): void {
-  if (isPinned) return;
+  if (isPinned || visibilityHolds.size) return;
 
   clearHideTimer();
   const controlsVisible = sidebar?.querySelector('.navigator-jump-controls-visible');
@@ -285,6 +295,7 @@ function finishInitializing(): void {
  * @param {boolean} hidden
  */
 export function setSidebarHidden(hidden: boolean): void {
+  if (hidden && visibilityHolds.size) return;
   const justOpened = isHidden && !hidden;
   const justClosed = !isHidden && hidden;
   isHidden = hidden;

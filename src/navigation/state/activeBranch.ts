@@ -10,6 +10,8 @@ export interface ConversationTreeNode {
 }
 
 export interface ConversationSnapshot extends ConversationData {
+  /** Transport provenance is not proof of an atomic server snapshot. */
+  readEvidence?: { source: 'tree' | 'pages'; pages: number };
   mapping?: Record<string, ConversationTreeNode>;
   /** Set only by the page hook after extracting a proven active branch. */
   activeBranchVerified?: true;

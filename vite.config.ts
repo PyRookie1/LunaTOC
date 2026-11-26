@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { execFileSync } from 'node:child_process';
 import { defineConfig, type Plugin } from 'vite';
 import { crx } from '@crxjs/vite-plugin';
 import react from '@vitejs/plugin-react';
@@ -10,12 +11,22 @@ const manifest = JSON.parse(
   fs.readFileSync(new URL('./manifest.json', import.meta.url), 'utf8')
 );
 
+function sourceRevision(): string {
+  try { return execFileSync('git', ['rev-parse', '--short', 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); }
+  catch { return 'source'; }
+}
+
 // NOTE: When new platforms are added, sync `manifest.json`
 // `content_scripts[].matches` arrays by hand for now. Future work: import
 // `PLATFORMS` from `@/platforms` and merge `platform.matches` into both
 // MAIN-world and ISOLATED-world match arrays at build time. See ADR 11.
 
 export default defineConfig({
+  define: {
+    __LUNATOC_BUILD_ID__: JSON.stringify('phase1-' +
+      sourceRevision() + '-' +
+      new Date().toISOString().replace(/[-:.]/g, '')),
+  },
   plugins: [react(), tailwindcss(), crx({ manifest }), cleanEntryFileNames()],
   resolve: {
     alias: {
