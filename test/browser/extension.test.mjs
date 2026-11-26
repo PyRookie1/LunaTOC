@@ -98,9 +98,12 @@ test('phase 0 probe reads a complete branch and saves only aggregate evidence',{
     const page=await context.newPage();
     await page.goto(url,{waitUntil:'domcontentloaded'});
     await page.locator('#luna-toc-phase0-probe').waitFor({state:'attached'});
-    const downloadPromise=page.waitForEvent('download');
-    await page.locator('#luna-toc-phase0-probe').click({force:true});
-    const download=await downloadPromise;
+    await page.locator('#luna-toc-toggle-btn').click({force:true});
+    await page.locator('#luna-toc-sidebar[aria-hidden="false"]').waitFor();
+    const [download]=await Promise.all([
+      page.waitForEvent('download'),
+      page.locator('#luna-toc-phase0-probe').click(),
+    ]);
     const report=readFileSync(await download.path(),'utf8');
     assert.match(report,/当前对话完整读取：通过/);
     assert.match(report,/已核对的有效分支消息：4 条/);

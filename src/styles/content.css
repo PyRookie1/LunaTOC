@@ -259,7 +259,7 @@ html[data-luna-toc-theme='light'] {
 .navigator-header {
   height: 22px;
   display: grid;
-  grid-template-columns: 22px minmax(0, 1fr) 22px;
+  grid-template-columns: 22px minmax(0, 1fr) 22px 22px;
   align-items: center;
   gap: 8px;
   margin: 0;
