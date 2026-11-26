@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CaptureCheckSession } from '@/features/conversationExport/checkSession';
-import { setActiveConversationOwner } from '@/navigation/lifecycle/conversationOwner';
+import { getActiveConversationOwner, setActiveConversationOwner } from '@/navigation/lifecycle/conversationOwner';
 import { dispatchTrustedPageHookMessage } from '@/navigation/pageHookMessageTransport';
 import { CHATGPT_MESSAGE_TYPES } from '@/platforms/chatgpt/messages';
 import { CAPTURE_GENERATION_EVENT, TOC_REFRESH_REQUEST, TOC_REFRESH_RESULT, TOC_REFRESH_CANCEL } from '@/navigation/refresh/refreshProtocol';
@@ -111,6 +111,19 @@ describe('read-only capture exercises', () => {
     await vi.waitFor(() => expect(calls.some(call => call.type === TOC_REFRESH_REQUEST)).toBe(true));
     setActiveConversationOwner('another-account'); await pending;
     expect(session.report()).toContain('账号状态已变化');
+  });
+
+  it('aborts an in-flight identity read without changing the shared account state', async () => {
+    let signal: AbortSignal | undefined;
+    vi.stubGlobal('fetch', vi.fn((_input: unknown, options: RequestInit) => new Promise((_resolve, reject) => {
+      signal = options.signal as AbortSignal;
+      signal.addEventListener('abort', () => reject(new DOMException('stopped', 'AbortError')), { once: true });
+    })));
+    const session = create(); const pending = session.begin();
+    expect(signal).toBeDefined(); session.cancel(); await pending;
+    expect(signal!.aborted).toBe(true);
+    expect(getActiveConversationOwner()).toBe('private-account');
+    expect(session.report()).toContain('用户已停止检查');
   });
 
   it('blocks an observed generation request even if no stop button exists', async () => {

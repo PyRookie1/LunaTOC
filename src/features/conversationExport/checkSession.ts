@@ -1,5 +1,5 @@
 import { captureConversationOwner, isConversationOwnerCurrent, subscribeActiveConversationOwner } from '@/navigation/lifecycle/conversationOwner';
-import { revalidateConversationOwnerForExtension } from '@/navigation/lifecycle/conversationLifecycle';
+import { readTrustedConversationOwner } from '@/navigation/lifecycle/conversationLifecycle';
 import { getCurrentRouteKey } from '@/platforms/chatgpt/routing';
 import { CHATGPT_MESSAGE_TYPES } from '@/platforms/chatgpt/messages';
 import { subscribeTrustedPageHookMessage } from '@/navigation/pageHookMessageTransport';
@@ -98,14 +98,25 @@ export class CaptureCheckSession {
     }
   }
 
+  private async verifyOwner(): Promise<void> {
+    // Bind even authentication reads to the task lifetime; cancellation must not
+    // invalidate the account globally or leave a detached session request alive.
+    const verified = await readTrustedConversationOwner((input, init) =>
+      fetch(input, { ...init, signal: this.task.signal }));
+    this.assertCurrent();
+    if (verified !== this.owner?.ownerId) {
+      this.stop('账号状态未能确认或已变化，检查已停止。');
+      this.task.check();
+    }
+  }
+
   async begin(interactive = true): Promise<void> {
     if (this.startedOnce) return;
     this.startedOnce = true;
     try {
       this.assertCurrent();
-      const owner = await revalidateConversationOwnerForExtension();
+      await this.verifyOwner();
       this.assertCurrent();
-      if (!owner) throw new Error('identity');
       if (generationState(this.route) !== 'unknown' && generationState(this.route) !== 'ready') {
         this.stop('当前回答仍在生成或等待稳定，请结束后重新检查。'); return;
       }
@@ -181,9 +192,8 @@ export class CaptureCheckSession {
       const result = checkFixedRange(this.baseline, next);
       if (result === 'changed') { this.stop('已检测到历史内容或回答路径变化，检查已停止。'); return; }
       this.additions ||= result === 'appended';
-      const owner = await revalidateConversationOwnerForExtension();
+      await this.verifyOwner();
       this.assertCurrent();
-      if (!owner) throw new Error('identity');
       this.rangeText = this.scopeAtClick ? '已通过：点击前已观察到的消息范围保持一致' :
         '部分验证：首次完整读取的范围保持一致；点击时范围尚未确认';
       this.complete();
