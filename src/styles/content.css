@@ -241,12 +241,21 @@ html[data-luna-toc-theme='light'] {
 }
 
 #navigator-list {
-  flex: 1 1 auto;
+  flex: 1 1 0%;
   min-height: 0;
   overflow-y: auto;
-  padding-bottom: 80vh;
+  padding-bottom: 0;
   /* Preserve wheel, trackpad and touch scrolling without a visible track. */
   scrollbar-width: none;
+}
+
+/* Keep end-of-list scroll space INSIDE the scrollport. Flex items cannot
+   shrink their outer padding, which otherwise pushes bottom panels offscreen. */
+#navigator-list::after {
+  content: '';
+  display: block;
+  height: 80vh;
+  pointer-events: none;
 }
 
 /* Chrome and older WebKit versions need an explicit scrollbar rule. */
@@ -1089,13 +1098,48 @@ strong[data-luna-toc-markdown-bold='true'] {
 }
 
 
-#luna-capture-check-panel[hidden] { display: none; }
+#luna-capture-check-panel[hidden],
+#luna-capture-check-panel [hidden] { display: none !important; }
 .luna-capture-check-panel {
-  flex: 0 0 auto; max-height: 48%; overflow-y: auto; padding: 12px;
-  border-top: 1px solid var(--border-color, #8886); font-size: 12px; line-height: 1.6;
+  display: flex;
+  flex-direction: column;
+  flex: 0 1 auto;
+  box-sizing: border-box;
+  height: clamp(220px, max(48%, 18em), 420px);
+  max-height: calc(100% - 44px);
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  gap: 8px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--ct-border-divider);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.luna-capture-check-heading { display: flex; flex: 0 0 auto; align-items: flex-start; gap: 8px; }
+.luna-capture-check-heading strong { flex: 1 1 auto; min-width: 0; }
+#luna-capture-close {
+  flex: 0 0 28px; width: 28px; height: 28px; padding: 0; border: 0;
+  border-radius: 6px; color: inherit; background: transparent;
+  font: inherit; font-size: 20px; line-height: 1; cursor: pointer;
+}
+#luna-capture-close:hover { background: var(--ct-icon-header-hover-bg); }
+.luna-capture-check-body {
+  flex: 1 1 auto; min-height: 0; min-width: 0; overflow-y: auto; overflow-x: hidden;
+  overscroll-behavior: contain; scrollbar-width: thin; overflow-wrap: anywhere;
 }
 .luna-capture-check-panel p { margin: 8px 0; }
-.luna-capture-check-panel select { width: 100%; color: inherit; background: inherit; padding: 5px; }
-.luna-capture-check-actions { display: flex; flex-wrap: wrap; gap: 6px; }
-.luna-capture-check-actions button { color: inherit; background: transparent; border: 1px solid #8888; border-radius: 6px; padding: 5px 8px; cursor: pointer; }
+.luna-capture-check-panel select {
+  box-sizing: border-box; width: 100%; min-width: 0; min-height: 32px;
+  color: inherit; background: var(--ct-bg-sidebar); font: inherit; padding: 5px;
+}
+.luna-capture-check-actions {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  flex: 0 0 auto; gap: 6px; padding-top: 8px; border-top: 1px solid var(--ct-border-divider);
+}
+.luna-capture-check-actions button {
+  box-sizing: border-box; min-width: 0; min-height: 34px; color: inherit; background: transparent;
+  border: 1px solid var(--ct-border-divider); border-radius: 6px; padding: 5px 8px;
+  font: inherit; line-height: 1.35; white-space: normal; overflow-wrap: anywhere; cursor: pointer;
+}
 .luna-capture-check-actions button:disabled { opacity: .45; cursor: default; }

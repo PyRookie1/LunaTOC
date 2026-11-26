@@ -86,6 +86,95 @@ async function extensionWorker(context){
   return context.serviceWorkers()[0]??context.waitForEvent('serviceworker',{timeout:20000});
 }
 
+/** Check BEFORE clicking: Playwright can scroll overflow:hidden ancestors and
+ * make clipped controls pass a click-only test even though users cannot reach them. */
+async function assertCaptureControlsReachable(page,ids){
+  const result=await page.evaluate(ids=>{
+    const issues=[];
+    for(const id of ids){
+      const item=document.getElementById(id);
+      if(!item||item.hidden){issues.push(id+': missing or hidden');continue;}
+      const rect=item.getBoundingClientRect();
+      if(rect.width<=0||rect.height<=0||rect.top<0||rect.left<0||rect.bottom>innerHeight+1||rect.right>innerWidth+1){
+        issues.push(id+': outside viewport');
+      }
+      for(let parent=item.parentElement;parent;parent=parent.parentElement){
+        const style=getComputedStyle(parent),bounds=parent.getBoundingClientRect();
+        if(/auto|scroll|hidden|clip/.test(style.overflowY)&&
+          (rect.top<bounds.top-1||rect.bottom>bounds.bottom+1))issues.push(id+': vertically clipped');
+        if(/auto|scroll|hidden|clip/.test(style.overflowX)&&
+          (rect.left<bounds.left-1||rect.right>bounds.right+1))issues.push(id+': horizontally clipped');
+      }
+      const target=document.elementFromPoint(rect.left+rect.width/2,rect.top+rect.height/2);
+      if(!target||!item.contains(target))issues.push(id+': covered');
+    }
+    if(document.getElementById('luna-toc-sidebar').scrollTop!==0)issues.push('sidebar was programmatically scrolled');
+    return issues;
+  },ids);
+  assert.deepEqual(result,[]);
+}
+
+test('capture panel keeps controls in view at short heights, narrow widths and enlarged text',{timeout:120000},async t=>{
+  const profile=mkdtempSync(join(tmpdir(),'luna-capture-layout-'));
+  const context=await chromium.launchPersistentContext(profile,{
+    ...browserChoice,headless:true,acceptDownloads:true,viewport:{width:1280,height:800},
+    args:['--disable-extensions-except='+dist,'--load-extension='+dist],
+  });
+  try{
+    await installFixture(context);
+    const worker=await extensionWorker(context);
+    const page=await context.newPage();
+    for(const layout of ['overlay','side-by-side']){
+      for(const dimensions of [
+        {width:1280,height:800,sidebar:320,font:12},
+        {width:1000,height:420,sidebar:240,font:12},
+        {width:1000,height:420,sidebar:240,font:18},
+        {width:1000,height:360,sidebar:240,font:24},
+      ]){
+        await t.test(`${layout}, ${dimensions.height}px high, ${dimensions.sidebar}px sidebar, ${dimensions.font}px text`,async()=>{
+          await worker.evaluate(async layout=>{
+            const key='lunatoc:accountSettings:v1';
+            const values=await chrome.storage.local.get(key),map=values[key]||{};
+            map['fixture-account-a']={theme:{followChatGPT:false,manualTheme:'light'},
+              sidebar:{layoutMode:layout,backgroundColor:'default',revealTint:false}};
+            await chrome.storage.local.set({[key]:map});
+          },layout);
+          await page.setViewportSize({width:dimensions.width,height:dimensions.height});
+          await page.goto('https://chatgpt.com/c/lunatoc-large-layout-e2e',{waitUntil:'domcontentloaded'});
+          await page.locator('#luna-toc-sidebar.luna-toc-navigator-ready').waitFor({state:'attached'});
+          await page.waitForFunction(()=>document.querySelectorAll('.navigator-item').length===500);
+          await page.evaluate(dimensions=>{
+            document.getElementById('luna-toc-sidebar').style.setProperty('--navigator-width',dimensions.sidebar+'px');
+            document.getElementById('luna-capture-check-panel').style.fontSize=dimensions.font+'px';
+          },dimensions);
+          await page.locator('#luna-toc-toggle-btn').click({force:true});
+          await page.locator('#luna-toc-phase0-probe').click();
+          await page.locator('#luna-toc-sidebar').evaluate(element=>Promise.all(element.getAnimations().map(animation=>animation.finished.catch(()=>{}))));
+          await assertCaptureControlsReachable(page,['luna-capture-scenario','luna-capture-quick','luna-capture-start','luna-capture-close']);
+          await page.locator('#luna-capture-start').click();
+          await page.locator('#luna-capture-finish:not([disabled])').waitFor();
+          await page.evaluate(()=>{
+            document.getElementById('luna-capture-check-status').textContent='用于验证说明区域单独滚动，操作按钮保持可见。'.repeat(80);
+            const body=document.querySelector('.luna-capture-check-body');body.scrollTop=body.scrollHeight;
+          });
+          await assertCaptureControlsReachable(page,['luna-capture-finish','luna-capture-cancel','luna-capture-close']);
+          await page.locator('#luna-capture-cancel').click();
+          await assertCaptureControlsReachable(page,['luna-capture-download','luna-capture-restart','luna-capture-close']);
+          const [download]=await Promise.all([page.waitForEvent('download'),page.locator('#luna-capture-download').click()]);
+          assert.match(readFileSync(await download.path(),'utf8'),/用户已停止检查/);
+          await page.locator('#luna-capture-restart').click();
+          await assertCaptureControlsReachable(page,['luna-capture-scenario','luna-capture-quick','luna-capture-start','luna-capture-close']);
+          await page.locator('#luna-capture-close').click();
+          const directory=await page.locator('#navigator-list').evaluate(list=>({height:list.clientHeight,
+            scroll:list.scrollHeight,padding:getComputedStyle(list).paddingBottom,space:parseFloat(getComputedStyle(list,'::after').height)}));
+          assert.ok(directory.height>0&&directory.scroll>directory.height&&directory.space>0);
+          assert.equal(directory.padding,'0px');
+        });
+      }
+    }
+  }finally{await context.close();rmSync(profile,{recursive:true,force:true});}
+});
+
 test('phase 1 checker reads twice, saves aggregate evidence and never claims an atomic snapshot',{timeout:45000},async()=>{
   const profile=mkdtempSync(join(tmpdir(),'luna-phase0-'));
   const context=await chromium.launchPersistentContext(profile,{

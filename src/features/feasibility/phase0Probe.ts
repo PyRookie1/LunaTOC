@@ -22,6 +22,8 @@ export function installPhase0Probe(sidebar: HTMLElement): void {
   panel.setAttribute('aria-label', '对话功能检查');
   panel.hidden = true;
   const title = document.createElement('strong'); title.textContent = '对话功能与时间边界检查';
+  const heading = document.createElement('div'); heading.className = 'luna-capture-check-heading';
+  const body = document.createElement('div'); body.className = 'luna-capture-check-body';
   const description = document.createElement('p');
   description.textContent = '检查仅在本地运行，不保存正文。快速检查核对两次读取；时间边界检查等待你执行页面操作。';
   const select = document.createElement('select'); select.id = 'luna-capture-scenario';
@@ -41,8 +43,13 @@ export function installPhase0Probe(sidebar: HTMLElement): void {
   const finish = button('luna-capture-finish', '完成检查');
   const cancel = button('luna-capture-cancel', '停止检查');
   const download = button('luna-capture-download', '导出检查报告');
-  const close = button('luna-capture-close', '关闭检查');
-  panel.append(title, description, select, status, actions);
+  const restart = button('luna-capture-restart', '重新检查');
+  const close = document.createElement('button');
+  close.type = 'button'; close.id = 'luna-capture-close'; close.textContent = '×';
+  close.setAttribute('aria-label', '关闭检查'); close.title = '关闭检查';
+  heading.append(title, close);
+  body.append(select, description, status);
+  panel.append(heading, body, actions);
   sidebar.append(panel);
   let session: CaptureCheckSession | null = null;
   let releaseHold: (() => void) | null = null;
@@ -53,11 +60,16 @@ export function installPhase0Probe(sidebar: HTMLElement): void {
   };
   const render = (): void => {
     const active = session !== null && session.phase !== 'done';
+    const idle = session === null;
+    quick.hidden = start.hidden = !idle;
+    finish.hidden = cancel.hidden = !active;
+    download.hidden = restart.hidden = idle || active;
     quick.disabled = start.disabled = select.disabled = active;
     finish.disabled = session?.phase !== 'waiting';
     cancel.disabled = !active;
     download.disabled = session?.phase !== 'done';
     if (session) status.textContent = session.status;
+    else status.textContent = '请等待回答结束后开始。点击瞬间的内容冻结仍需独立版本证明。';
   };
   const open = (): void => {
     panel.hidden = false; setSidebarHidden(false);
@@ -76,6 +88,10 @@ export function installPhase0Probe(sidebar: HTMLElement): void {
   start.addEventListener('click', () => run(true));
   finish.addEventListener('click', () => { void session?.finish(); });
   cancel.addEventListener('click', () => session?.cancel());
+  restart.addEventListener('click', () => {
+    if (session?.phase !== 'done') return;
+    session.dispose(); session = null; body.scrollTop = 0; render();
+  });
   close.addEventListener('click', () => {
     session?.dispose(); session = null; panel.hidden = true;
     releaseHold?.(); releaseHold = null; releaseUrls();
