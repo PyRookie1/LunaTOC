@@ -47,6 +47,7 @@ export function extractBranch(snapshot: ConversationSnapshot): BranchCapture {
       comparison: comparisonMaterial({ id: input.id, parent: explicitParent, role, channel: raw.channel,
         content, attachments: metadata.attachments, hidden: metadata.is_visually_hidden_from_conversation }),
       unsupportedParts: parts.filter(part => part.kind === 'unsupported').length +
+        (role === 'unknown' ? 1 : 0) +
         (visible && rawParts.length === 0 && attachments.length === 0 ? 1 : 0),
     });
   }

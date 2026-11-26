@@ -218,7 +218,9 @@ export class CaptureCheckSession {
     const expectedChange = this.scenario === 'route' ? this.reason.includes('对话切换') : this.reason.includes('历史内容');
     const scenarioResult = this.userCancelled ? '未验证：用户停止了本次检查' : this.scenario === 'stable'
       ? this.reason ? '未通过：检查未完成' : '已完成两次读取核对；不代表原子快照通过'
-      : this.scenario === 'append' ? this.additions && !this.reason ? '已通过：检测到新增消息且固定范围未改变'
+      : this.scenario === 'append' ? this.additions && !this.reason
+        ? this.scopeAtClick ? '已通过：检测到新增消息且固定范围未改变'
+          : '部分验证：已排除首次读取后新增的消息；点击时范围尚未确认'
         : '未验证：未完成新增消息的排除核对'
       : expectedChange ? '已通过：检测到变化并停止检查' : '未验证：未检测到预期变化，不能据此判定通过';
     this.status = this.reason || '检查已完成，可导出本地报告。';

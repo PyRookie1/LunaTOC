@@ -46,7 +46,7 @@ export function comparisonMaterial(value: unknown): string {
 /** Exact text is stored once; formatting blocks refer to source offsets. */
 export function textBlocks(text: string): TextBlock[] {
   const blocks: TextBlock[] = [];
-  const lines = Array.from(text.matchAll(/.*(?:\n|$)/g)).filter(match => match[0].length > 0);
+  const lines = Array.from(text.matchAll(/[^\n]*(?:\n|$)/g)).filter(match => match[0].length > 0);
   for (let index = 0; index < lines.length; index++) {
     const line = lines[index];
     const start = line.index!;

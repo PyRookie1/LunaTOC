@@ -32,6 +32,12 @@ describe('shared capture model', () => {
     expect(result.messages[2].parts.map(part => part.kind)).toEqual(['text', 'image', 'text']);
   });
 
+  it('preserves Windows newlines, tabs and trailing whitespace in format offsets', () => {
+    const text = '# Title\r\n\r\n~~~js\r\n\tcode  \r\n~~~\r\nend  ';
+    expect(textBlocks(text).map(block => text.slice(block.start, block.end)).join('')).toBe(text);
+    expect(textBlocks(text).some(block => block.kind === 'code')).toBe(true);
+  });
+
   it('distinguishes appendix from edits, removal and branch replacement', () => {
     const before = extractBranch(snapshot());
     expect(checkFixedRange(before, extractBranch(snapshot()))).toBe('unchanged');
