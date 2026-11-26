@@ -130,8 +130,9 @@ test('capture panel keeps controls in view at short heights, narrow widths and e
         {width:1000,height:420,sidebar:240,font:12},
         {width:1000,height:420,sidebar:240,font:18},
         {width:1000,height:360,sidebar:240,font:24},
+        {width:1000,height:360,sidebar:240,font:24,search:true},
       ]){
-        await t.test(`${layout}, ${dimensions.height}px high, ${dimensions.sidebar}px sidebar, ${dimensions.font}px text`,async()=>{
+        await t.test(`${layout}, ${dimensions.height}px high, ${dimensions.sidebar}px sidebar, ${dimensions.font}px text${dimensions.search?', search open':''}`,async()=>{
           await worker.evaluate(async layout=>{
             const key='lunatoc:accountSettings:v1';
             const values=await chrome.storage.local.get(key),map=values[key]||{};
@@ -148,6 +149,7 @@ test('capture panel keeps controls in view at short heights, narrow widths and e
             document.getElementById('luna-capture-check-panel').style.fontSize=dimensions.font+'px';
           },dimensions);
           await page.locator('#luna-toc-toggle-btn').click({force:true});
+          if(dimensions.search)await page.locator('#search-toggle-btn').click();
           await page.locator('#luna-toc-phase0-probe').click();
           await page.locator('#luna-toc-sidebar').evaluate(element=>Promise.all(element.getAnimations().map(animation=>animation.finished.catch(()=>{}))));
           await assertCaptureControlsReachable(page,['luna-capture-scenario','luna-capture-quick','luna-capture-start','luna-capture-close']);

@@ -1117,7 +1117,7 @@ strong[data-luna-toc-markdown-bold='true'] {
   line-height: 1.6;
 }
 .luna-capture-check-heading { display: flex; flex: 0 0 auto; align-items: flex-start; gap: 8px; }
-.luna-capture-check-heading strong { flex: 1 1 auto; min-width: 0; }
+.luna-capture-check-heading strong { flex: 1 1 auto; min-width: 0; line-height: 1.35; }
 #luna-capture-close {
   flex: 0 0 28px; width: 28px; height: 28px; padding: 0; border: 0;
   border-radius: 6px; color: inherit; background: transparent;

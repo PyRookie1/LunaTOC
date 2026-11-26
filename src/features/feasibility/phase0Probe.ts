@@ -39,7 +39,7 @@ export function installPhase0Probe(sidebar: HTMLElement): void {
     actions.append(item); return item;
   };
   const quick = button('luna-capture-quick', '快速检查');
-  const start = button('luna-capture-start', '开始时间边界检查');
+  const start = button('luna-capture-start', '开始边界检查');
   const finish = button('luna-capture-finish', '完成检查');
   const cancel = button('luna-capture-cancel', '停止检查');
   const download = button('luna-capture-download', '导出检查报告');
