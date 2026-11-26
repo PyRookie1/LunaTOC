@@ -18,4 +18,10 @@ if(!existsSync(playwrightPath))throw new Error('isolated Playwright installation
 const projectLink=resolve('node_modules/playwright');
 if(existsSync(projectLink))throw new Error('playwright unexpectedly exists in application dependencies');
 symlinkSync(playwrightPath,projectLink,'dir');
-run(process.execPath,[join(playwrightPath,'cli.js'),'install','--with-deps','chromium']);
+const systemBrowser=process.env.LUNATOC_TEST_CHROMIUM_PATH;
+if(systemBrowser){
+  if(!existsSync(systemBrowser))throw new Error('Configured Chromium executable is missing');
+  console.log('Using existing Chromium:',systemBrowser);
+}else{
+  run(process.execPath,[join(playwrightPath,'cli.js'),'install','--with-deps','chromium']);
+}

@@ -177,4 +177,42 @@ describe('conversation refresh on sidebar opening', () => {
     }
   });
 
+  it('phase 0: exposes the mixed-revision risk when an older page changes during pagination', async () => {
+    const routeKey = 'mixed-revision-conversation';
+    history.replaceState(null, '', `/c/${routeKey}`);
+    const mockFetch = vi.fn()
+      .mockResolvedValueOnce({ ok: false, status: 404 })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({
+        current_node: 'reply',
+        messages: [{ id: 'reply', parent: 'question', author: { role: 'assistant' },
+          content: { parts: ['Answer from version A'] } }],
+        page_info: { has_previous_page: true, start_cursor: 'older' },
+      }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({
+        // The same ancestor is edited between the two independent requests.
+        messages: [{ id: 'question', parent: null, author: { role: 'user' },
+          content: { parts: ['Question from version B'] } }],
+        page_info: { has_previous_page: false },
+      }) });
+    installHook(mockFetch as unknown as typeof fetch);
+    const received: Array<{ type?: string; payload?: { activeBranchVerified?: boolean;
+      messages?: Array<{ content?: { parts?: string[] } }> } }> = [];
+    const onResult = (event: MessageEvent) => {
+      if (event.data?.type === TOC_REFRESH_RESULT) received.push(event.data);
+    };
+    window.addEventListener('message', onResult);
+    try {
+      window.dispatchEvent(new MessageEvent('message', {
+        source: window, origin: location.origin,
+        data: { type: TOC_REFRESH_REQUEST, routeKey, requestId: 102 },
+      }));
+      await vi.waitFor(() => expect(received).toHaveLength(1));
+      expect(received[0].payload?.activeBranchVerified).toBe(true);
+      expect(received[0].payload?.messages?.map((message) => message.content?.parts?.[0]))
+        .toEqual(['Question from version B', 'Answer from version A']);
+    } finally {
+      window.removeEventListener('message', onResult);
+    }
+  });
+
 });

@@ -19,6 +19,7 @@ import { APP_CONFIG } from '@/config/config';
 import { navigatorController } from '@/navigation/navigatorController';
 import { sidebarController } from '@/features/sidebar/sidebarController';
 import { createJumpToEdgeControls } from '@/features/sidebar/jumpToEdgeControls';
+import { installPhase0Probe } from '@/features/feasibility/phase0Probe';
 
 let currentSidebarPreferences: SidebarPreferences = DEFAULT_SIDEBAR_PREFERENCES;
 
@@ -105,6 +106,12 @@ async function createSidebar(): Promise<HTMLElement> {
             data-tooltip=""
             data-tooltip-overflow-only="true"
           ></button>
+          <button class="navigator-icon-btn navigator-header-icon-btn" id="luna-toc-phase0-probe"
+            type="button" aria-label="检查当前对话兼容性" title="检查当前对话兼容性">
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 12l5 5L20 6" />
+            </svg>
+          </button>
           <button
             class="navigator-icon-btn navigator-header-icon-btn"
             id="search-toggle-btn"
@@ -225,6 +232,7 @@ export async function initializeApplication(): Promise<void> {
   });
   const sidebar = await createSidebar();
   sidebarController.init();
+  installPhase0Probe(sidebar);
   initSidebarResize(sidebar);
   createJumpToEdgeControls(() => sidebarController.isMyPromptsView());
   initializeJumpControlsPosition(sidebar);

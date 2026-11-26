@@ -10,6 +10,9 @@ import {join,resolve} from 'node:path';
 import {chromium} from 'playwright';
 
 const dist=resolve('dist');
+const browserChoice=process.env.LUNATOC_TEST_CHROMIUM_PATH
+  ? {executablePath:process.env.LUNATOC_TEST_CHROMIUM_PATH}
+  : {channel:'chromium'};
 const conversationId='lunatoc-e2e';
 const url='https://chatgpt.com/c/'+conversationId;
 function createHtml(messageCount=2){
@@ -83,10 +86,36 @@ async function extensionWorker(context){
   return context.serviceWorkers()[0]??context.waitForEvent('serviceworker',{timeout:20000});
 }
 
+test('phase 0 probe reads a complete branch and saves only aggregate evidence',{timeout:45000},async()=>{
+  const profile=mkdtempSync(join(tmpdir(),'luna-phase0-'));
+  const context=await chromium.launchPersistentContext(profile,{
+    ...browserChoice,headless:true,acceptDownloads:true,viewport:{width:1280,height:800},
+    args:['--disable-extensions-except='+dist,'--load-extension='+dist],
+  });
+  try{
+    await installFixture(context);
+    await extensionWorker(context);
+    const page=await context.newPage();
+    await page.goto(url,{waitUntil:'domcontentloaded'});
+    await page.locator('#luna-toc-phase0-probe').waitFor({state:'attached'});
+    const downloadPromise=page.waitForEvent('download');
+    await page.locator('#luna-toc-phase0-probe').click({force:true});
+    const download=await downloadPromise;
+    const report=readFileSync(await download.path(),'utf8');
+    assert.match(report,/当前对话完整读取：通过/);
+    assert.match(report,/已核对的有效分支消息：4 条/);
+    assert.doesNotMatch(report,/第一条测试问题|第二条测试问题|fixture-account-a|lunatoc-e2e/);
+    assert.match(report,/点击瞬间内容冻结：尚未验证/);
+  }finally{
+    await context.close();
+    rmSync(profile,{recursive:true,force:true});
+  }
+});
+
 test('analysis switch hides and immediately restores a mounted disclosure',{timeout:45000},async()=>{
   const profile=mkdtempSync(join(tmpdir(),'luna-analysis-'));
   const context=await chromium.launchPersistentContext(profile,{
-    channel:'chromium',headless:true,viewport:{width:1280,height:800},
+    ...browserChoice,headless:true,viewport:{width:1280,height:800},
     args:['--disable-extensions-except='+dist,'--load-extension='+dist],
   });
   try{
@@ -124,7 +153,7 @@ test('analysis switch hides and immediately restores a mounted disclosure',{time
 test('bottom and consecutive navigation release follow and stale reading anchors',{timeout:90000},async t=>{
   const profile=mkdtempSync(join(tmpdir(),'luna-bottom-'));
   const context=await chromium.launchPersistentContext(profile,{
-    channel:'chromium',headless:true,viewport:{width:1280,height:800},
+    ...browserChoice,headless:true,viewport:{width:1280,height:800},
     args:['--disable-extensions-except='+dist,'--load-extension='+dist],
   });
   try{
@@ -228,7 +257,7 @@ test('Chromium MV3: TOC, search, layout, SPA and failure paths',{timeout:150000}
   let context,page;
   try{
     context=await chromium.launchPersistentContext(profile,{
-      channel:'chromium',headless:true,viewport:{width:1280,height:800},
+      ...browserChoice,headless:true,viewport:{width:1280,height:800},
       args:['--disable-extensions-except='+dist,'--load-extension='+dist],
     });
     await installFixture(context);
