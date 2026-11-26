@@ -23,6 +23,7 @@ LunaTOC 是一款面向 ChatGPT 网页端的开源浏览器扩展，支持 Chrom
 ## 安装与开发
 
 1.从 [最新正式版](https://github.com/PyRookie1/LunaTOC/releases/latest) 下载 `lunatoc-v1.1.2.zip`；
+
 2.在 Chrome 打开 `chrome://extensions/`，或在 Edge 打开 `edge://extensions/`，启用开发者模式并加载解压后的文件夹。
 
 ## 支持范围与限制
