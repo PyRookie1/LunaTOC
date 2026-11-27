@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { extractBranch } from '@/features/conversationExport/extraction';
+import { extractBranch, hasUnfinishedMessage } from '@/features/conversationExport/extraction';
+import { generationState } from '@/features/conversationExport/runtime';
 import { canExportClickSnapshot, checkFixedRange, textBlocks } from '@/features/conversationExport/model';
 import type { ConversationSnapshot } from '@/navigation/state/activeBranch';
 
@@ -79,5 +80,24 @@ describe('shared capture model', () => {
     const raw = snapshot();
     (raw.messages[1] as unknown as { channel: string }).channel = 'analysis';
     expect(extractBranch(raw).messages[1].visible).toBe(false);
+  });
+
+  it('checks current leaf status instead of stale historical or abandoned statuses', () => {
+    const raw = snapshot();
+    const root = { querySelector: () => null } as unknown as ParentNode;
+    (raw.messages[0] as unknown as { status: string }).status = 'pending';
+    (raw.messages[1] as unknown as { status: string; end_turn: boolean }).status = 'finished_successfully';
+    (raw.messages[1] as unknown as { end_turn: boolean }).end_turn = true;
+    expect(hasUnfinishedMessage(raw)).toBe(false);
+    expect(generationState('never-observed', root, raw)).toBe('ready');
+    raw.activeBranchVerified = undefined;
+    raw.current_node = 'a1';
+    raw.messages.push({ id: 'abandoned', parent: 'u1', author: { role: 'assistant' },
+      content: { parts: ['old'] }, status: 'in_progress' } as typeof raw.messages[number]);
+    expect(hasUnfinishedMessage(raw)).toBe(false);
+    (raw.messages[1] as unknown as { status: string; end_turn: boolean }).status = 'in_progress';
+    (raw.messages[1] as unknown as { end_turn: boolean }).end_turn = false;
+    expect(hasUnfinishedMessage(raw)).toBe(true);
+    expect(generationState('never-observed', root, raw)).toBe('unknown');
   });
 });

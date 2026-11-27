@@ -56,8 +56,13 @@ export function extractBranch(snapshot: ConversationSnapshot): BranchCapture {
 }
 
 export function hasUnfinishedMessage(snapshot: ConversationSnapshot): boolean {
-  return snapshot.messages.some(message => {
-    const status = record(message).status;
-    return status === 'in_progress' || status === 'pending' || status === 'streaming';
-  });
+  // Historical tool/analysis turns can retain a pending status after a later
+  // assistant reply finishes. Only the selected branch's current leaf can
+  // describe whether the *current* answer is still being produced.
+  const branch = extractActiveBranchMessages(snapshot);
+  if (!branch?.length) return false;
+  const leaf = record(branch[branch.length - 1]);
+  if (leaf.end_turn === true ||
+      ['finished_successfully', 'finished_partial', 'cancelled', 'failed'].includes(String(leaf.status))) return false;
+  return ['in_progress', 'pending', 'streaming'].includes(String(leaf.status));
 }

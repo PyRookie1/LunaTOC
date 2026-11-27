@@ -2,6 +2,7 @@ import { subscribeTrustedPageHookMessage } from '@/navigation/pageHookMessageTra
 import { CHATGPT_MESSAGE_TYPES } from '@/platforms/chatgpt/messages';
 import { CAPTURE_GENERATION_EVENT } from '@/navigation/refresh/refreshProtocol';
 import { extractActiveBranchMessages, type ConversationSnapshot } from '@/navigation/state/activeBranch';
+import { hasUnfinishedMessage } from './extraction';
 
 interface ObservedRoute {
   anchor: string | null;
@@ -68,11 +69,10 @@ export function generationState(routeKey: string, root: ParentNode = document,
   const busy = root.querySelector('[data-testid="stop-button"], [data-is-streaming="true"], [aria-busy="true"], button[aria-label="Stop generating"], button[aria-label="停止生成"], button[aria-label="停止回答"]');
   if (item?.active.size || busy) return 'generating';
   if (item?.completedAt && performance.now() - item.completedAt < 1_000) return 'settling';
-  const last = snapshot?.messages.filter(message => message.author?.role === 'assistant').at(-1) as
-    ({ status?: unknown; end_turn?: unknown } | undefined);
-  const pending = snapshot?.messages.some(message =>
-    ['in_progress', 'pending', 'streaming'].includes(String((message as unknown as { status?: unknown }).status)));
-  if (!pending && last && (last.end_turn === true ||
+  const last = snapshot ? extractActiveBranchMessages(snapshot)?.at(-1) as
+    ({ status?: unknown; end_turn?: unknown; author?: { role?: string } } | undefined) : undefined;
+  if (snapshot && !hasUnfinishedMessage(snapshot) && last?.author?.role === 'assistant' &&
+      (last.end_turn === true ||
       ['finished_successfully', 'finished_partial', 'cancelled', 'failed'].includes(String(last.status)))) return 'ready';
   return 'unknown';
 }

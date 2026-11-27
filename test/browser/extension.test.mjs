@@ -224,8 +224,13 @@ test('phase 1 interactive checker excludes appended messages and stops on histor
     await context.route('https://chatgpt.com/backend-api/conversations/'+conversationId+'?**',route=>
       route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(current)}));
     const page=await context.newPage();
-    const open=async scenario=>{
+    const open=async(scenario,staleHistory=false)=>{
       current=createPayload(2);
+      if(staleHistory){
+        current.messages[1].status='in_progress';
+        current.messages[3].status='finished_successfully';
+        current.messages[3].end_turn=true;
+      }
       await page.goto(url,{waitUntil:'domcontentloaded'});
       await page.locator('#luna-toc-sidebar.luna-toc-navigator-ready').waitFor({state:'attached'});
       await page.waitForFunction(()=>document.querySelectorAll('.navigator-item').length===2);
@@ -250,6 +255,14 @@ test('phase 1 interactive checker excludes appended messages and stops on histor
       const text=await report();
       assert.match(text,/范围内节点：4 个/);
       assert.match(text,/已通过：检测到新增消息且固定范围未改变/);
+    });
+    await t.test('historical pending answer does not block completed boundary checks',async()=>{
+      await open('stable',true);
+      await page.locator('#luna-capture-finish').click();
+      const text=await report();
+      assert.match(text,/范围内节点：4 个/);
+      assert.match(text,/已完成两次读取核对/);
+      assert.doesNotMatch(text,/当前回答仍在生成/);
     });
     await t.test('old content edit stops the task',async()=>{
       await open('edit'); current.messages[0].content.parts=['edited PRIVATE question'];
