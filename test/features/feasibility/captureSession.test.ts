@@ -81,13 +81,17 @@ describe('read-only capture exercises', () => {
     expect(boundary.report()).toContain('已通过：检测到新增消息且固定范围未改变');
   });
 
-  it('blocks a genuinely unfinished current answer, even when an older answer has finished', async () => {
+  it('qualifies an unfinished leaf without preventing a read-only diagnostic', async () => {
     current.messages[1] = { ...current.messages[1], status: 'finished_successfully', end_turn: true } as typeof current.messages[number];
     current.messages.push({ id: 'latest-answer', parent: 'private-answer', author: { role: 'assistant' },
       content: { parts: ['Still streaming'] }, status: 'in_progress' } as typeof current.messages[number]);
     const session = create(); await session.begin();
-    expect(session.report()).toContain('当前回答仍在生成');
-    expect(session.report()).toContain('范围内节点：0 个');
+    expect(session.phase).toBe('waiting');
+    await session.finish();
+    expect(session.report()).toContain('范围内节点：2 个');
+    expect(session.report()).toContain('读取来源将末消息标记为未完成');
+    expect(session.report()).toContain('固定范围：部分验证');
+    expect(session.report()).toContain('正式导出许可：未通过');
   });
 
   it('fixes the observed pre-click anchor even if the first read contains an appendix', async () => {

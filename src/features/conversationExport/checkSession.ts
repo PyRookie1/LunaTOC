@@ -39,6 +39,7 @@ export class CaptureCheckSession {
   private rangeText = '未验证';
   private reason = '';
   private scopeAtClick = false;
+  private pendingAtStart = false;
   private additions = false;
   private userCancelled = false;
   private rendered: RenderedEvidence = { matched: 0, mounted: 0, code: 0, headings: 0, images: 0 };
@@ -122,11 +123,11 @@ export class CaptureCheckSession {
       }
       const snapshot = await readCaptureSnapshot(this.route, this.task.signal);
       this.assertCurrent();
-      if (hasUnfinishedMessage(snapshot)) {
-        this.stop('当前回答仍在生成，请结束后重新检查。'); return;
-      }
-      this.generationText = generationState(this.route, document, snapshot) === 'ready'
-        ? '已读取到回答结束标记；仍需独立核对媒体和内容版本' : '状态未知；本次只读检查不代表允许正式导出';
+      this.pendingAtStart = hasUnfinishedMessage(snapshot);
+      this.generationText = this.pendingAtStart
+        ? '读取来源将末消息标记为未完成；本次仅运行只读检查，不允许正式导出'
+        : generationState(this.route, document, snapshot) === 'ready'
+          ? '已读取到回答结束标记；仍需独立核对媒体和内容版本' : '状态未知；本次只读检查不代表允许正式导出';
       const capture = extractBranch(snapshot);
       if (capture.messages.length === 0) throw new Error('empty');
       if (this.anchor) {
@@ -194,7 +195,8 @@ export class CaptureCheckSession {
       this.additions ||= result === 'appended';
       await this.verifyOwner();
       this.assertCurrent();
-      this.rangeText = this.scopeAtClick ? '已通过：点击前已观察到的消息范围保持一致' :
+      this.rangeText = this.pendingAtStart ? '部分验证：读取来源将末消息标记为未完成，仅核对两次读取的范围' :
+        this.scopeAtClick ? '已通过：点击前已观察到的消息范围保持一致' :
         '部分验证：首次完整读取的范围保持一致；点击时范围尚未确认';
       this.complete();
     } catch {
@@ -219,8 +221,9 @@ export class CaptureCheckSession {
     const scenarioResult = this.userCancelled ? '未验证：用户停止了本次检查' : this.scenario === 'stable'
       ? this.reason ? '未通过：检查未完成' : '已完成两次读取核对；不代表原子快照通过'
       : this.scenario === 'append' ? this.additions && !this.reason
-        ? this.scopeAtClick ? '已通过：检测到新增消息且固定范围未改变'
-          : '部分验证：已排除首次读取后新增的消息；点击时范围尚未确认'
+        ? this.scopeAtClick && !this.pendingAtStart ? '已通过：检测到新增消息且固定范围未改变'
+          : this.pendingAtStart ? '部分验证：检测到新增消息，但末尾消息状态尚未确认'
+            : '部分验证：已排除首次读取后新增的消息；点击时范围尚未确认'
         : '未验证：未完成新增消息的排除核对'
       : expectedChange ? '已通过：检测到变化并停止检查' : '未验证：未检测到预期变化，不能据此判定通过';
     this.status = this.reason || '检查已完成，可导出本地报告。';

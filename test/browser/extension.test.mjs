@@ -264,6 +264,21 @@ test('phase 1 interactive checker excludes appended messages and stops on histor
       assert.match(text,/已完成两次读取核对/);
       assert.doesNotMatch(text,/当前回答仍在生成/);
     });
+    await t.test('unfinished leaf permits a qualified read-only report',async()=>{
+      current=createPayload(2);
+      current.messages[3].status='in_progress';
+      await page.goto(url,{waitUntil:'domcontentloaded'});
+      await page.locator('#luna-toc-sidebar.luna-toc-navigator-ready').waitFor({state:'attached'});
+      await page.locator('#luna-toc-toggle-btn').click({force:true});
+      await page.locator('#luna-toc-phase0-probe').click();
+      await page.locator('#luna-capture-start').click();
+      await page.locator('#luna-capture-finish:not([disabled])').waitFor();
+      await page.locator('#luna-capture-finish').click();
+      const text=await report();
+      assert.match(text,/读取来源将末消息标记为未完成/);
+      assert.match(text,/固定范围：部分验证/);
+      assert.match(text,/正式导出许可：未通过/);
+    });
     await t.test('old content edit stops the task',async()=>{
       await open('edit'); current.messages[0].content.parts=['edited PRIVATE question'];
       await page.evaluate(()=>fetch('/backend-api/conversations/lunatoc-e2e?num_turns=4'));
